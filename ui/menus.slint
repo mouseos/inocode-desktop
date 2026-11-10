@@ -1,0 +1,160 @@
+import { Theme } from "theme.slint";
+import { Icon } from "icons.slint";
+
+// One row of a popup menu. `separator` rows draw a divider and ignore the other fields.
+export struct MenuItem {
+    id: string,
+    label: string,
+    glyph: string,
+    danger: bool,
+    disabled: bool,
+    separator: bool,
+}
+
+// State of the sidebar's popup menu, the in-place rename and the confirmation dialog.
+// Rust fills the lists and reacts to the callbacks (src/sidebar.rs).
+export global SidebarState {
+    in-out property <bool> menu-open: false;
+    in-out property <length> menu-x;
+    in-out property <length> menu-y;
+    in property <[MenuItem]> menu-items;
+    // First letter of the account label shown on the avatar.
+    in property <string> account-initial: "I";
+    // Thread whose title is being edited in place ("" when none).
+    in-out property <string> rename-id;
+    in property <bool> confirm-open: false;
+    in property <string> confirm-title;
+    in property <string> confirm-body;
+    in property <string> confirm-label;
+    in property <bool> confirm-danger: false;
+
+    // kind ("thread" or "account"), id, window position of the click
+    callback open-menu(string, string, length, length);
+    callback menu-pick(string);
+    callback commit-rename(string, string);
+    callback confirm;
+    callback cancel-confirm;
+}
+
+component MenuRow inherits Rectangle {
+    in property <MenuItem> item;
+    callback picked;
+    height: root.item.separator ? 9px : 28px;
+    if root.item.separator: Rectangle {
+        y: 4px;
+        height: 1px;
+        background: Theme.border;
+    }
+    if !root.item.separator: Rectangle {
+        border-radius: 6px;
+        background: ta.has-hover && !root.item.disabled ? Theme.hover : transparent;
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            spacing: 8px;
+            if root.item.glyph != "": Icon {
+                width: 16px;
+                text: root.item.glyph;
+                font-size: 15px;
+                color: root.item.danger ? Theme.danger : Theme.fg-secondary;
+            }
+            Text {
+                text: root.item.label;
+                color: root.item.disabled ? Theme.fg-tertiary : root.item.danger ? Theme.danger : Theme.fg;
+                font-size: 13px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+        }
+        ta := TouchArea {
+            enabled: !root.item.disabled;
+            mouse-cursor: pointer;
+            clicked => { root.picked(); }
+        }
+    }
+}
+
+// Popup menu at the clicked position plus the confirmation dialog; placed once at the end of the window.
+export component MenuOverlay inherits Rectangle {
+    if SidebarState.menu-open: Rectangle {
+        TouchArea {
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down {
+                    SidebarState.menu-open = false;
+                }
+            }
+        }
+        Rectangle {
+            x: max(4px, min(SidebarState.menu-x, root.width - self.width - 4px));
+            y: max(4px, min(SidebarState.menu-y, root.height - self.height - 4px));
+            width: 224px;
+            height: col.preferred-height + 8px;
+            border-radius: 10px;
+            background: Theme.composer;
+            border-width: 1px;
+            border-color: Theme.border;
+            drop-shadow-blur: 16px;
+            drop-shadow-color: #00000033;
+            TouchArea { }
+            col := VerticalLayout {
+                padding: 4px;
+                for item in SidebarState.menu-items: MenuRow {
+                    item: item;
+                    picked => {
+                        SidebarState.menu-open = false;
+                        SidebarState.menu-pick(item.id);
+                    }
+                }
+            }
+        }
+    }
+    if SidebarState.confirm-open: Rectangle {
+        background: #00000066;
+        TouchArea { }
+        Rectangle {
+            width: 400px;
+            height: dcol.preferred-height + 8px;
+            border-radius: 14px;
+            background: Theme.composer;
+            border-width: 1px;
+            border-color: Theme.border;
+            drop-shadow-blur: 30px;
+            drop-shadow-color: #00000066;
+            dcol := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+                Text { text: SidebarState.confirm-title; color: Theme.fg; font-size: 16px; font-weight: 600; wrap: word-wrap; }
+                Text { text: SidebarState.confirm-body; color: Theme.fg-secondary; font-size: 13px; wrap: word-wrap; }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    Rectangle {
+                        width: ct.preferred-width + 28px;
+                        height: 30px;
+                        border-radius: Theme.radius-row;
+                        background: ca.has-hover ? Theme.pressed : Theme.selected;
+                        ct := Text { text: "キャンセル"; color: Theme.fg; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+                        ca := TouchArea { mouse-cursor: pointer; clicked => { SidebarState.cancel-confirm(); } }
+                    }
+                    Rectangle {
+                        width: ot.preferred-width + 28px;
+                        height: 30px;
+                        border-radius: Theme.radius-row;
+                        background: SidebarState.confirm-danger
+                            ? (oa.has-hover ? #e0484d : Theme.danger)
+                            : (oa.has-hover ? Theme.fg-secondary : Theme.fg);
+                        ot := Text {
+                            text: SidebarState.confirm-label;
+                            color: SidebarState.confirm-danger ? #ffffff : Theme.surface;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        oa := TouchArea { mouse-cursor: pointer; clicked => { SidebarState.confirm(); } }
+                    }
+                }
+            }
+        }
+    }
+}

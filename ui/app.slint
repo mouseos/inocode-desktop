@@ -8,10 +8,12 @@ import { TaskPanel } from "panel.slint";
 import { IntelligenceState, PermState, ProjectState, FullAccessDialog } from "pickers.slint";
 import { DiscoveryState, SettingsDialog } from "settings.slint";
 import { Tabs, TabStrip, TabHost } from "tabs.slint";
+import { MenuOverlay } from "menus.slint";
 
 // Rust から各タブの状態へ届くように、ここで書き出す(タブを足したら 1 行足す)。
 export { Tabs } from "tabs.slint";
 export { AppState, Message, Approval } from "state.slint";
+export { SidebarState } from "menus.slint";
 export { KnowledgeState } from "tabs/knowledge.slint";
 export { EvidenceState } from "tabs/evidence.slint";
 export { TeamState } from "tabs/team.slint";
@@ -166,5 +168,12 @@ export component AppWindow inherits Window {
         height: root.height;
         confirm => { AppState.confirm-full(); }
         cancel => { AppState.cancel-full(); }
+    }
+
+    MenuOverlay {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
     }
 }

@@ -55,6 +55,9 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         }
         Event::Account { logged_in, label } => {
             app.global::<AppState>().set_logged_in(logged_in);
+            // The avatar shows the first letter of the label (never the e-mail address).
+            let initial: String = label.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
+            app.global::<SidebarState>().set_account_initial(initial.into());
             app.global::<AppState>().set_account_label(label.into());
             if !logged_in {
                 app.global::<AppState>().set_status("未ログイン".into());
@@ -74,6 +77,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             refresh_pickers(app, &st);
         }
         Event::ThreadActive { id, title } => {
+            crate::sidebar::on_thread_active(&id);
             let mut st = state.borrow_mut();
             st.active = id;
             st.busy = false;
@@ -154,7 +158,8 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             }
         }
         // Rpc / Notify are delivered to the screen tabs (src/tabs) before apply().
-        Event::Rpc { .. } | Event::Notify { .. } => {}
+        Event::Rpc { tag, result } => crate::sidebar::on_rpc(app, &tag, &result),
+        Event::Notify { method, .. } => crate::sidebar::on_notify(&method),
         Event::Error(e) => {
             // A model found only through version discovery is not verified with InoCode:
             // when its turn fails, say so as part of the error.

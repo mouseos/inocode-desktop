@@ -4,6 +4,7 @@ mod client;
 mod callbacks;
 mod discovery;
 mod events;
+mod sidebar;
 mod state;
 mod tabs;
 mod view;

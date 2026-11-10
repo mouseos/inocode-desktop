@@ -73,16 +73,36 @@ pub(super) fn thread_title(thread: &Value) -> String {
 }
 
 pub fn parse_threads(result: &Value) -> Vec<ThreadInfo> {
+    let states = result.get("readStates");
     result
         .get("data")
         .and_then(Value::as_array)
         .map(|list| {
             list.iter()
                 .filter_map(|t| {
+                    let id = t.get("id")?.as_str()?.to_string();
+                    let read = states.and_then(|s| s.get(&id));
+                    let unread = read.and_then(|r| r.get("firstUnread")).map(|v| !v.is_null()).unwrap_or(false);
+                    let revision = read.and_then(|r| r.get("revision")).and_then(Value::as_str).unwrap_or("").to_string();
+                    let pinned = t.pointer("/section/name").and_then(Value::as_str) == Some("Pinned");
+                    let flags = t.pointer("/status/activeFlags").and_then(Value::as_array);
+                    let waiting = flags
+                        .map(|f| f.iter().filter_map(Value::as_str).any(|x| x.starts_with("waitingOn")))
+                        .unwrap_or(false);
+                    let status = match t.pointer("/status/type").and_then(Value::as_str) {
+                        Some("active") if waiting => 4,
+                        Some("active") => 1,
+                        Some("systemError") => 3,
+                        _ => 0,
+                    };
                     Some(ThreadInfo {
-                        id: t.get("id")?.as_str()?.to_string(),
                         title: thread_title(t),
                         cwd: t.get("cwd").and_then(Value::as_str).unwrap_or("").to_string(),
+                        id,
+                        pinned,
+                        unread,
+                        revision,
+                        status,
                     })
                 })
                 .collect()

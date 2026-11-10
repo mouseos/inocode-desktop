@@ -30,7 +30,7 @@ export component IconButton inherits Rectangle {
 }
 
 // Status marker at the end of a session row.
-// kind: 0 none, 1 working, 2 unread (blue dot), 3 error
+// kind: 0 none, 1 working, 2 unread (blue dot), 3 error, 4 needs you (yellow dot)
 export component StatusMark inherits Rectangle {
     in property <int> kind;
     width: root.kind == 0 ? 0px : 16px;
@@ -43,6 +43,12 @@ export component StatusMark inherits Rectangle {
         background: Theme.accent;
     }
     if root.kind == 3: Icon { text: Glyph.error; font-size: 14px; color: Theme.danger; }
+    if root.kind == 4: Rectangle {
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: Theme.warning;
+    }
 }
 
 export component NavRow inherits Rectangle {
@@ -53,8 +59,16 @@ export component NavRow inherits Rectangle {
     in property <length> indent: 0px;
     in property <int> status: 0;
     in property <bool> tree: false;
+    // A session row: the "…" button shows on hover and the right click opens the same menu.
+    in property <bool> has-menu: false;
+    in property <bool> editing: false;
+    in-out property <string> edit-text;
     callback clicked;
     callback action;
+    // Window position for the popup menu.
+    callback menu(length, length);
+    callback edit-accepted(string);
+    callback edit-cancelled;
 
     height: Theme.row-height;
     border-radius: Theme.radius-row;
@@ -65,6 +79,11 @@ export component NavRow inherits Rectangle {
     ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if root.has-menu && e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                root.menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
     }
     HorizontalLayout {
         padding-left: 4px + root.indent;
@@ -92,7 +111,40 @@ export component NavRow inherits Rectangle {
             color: Theme.fg;
         }
         if root.glyph == "" && !root.tree: Rectangle { width: 4px; }
-        Text {
+        if root.editing: Rectangle {
+            horizontal-stretch: 1;
+            border-radius: 4px;
+            background: Theme.composer;
+            border-width: 1px;
+            border-color: Theme.accent;
+            ti := TextInput {
+                x: 4px;
+                width: parent.width - 8px;
+                text <=> root.edit-text;
+                font-size: Theme.row-font;
+                color: Theme.fg;
+                vertical-alignment: center;
+                single-line: true;
+                accepted => { root.edit-accepted(self.text); }
+                key-pressed(e) => {
+                    if e.text == Key.Escape {
+                        root.edit-cancelled();
+                        return accept;
+                    }
+                    return reject;
+                }
+                changed has-focus => {
+                    if !self.has-focus {
+                        root.edit-accepted(self.text);
+                    }
+                }
+                init => {
+                    self.focus();
+                    self.select-all();
+                }
+            }
+        }
+        if !root.editing: Text {
             text: root.label;
             color: Theme.fg;
             font-size: Theme.row-font;
@@ -101,15 +153,21 @@ export component NavRow inherits Rectangle {
             min-width: 0px;
             horizontal-stretch: 1;
         }
-        StatusMark { kind: root.status; }
-        if root.selected || (ta.has-hover && root.action-glyph != ""): IconButton {
+        if !root.editing: StatusMark { kind: root.status; }
+        if !root.editing && (root.has-menu ? (root.selected || ta.has-hover) : (ta.has-hover && root.action-glyph != "")): btn := IconButton {
             glyph: root.action-glyph != "" ? root.action-glyph : Glyph.more-horiz;
             box-size: 20px;
             icon-size: 14px;
             y: (parent.height - self.height) / 2;
-            clicked => { root.action(); }
+            clicked => {
+                if root.has-menu {
+                    root.menu(self.absolute-position.x, self.absolute-position.y + self.height);
+                } else {
+                    root.action();
+                }
+            }
         }
-        if !root.selected && !ta.has-hover && root.action-glyph != "": Rectangle { width: 20px; }
+        if !root.editing && !root.has-menu && !ta.has-hover && root.action-glyph != "": Rectangle { width: 20px; }
     }
 }
 

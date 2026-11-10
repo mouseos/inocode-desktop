@@ -140,31 +140,46 @@ pub(crate) fn push(model: &VecModel<Message>, id: &str, role: &str, text: &str) 
 }
 
 pub(crate) fn rebuild_projects(app: &AppWindow, state: &State) {
-    // Group threads by the last component of their working directory.
+    let chat = |t: &ThreadInfo| {
+        let selected = t.id == state.active;
+        // Needs you, then working, then error, then unread.
+        let status = if selected && state.busy {
+            1
+        } else if t.status != 0 {
+            t.status
+        } else if t.unread && !selected {
+            2
+        } else {
+            0
+        };
+        ChatItem { id: t.id.as_str().into(), title: t.title.as_str().into(), status, selected, depth: 0 }
+    };
+    // Pinned sessions first, in their own group; the rest by the last component of the folder.
     let mut groups: BTreeMap<String, (String, Vec<ChatItem>)> = BTreeMap::new();
+    let mut pinned: Vec<ChatItem> = Vec::new();
     for t in &state.threads {
+        if t.pinned {
+            pinned.push(chat(t));
+            continue;
+        }
         let name = std::path::Path::new(&t.cwd)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| "(フォルダなし)".to_string());
-        let selected = t.id == state.active;
-        groups.entry(name).or_insert_with(|| (t.cwd.clone(), Vec::new())).1.push(ChatItem {
-            id: t.id.as_str().into(),
-            title: t.title.as_str().into(),
-            status: if selected && state.busy { 1 } else { 0 },
-            selected,
-            depth: 0,
-        });
+        groups.entry(name).or_insert_with(|| (t.cwd.clone(), Vec::new())).1.push(chat(t));
     }
-    let projects: Vec<ProjectItem> = groups
-        .into_iter()
-        .map(|(name, (cwd, chats))| ProjectItem {
-            name: name.into(),
-            cwd: cwd.into(),
-            chats: ModelRc::from(Rc::new(VecModel::from(chats))),
-        })
-        .collect();
+    let model = |chats: Vec<ChatItem>| ModelRc::from(Rc::new(VecModel::from(chats)));
+    let mut projects: Vec<ProjectItem> = Vec::new();
+    if !pinned.is_empty() {
+        projects.push(ProjectItem { name: "ピン留め".into(), cwd: "".into(), chats: model(pinned), pinned: true });
+    }
+    projects.extend(groups.into_iter().map(|(name, (cwd, chats))| ProjectItem {
+        name: name.into(),
+        cwd: cwd.into(),
+        chats: model(chats),
+        pinned: false,
+    }));
     app.global::<AppState>().set_projects(ModelRc::from(Rc::new(VecModel::from(projects))));
 }
 

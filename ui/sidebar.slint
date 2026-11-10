@@ -1,11 +1,12 @@
 import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, NavRow } from "widgets.slint";
+import { SidebarState } from "menus.slint";
 
 export struct ChatItem {
     id: string,
     title: string,
-    // 0 none, 1 working, 2 unread, 3 error
+    // 0 none, 1 working, 2 unread, 3 error, 4 needs you
     status: int,
     selected: bool,
     // 0 = session, 1 = child session (tree line)
@@ -16,10 +17,13 @@ export struct ProjectItem {
     name: string,
     cwd: string,
     chats: [ChatItem],
+    // The "Pinned" group at the top: no new-session button.
+    pinned: bool,
 }
 
 component GroupHeader inherits Rectangle {
     in property <string> label;
+    in property <bool> pinned: false;
     in-out property <bool> open: true;
     callback add;
     height: 28px;
@@ -46,8 +50,8 @@ component GroupHeader inherits Rectangle {
             color: Theme.fg-tertiary;
         }
         Rectangle { horizontal-stretch: 1; }
-        IconButton { glyph: Glyph.swap-vert; icon-size: 15px; y: 2px; }
-        IconButton { glyph: Glyph.add; icon-size: 17px; y: 2px; clicked => { root.add(); } }
+        if !root.pinned: IconButton { glyph: Glyph.swap-vert; icon-size: 15px; y: 2px; }
+        if !root.pinned: IconButton { glyph: Glyph.add; icon-size: 17px; y: 2px; clicked => { root.add(); } }
     }
 }
 
@@ -59,6 +63,7 @@ component ProjectGroup inherits VerticalLayout {
     spacing: Theme.stack-gap;
     GroupHeader {
         label: root.project.name;
+        pinned: root.project.pinned;
         open <=> root.open;
         add => { root.new-in(root.project.cwd); }
     }
@@ -70,7 +75,13 @@ component ProjectGroup inherits VerticalLayout {
             selected: chat.selected;
             tree: chat.depth > 0;
             indent: chat.depth > 0 ? 8px : 0px;
+            has-menu: true;
+            editing: SidebarState.rename-id == chat.id;
+            edit-text: chat.title;
             clicked => { root.open-thread(chat.id); }
+            menu(x, y) => { SidebarState.open-menu("thread", chat.id, x, y); }
+            edit-accepted(t) => { SidebarState.commit-rename(chat.id, t); }
+            edit-cancelled => { SidebarState.rename-id = ""; }
         }
     }
 }
@@ -127,6 +138,14 @@ export component Sidebar inherits Rectangle {
         }
 
         // Footer: account menu and settings.
+        Rectangle {
+            height: 44px;
+            acct := TouchArea {
+                x: 0px;
+                width: 200px;
+                mouse-cursor: pointer;
+                clicked => { SidebarState.open-menu("account", "", self.absolute-position.x + 6px, self.absolute-position.y); }
+            }
         HorizontalLayout {
             height: 44px;
             padding-top: 6px;
@@ -139,7 +158,7 @@ export component Sidebar inherits Rectangle {
                 y: 1px;
                 border-radius: 11px;
                 background: Theme.pressed;
-                Text { text: "I"; color: Theme.fg-secondary; font-size: 11px; }
+                Text { text: SidebarState.account-initial; color: Theme.fg-secondary; font-size: 11px; }
             }
             Text {
                 text: root.user-name;
@@ -163,6 +182,7 @@ export component Sidebar inherits Rectangle {
                 la := TouchArea { mouse-cursor: pointer; clicked => { root.login(); } }
             }
             IconButton { glyph: Glyph.settings; icon-size: 18px; clicked => { root.open-settings(); } }
+        }
         }
     }
 }

@@ -198,5 +198,15 @@ mod tests {
         println!("TEXT={text}");
         assert!(sent);
     }
-}
 
+    #[test]
+    fn thread_list_flags() {
+        let list = json!({"data":[
+            {"id":"a","preview":"x","cwd":"C:/p","section":{"id":"s","name":"Pinned"},"status":{"type":"active","activeFlags":["waitingOnApproval"]}},
+            {"id":"b","preview":"y","cwd":"C:/p","section":null,"status":{"type":"idle"}}
+        ],"readStates":{"b":{"firstUnread":{"type":"threadStart"},"revision":"r1"}}});
+        let t = parse_threads(&list);
+        assert!(t[0].pinned && t[0].status == 4 && !t[0].unread);
+        assert!(!t[1].pinned && t[1].unread && t[1].revision == "r1" && t[1].status == 0);
+    }
+}

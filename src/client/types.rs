@@ -24,6 +24,14 @@ pub struct ThreadInfo {
     pub id: String,
     pub title: String,
     pub cwd: String,
+    /// In the server-side "Pinned" section.
+    pub pinned: bool,
+    /// `readStates[id].firstUnread` is set.
+    pub unread: bool,
+    /// Revision of the read state, needed to mark it read or unread.
+    pub revision: String,
+    /// 0 idle, 1 running, 3 system error, 4 waiting for approval or input.
+    pub status: i32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -244,6 +252,8 @@ pub enum Command {
     SetDaybreak(bool),
     Login,
     OpenThread(String),
+    /// Reload the session list (thread/list).
+    ListThreads,
     Interrupt,
     Approve { key: String, decision: Decision },
     SwitchTransport,

@@ -137,7 +137,8 @@ impl<F: Fn(Event)> Session<'_, F> {
                     (self.on_event)(Event::TurnDone { interrupted: false });
                 }
             }
-            m if m.starts_with("inocode/") => {
+            // Session list changes (name, status, read state, archive, section) reach the sidebar.
+            m if m.starts_with("inocode/") || m.starts_with("thread/") => {
                 (self.on_event)(Event::Notify { method: m.to_string(), params: params.clone() });
             }
             _ => {}

@@ -5,6 +5,7 @@ use crate::view::*;
 use crate::*;
 
 pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
+    crate::sidebar::register(app, handle);
     let weak = app.as_weak();
     let h = handle.clone();
     app.on_submit(move |text| {
