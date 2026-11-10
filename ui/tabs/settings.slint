@@ -1,13 +1,140 @@
 import { Theme } from "../theme.slint";
+import { Icon, Glyph } from "../icons.slint";
+import { IconButton, Switch } from "../widgets.slint";
+import { AppState } from "../state.slint";
 
-// 設定タブ。このファイルと src/tabs/settings.rs だけを編集して実装する。
-// Rust 側から触る状態とコールバックは、下の global にまとめる
-// (Rust では app.global::<SettingsTabState>() で取得できる)。
+export struct FlagRow {
+    key: string,
+    label: string,
+    on: bool,
+}
 
 export global SettingsTabState {
-    // 例: in property <[Row]> rows;  callback refresh();
+    in property <[FlagRow]> flags;
+    in property <string> error;
+    callback set-flag(string, bool);
+    callback refresh;
+}
+
+component Heading inherits Text {
+    color: Theme.fg;
+    font-size: 12px;
+    font-weight: 600;
+    vertical-alignment: center;
+    height: 28px;
+}
+
+component SwitchRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> on;
+    callback toggled(bool);
+    height: 32px;
+    HorizontalLayout {
+        spacing: 12px;
+        Text { text: root.label; color: Theme.fg; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        Rectangle {
+            width: 28px;
+            Rectangle {
+                y: (parent.height - 16px) / 2;
+                height: 16px;
+                Switch { on: root.on; }
+            }
+        }
+    }
+    TouchArea { mouse-cursor: pointer; clicked => { root.toggled(!root.on); } }
+}
+
+component Line inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 12px;
+    height: 28px;
+    Text { text: root.label; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; width: 140px; }
+    Text { text: root.value; color: Theme.fg; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+}
+
+component Card inherits Rectangle {
+    background: Theme.bubble;
+    border-radius: Theme.radius-row + 2px;
+    height: col.preferred-height;
+    col := VerticalLayout {
+        padding: 10px;
+        padding-left: 14px;
+        padding-right: 14px;
+        @children
+    }
 }
 
 export component SettingsTab inherits Rectangle {
     background: Theme.surface;
+    Flickable {
+        content-height: page.preferred-height;
+        page := VerticalLayout {
+            width: min(parent.width, 760px);
+            alignment: start;
+            padding: 24px;
+            padding-top: 16px;
+            spacing: 6px;
+
+            if SettingsTabState.error != "": Text {
+                text: SettingsTabState.error;
+                color: Theme.danger;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+
+            Heading { text: "機能"; }
+            Card {
+                for flag in SettingsTabState.flags: SwitchRow {
+                    label: flag.label;
+                    on: flag.on;
+                    toggled(v) => { SettingsTabState.set-flag(flag.key, v); }
+                }
+            }
+
+            Rectangle { height: 8px; }
+            Heading { text: "モデルの探索"; }
+            Card {
+                Line { label: "基準のバージョン"; value: AppState.discovery.base == "" ? "—" : AppState.discovery.base; }
+                HorizontalLayout {
+                    spacing: 12px;
+                    height: 28px;
+                    Text { text: "探索の上限"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; width: 140px; }
+                    IconButton { glyph: "\u{e15b}"; enabled: AppState.discovery.headroom > 0; clicked => { AppState.headroom-down(); } }
+                    Text { text: AppState.discovery.limit; color: Theme.fg; font-size: 12px; vertical-alignment: center; }
+                    IconButton { glyph: Glyph.add; enabled: AppState.discovery.headroom < 10; clicked => { AppState.headroom-up(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                SwitchRow {
+                    label: "探索";
+                    on: AppState.discovery.enabled;
+                    toggled(v) => { AppState.toggle-discovery(); }
+                }
+                Line { label: "最後の探索"; value: AppState.discovery.last == "" ? "—" : AppState.discovery.last; }
+                HorizontalLayout {
+                    alignment: end;
+                    padding-top: 4px;
+                    Rectangle {
+                        width: rt.preferred-width + 28px;
+                        height: 30px;
+                        border-radius: Theme.radius-row;
+                        opacity: AppState.discovery.running ? 0.5 : 1.0;
+                        background: ra.has-hover ? Theme.pressed : Theme.selected;
+                        rt := Text {
+                            text: AppState.discovery.running ? "探索中…" : "今すぐ探索";
+                            color: Theme.fg;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        ra := TouchArea {
+                            enabled: !AppState.discovery.running;
+                            mouse-cursor: pointer;
+                            clicked => { AppState.run-discovery(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
