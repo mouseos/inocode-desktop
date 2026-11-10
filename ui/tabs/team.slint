@@ -1,4 +1,5 @@
 import { Theme } from "../theme.slint";
+import { Tag } from "g_widgets.slint";
 
 export struct AgentRow {
     name: string,
@@ -15,7 +16,22 @@ export struct MetricRow {
     value: string,
 }
 
+export struct ThreadMetricRow {
+    name: string,
+    wall: string,
+    tokens: string,
+    waits: string,
+    asks: string,
+}
+
 export global TeamState {
+    // 測定の期間: 0 = 24 時間、1 = 7 日、2 = 30 日、3 = すべて
+    in-out property <int> period: 0;
+    out property <[string]> periods: ["24 時間", "7 日", "30 日", "すべて"];
+    in property <[ThreadMetricRow]> thread-metrics;
+    in property <[MetricRow]> history;
+    in property <[MetricRow]> tasks;
+    callback period-changed(int);
     in property <[AgentRow]> agents;
     in property <bool> has-estimate: false;
     in property <string> speedup;
@@ -122,13 +138,35 @@ export component TeamTab inherits Rectangle {
                     Text { text: TeamState.reason; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
                 }
             }
+            if TeamState.tasks.length > 0: Rectangle { height: 8px; }
+            if TeamState.tasks.length > 0: Heading { text: "検出した作業"; }
+            if TeamState.tasks.length > 0: Rectangle {
+                height: tk.preferred-height;
+                border-radius: Theme.radius-row + 2px;
+                background: Theme.bubble;
+                tk := VerticalLayout {
+                    padding: 10px;
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    for t in TeamState.tasks: KeyValue { label: t.label; value: t.value; }
+                }
+            }
 
             if TeamState.agents.length > 0: Rectangle { height: 8px; }
             if TeamState.agents.length > 0: Heading { text: "社員"; }
             for agent in TeamState.agents: AgentCard { agent: agent; }
 
-            if TeamState.metrics.length > 0: Rectangle { height: 8px; }
-            if TeamState.metrics.length > 0: Heading { text: "測定"; }
+            Rectangle { height: 8px; }
+            Heading { text: "測定"; }
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for p[i] in TeamState.periods: Tag {
+                    label: p;
+                    selected: TeamState.period == i;
+                    clicked => { TeamState.period = i; TeamState.period-changed(i); }
+                }
+            }
             if TeamState.metrics.length > 0: Rectangle {
                 height: mt.preferred-height;
                 border-radius: Theme.radius-row + 2px;
@@ -138,6 +176,47 @@ export component TeamTab inherits Rectangle {
                     padding-left: 14px;
                     padding-right: 14px;
                     for m in TeamState.metrics: KeyValue { label: m.label; value: m.value; }
+                }
+            }
+            if TeamState.history.length > 0: Heading { text: "時間ごとの推移"; }
+            if TeamState.history.length > 0: Rectangle {
+                height: hs.preferred-height;
+                border-radius: Theme.radius-row + 2px;
+                background: Theme.bubble;
+                hs := VerticalLayout {
+                    padding: 10px;
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    for h in TeamState.history: KeyValue { label: h.label; value: h.value; }
+                }
+            }
+            if TeamState.thread-metrics.length > 0: Heading { text: "スレッド別"; }
+            if TeamState.thread-metrics.length > 0: Rectangle {
+                height: tm.preferred-height;
+                border-radius: Theme.radius-row + 2px;
+                background: Theme.bubble;
+                tm := VerticalLayout {
+                    padding: 10px;
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    HorizontalLayout {
+                        spacing: 10px;
+                        height: 22px;
+                        Text { text: "スレッド"; color: Theme.fg-tertiary; font-size: 11px; horizontal-stretch: 2; vertical-alignment: center; }
+                        Text { text: "経過時間"; color: Theme.fg-tertiary; font-size: 11px; horizontal-stretch: 1; vertical-alignment: center; }
+                        Text { text: "入力 / 出力"; color: Theme.fg-tertiary; font-size: 11px; horizontal-stretch: 1.6; vertical-alignment: center; }
+                        Text { text: "wait_agent"; color: Theme.fg-tertiary; font-size: 11px; width: 70px; vertical-alignment: center; }
+                        Text { text: "聞き返し"; color: Theme.fg-tertiary; font-size: 11px; width: 56px; vertical-alignment: center; }
+                    }
+                    for t in TeamState.thread-metrics: HorizontalLayout {
+                        spacing: 10px;
+                        height: 26px;
+                        Text { text: t.name; color: Theme.fg; font-size: 12px; horizontal-stretch: 2; vertical-alignment: center; overflow: elide; }
+                        Text { text: t.wall; color: Theme.fg; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; overflow: elide; }
+                        Text { text: t.tokens; color: Theme.fg; font-size: 12px; horizontal-stretch: 1.6; vertical-alignment: center; overflow: elide; }
+                        Text { text: t.waits; color: Theme.fg; font-size: 12px; width: 70px; vertical-alignment: center; }
+                        Text { text: t.asks; color: Theme.fg; font-size: 12px; width: 56px; vertical-alignment: center; }
+                    }
                 }
             }
         }

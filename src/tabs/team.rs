@@ -3,7 +3,7 @@
 
 use super::Host;
 use crate::client::Event;
-use crate::{AgentRow, AppWindow, MetricRow, TeamState};
+use crate::{AgentRow, AppWindow, MetricRow, TeamState, ThreadMetricRow};
 use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
@@ -12,12 +12,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const TAG_STATUS: &str = "team.status";
 const TAG_METRICS: &str = "team.metrics";
+const TAG_HISTORY: &str = "team.history";
 
 #[derive(Default)]
 struct Data {
     thread_id: String,
     agents: Vec<Value>,
     estimate: Option<Value>,
+    /// thread id -> title, from Event::Threads (names for the per-thread table).
+    titles: Vec<(String, String)>,
 }
 
 thread_local! {
@@ -25,20 +28,38 @@ thread_local! {
 }
 
 pub fn install(app: &AppWindow, host: &Host) {
-    let host = host.clone();
-    app.global::<TeamState>().on_refresh(move || request(&host));
+    let h = host.clone();
+    app.global::<TeamState>().on_refresh(move || request(&h, 0));
+    let h = host.clone();
+    app.global::<TeamState>().on_period_changed(move |i| request_metrics(&h, i));
 }
 
-pub fn opened(_app: &AppWindow, host: &Host) {
-    request(host);
+pub fn opened(app: &AppWindow, host: &Host) {
+    request(host, app.global::<TeamState>().get_period());
 }
 
-fn request(host: &Host) {
+/// since (RFC 3339) and the history bucket for a period index.
+fn period_params(period: i32, now: i64) -> (String, &'static str) {
+    match period {
+        1 => (rfc3339(now - 7 * 86400), "day"),
+        2 => (rfc3339(now - 30 * 86400), "day"),
+        3 => (rfc3339(0), "day"),
+        _ => (rfc3339(now - 24 * 3600), "hour"),
+    }
+}
+
+fn request_metrics(host: &Host, period: i32) {
+    let (since, bucket) = period_params(period, now_secs());
+    host.rpc(TAG_METRICS, "inocode/metrics/summary", json!({ "since": since }));
+    host.rpc(TAG_HISTORY, "inocode/metrics/history", json!({ "since": since, "bucket": bucket }));
+}
+
+fn request(host: &Host, period: i32) {
     let thread_id = DATA.with(|d| d.borrow().thread_id.clone());
     if !thread_id.is_empty() {
         host.rpc(TAG_STATUS, "inocode/team/status", json!({ "threadId": thread_id }));
     }
-    host.rpc(TAG_METRICS, "inocode/metrics/summary", json!({ "since": rfc3339(now_secs() - 24 * 3600) }));
+    request_metrics(host, period);
 }
 
 pub fn event(app: &AppWindow, host: &Host, event: &Event) {
@@ -55,7 +76,15 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
             render(app);
             // Only ask while the tab is showing.
             if app.global::<crate::Tabs>().get_current() == 3 {
-                request(host);
+                request(host, app.global::<TeamState>().get_period());
+            }
+        }
+        Event::Threads(list) => {
+            DATA.with(|d| d.borrow_mut().titles = list.iter().map(|t| (t.id.clone(), t.title.clone())).collect());
+        }
+        Event::Rpc { tag, result } if tag == TAG_HISTORY => {
+            if let Ok(v) = result {
+                set_history(app, v, app.global::<TeamState>().get_period());
             }
         }
         Event::Rpc { tag, result } if tag == TAG_STATUS => match result {
@@ -105,6 +134,10 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
     }
 }
 
+fn payload(v: &Value) -> &Value {
+    v.get("response").unwrap_or(v)
+}
+
 fn state_label(state: &str) -> &str {
     match state {
         "running" => "実行中",
@@ -129,6 +162,8 @@ fn render(app: &AppWindow) {
                     .get("ownedPaths")
                     .and_then(Value::as_array)
                     .map(|p| p.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("、"))
+                    .filter(|p| !p.is_empty())
+                    .map(|p| format!("担当パス: {p}"))
                     .unwrap_or_default();
                 let tokens = a
                     .get("tokens")
@@ -161,14 +196,33 @@ fn render(app: &AppWindow) {
                 };
                 ts.set_decision(decision.into());
                 ts.set_reason(e.get("reason").and_then(Value::as_str).unwrap_or("").into());
+                let tasks: Vec<MetricRow> =
+                    e.get("tasks").and_then(Value::as_array).map(|a| a.iter().map(task_row).collect()).unwrap_or_default();
+                ts.set_tasks(ModelRc::from(Rc::new(VecModel::from(tasks))));
             }
-            None => ts.set_has_estimate(false),
+            None => {
+                ts.set_has_estimate(false);
+                ts.set_tasks(ModelRc::from(Rc::new(VecModel::from(Vec::<MetricRow>::new()))));
+            }
         }
     });
 }
 
-fn set_metrics(app: &AppWindow, v: &Value) {
-    let c = v.get("counters").unwrap_or(&Value::Null);
+fn task_row(t: &Value) -> MetricRow {
+    let secs = t.get("estSeconds").and_then(Value::as_f64).unwrap_or(0.0) as i64;
+    let paths = t
+        .get("writePaths")
+        .and_then(Value::as_array)
+        .map(|p| p.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("、"))
+        .unwrap_or_default();
+    let mut value = format!("約 {}", duration(secs));
+    if !paths.is_empty() {
+        value.push_str(&format!(" · {paths}"));
+    }
+    MetricRow { label: t.get("name").and_then(Value::as_str).unwrap_or("").into(), value: value.into() }
+}
+
+fn counter_rows(c: &Value) -> Vec<MetricRow> {
     let n = |k: &str| c.get(k).and_then(Value::as_i64);
     let mut rows = Vec::new();
     let mut add = |label: &str, value: Option<String>| {
@@ -181,8 +235,82 @@ fn set_metrics(app: &AppWindow, v: &Value) {
     add("出力トークン", n("tokensOut").map(group));
     add("wait_agent の呼び出し", n("waitAgentCalls").map(|x| x.to_string()));
     add("聞き返し", n("clarifications").map(|x| x.to_string()));
+    add("停滞の検出", n("stallsDetected").map(|x| x.to_string()));
     add("誤検知", n("falsePositives").map(|x| x.to_string()));
-    app.global::<TeamState>().set_metrics(ModelRc::from(Rc::new(VecModel::from(rows))));
+    rows
+}
+
+fn thread_name(id: &str) -> String {
+    DATA.with(|d| d.borrow().titles.iter().find(|(i, _)| i == id).map(|(_, t)| t.clone()).filter(|t| !t.is_empty()))
+        .unwrap_or_else(|| id.to_string())
+}
+
+fn thread_rows(v: &Value) -> Vec<ThreadMetricRow> {
+    v.get("perThread")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .map(|t| {
+                    let c = t.get("counters").unwrap_or(&Value::Null);
+                    let n = |k: &str| c.get(k).and_then(Value::as_i64).unwrap_or(0);
+                    ThreadMetricRow {
+                        name: thread_name(t.get("threadId").and_then(Value::as_str).unwrap_or("")).into(),
+                        wall: duration(n("wallClockMs") / 1000).into(),
+                        tokens: format!("{} / {}", group(n("tokensIn")), group(n("tokensOut"))).into(),
+                        waits: n("waitAgentCalls").to_string().into(),
+                        asks: n("clarifications").to_string().into(),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn set_metrics(app: &AppWindow, v: &Value) {
+    let v = payload(v);
+    let rows = counter_rows(v.get("counters").unwrap_or(&Value::Null));
+    let ts = app.global::<TeamState>();
+    ts.set_metrics(ModelRc::from(Rc::new(VecModel::from(rows))));
+    ts.set_thread_metrics(ModelRc::from(Rc::new(VecModel::from(thread_rows(v)))));
+}
+
+/// "11-11 05:00" (UTC) for an hour bucket, "11-11" for a day bucket.
+fn bucket_label(ms: i64, daily: bool) -> String {
+    let t = rfc3339(ms / 1000);
+    if daily { t[5..10].to_string() } else { format!("{} {}:00", &t[5..10], &t[11..13]) }
+}
+
+fn history_rows(v: &Value, period: i32) -> Vec<MetricRow> {
+    let daily = period != 0;
+    let mut out: Vec<MetricRow> = payload(v)
+        .get("buckets")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .map(|b| {
+                    let c = b.get("counters").unwrap_or(&Value::Null);
+                    let n = |k: &str| c.get(k).and_then(Value::as_i64).unwrap_or(0);
+                    let value = format!(
+                        "経過 {} · 入力 {} · 出力 {} · 停滞 {}",
+                        duration(n("wallClockMs") / 1000),
+                        group(n("tokensIn")),
+                        group(n("tokensOut")),
+                        n("stallsDetected")
+                    );
+                    MetricRow {
+                        label: bucket_label(b.get("startMs").and_then(Value::as_i64).unwrap_or(0), daily).into(),
+                        value: value.into(),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.reverse();
+    out
+}
+
+fn set_history(app: &AppWindow, v: &Value, period: i32) {
+    app.global::<TeamState>().set_history(ModelRc::from(Rc::new(VecModel::from(history_rows(v, period)))));
 }
 
 fn group(n: i64) -> String {
@@ -283,5 +411,39 @@ mod tests {
         assert_eq!(group(412330), "412,330");
         assert_eq!(group(12), "12");
         assert_eq!(duration(3640), "1 時間 0 分");
+    }
+
+    fn fixture(name: &str) -> Value {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ref/contract-fixtures").join(name);
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn period_since_and_bucket() {
+        assert_eq!(period_params(0, 90_000), ("1970-01-02T01:00:00Z".to_string(), "hour"));
+        assert_eq!(period_params(1, 8 * 86400).1, "day");
+        assert_eq!(period_params(3, 5).0, "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn summary_rows_include_stalls_and_threads() {
+        let f = fixture("metrics-summary.json");
+        let rows = counter_rows(payload(&f).get("counters").unwrap());
+        assert!(rows.iter().any(|r| r.label == "停滞の検出" && r.value == "2"));
+        assert_eq!(thread_rows(payload(&f)).len(), 2);
+    }
+
+    #[test]
+    fn history_is_newest_first_with_stalls() {
+        let rows = history_rows(&fixture("metrics-history.json"), 0);
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].value.contains("停滞 2"));
+        assert!(rows[0].label.ends_with(":00"));
+    }
+
+    #[test]
+    fn task_row_shows_seconds_and_paths() {
+        let r = task_row(&json!({ "name": "GUI", "estSeconds": 600, "writePaths": ["a/", "b/"] }));
+        assert_eq!(r.value, "約 10 分 0 秒 · a/、b/");
     }
 }
