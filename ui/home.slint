@@ -80,7 +80,6 @@ component Composer inherits Rectangle {
             Rectangle {
                 min-height: max(44px, input.preferred-height);
                 max-height: 240px;
-                vertical-stretch: 1;
                 input := TextInput {
                     x: 4px;
                     width: parent.width - 8px;
@@ -199,7 +198,9 @@ export component Home inherits Rectangle {
             messages: root.messages;
         }
 
-        VerticalLayout {
+        Rectangle {
+            height: col.preferred-height;
+            col := VerticalLayout {
             spacing: 24px;
             padding-left: 16px;
             padding-right: 16px;
@@ -256,6 +257,7 @@ export component Home inherits Rectangle {
                 }
                 Rectangle { horizontal-stretch: 1; }
             }
+        }
         }
     }
 }

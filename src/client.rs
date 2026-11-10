@@ -192,13 +192,24 @@ fn handle_message(
                 on_event(Event::Delta(std::mem::take(pending)));
             }
             on_event(Event::TurnDone);
+            on_event(Event::Status("接続済み".into()));
         }
         Some("error") => {
             let message = value
                 .pointer("/params/error/message")
                 .and_then(Value::as_str)
                 .unwrap_or("error");
-            on_event(Event::Error(message.to_string()));
+            let will_retry = value
+                .pointer("/params/willRetry")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            // The server retries on its own; show progress in the status area
+            // and keep the conversation free of transient errors.
+            if will_retry {
+                on_event(Event::Status(message.to_string()));
+            } else {
+                on_event(Event::Error(message.to_string()));
+            }
         }
         _ => {}
     }
