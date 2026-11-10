@@ -24,7 +24,7 @@ use session::supervise;
 use std::sync::mpsc;
 use std::time::Duration;
 
-pub use parse::{history_from_thread, parse_account, parse_models, parse_threads, rate_limit_text, tool_text};
+pub use parse::{history_from_thread, parse_account, parse_models, parse_threads, rate_limit_text, tool_detail, tool_text};
 pub use transport::{base_client_version, find_inocode, probe_models};
 pub use types::*;
 
@@ -48,7 +48,12 @@ mod tests {
     fn command_item_text() {
         let item = json!({"type":"commandExecution","id":"a","command":"dir","status":"completed","exitCode":2});
         assert_eq!(tool_text(&item).unwrap(), "実行: dir — 完了 (終了コード 2)");
-        assert!(tool_text(&json!({"type":"reasoning"})).is_none());
+        assert_eq!(tool_text(&json!({"type":"reasoning","status":"completed"})).unwrap(), "思考しました");
+        assert!(tool_text(&json!({"type":"userMessage"})).is_none());
+        let out = json!({"type":"commandExecution","command":"dir","aggregatedOutput":"a\nb"});
+        assert_eq!(tool_detail(&out), "$ dir\na\nb");
+        let c = json!({"type":"collabAgentToolCall","tool":"wait","status":"inProgress","agentsStates":{"x":{"status":"running","message":null}}});
+        assert_eq!(tool_text(&c).unwrap(), "待機中 (1 件実行中)");
     }
 
     #[test]

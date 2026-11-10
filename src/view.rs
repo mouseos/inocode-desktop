@@ -136,7 +136,7 @@ pub(crate) fn messages_with<R>(app: &AppWindow, f: impl FnOnce(&VecModel<Message
 }
 
 pub(crate) fn push(model: &VecModel<Message>, id: &str, role: &str, text: &str) {
-    model.push(Message { id: id.into(), role: role.into(), text: text.into() });
+    model.push(Message { id: id.into(), role: role.into(), text: text.into(), detail: "".into() });
 }
 
 pub(crate) fn rebuild_projects(app: &AppWindow, state: &State) {
@@ -302,3 +302,37 @@ pub(crate) fn start_discovery(app: &AppWindow, force: bool) {
     });
 }
 
+
+/// At most this many trailing characters of a tool body are shown.
+const DETAIL_MAX: usize = 12000;
+
+pub(crate) fn clip_detail(text: &str) -> String {
+    let n = text.chars().count();
+    if n <= DETAIL_MAX {
+        return text.to_string();
+    }
+    let tail: String = text.chars().skip(n - DETAIL_MAX).collect();
+    format!("…（先頭 {} 文字を省略）\n{tail}", n - DETAIL_MAX)
+}
+
+/// Insert or update a tool row by id (keeps its place when it already exists).
+pub(crate) fn upsert_tool(model: &VecModel<Message>, id: &str, text: &str, detail: Option<&str>) {
+    for i in 0..model.row_count() {
+        if let Some(mut row) = model.row_data(i) {
+            if row.role == "tool" && row.id == id {
+                row.text = text.into();
+                if let Some(d) = detail {
+                    row.detail = clip_detail(d).into();
+                }
+                model.set_row_data(i, row);
+                return;
+            }
+        }
+    }
+    model.push(Message {
+        id: id.into(),
+        role: "tool".into(),
+        text: text.into(),
+        detail: detail.map(clip_detail).unwrap_or_default().into(),
+    });
+}

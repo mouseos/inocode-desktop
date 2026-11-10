@@ -4,6 +4,7 @@ import { IconButton, Chip, SelectChip } from "widgets.slint";
 import { IntelligenceMenu, PermMenu, LocationRow, IntelligenceState, PermState, ProjectState } from "pickers.slint";
 import { AppState, Message, Approval } from "state.slint";
 import { MessageActions } from "chat_actions.slint";
+import { ToolRow } from "chat_items.slint";
 
 // InoCode mark: a ring with a dot, drawn as vector paths.
 component Logo inherits Rectangle {
@@ -310,12 +311,7 @@ component ChatView inherits Rectangle {
                         color: Theme.fg;
                         font-size: Theme.body-font;
                     }
-                    if m.role == "tool": HorizontalLayout {
-                        spacing: 2px;
-                        Text { text: m.text; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
-                        Icon { width: 14px; text: Glyph.chevron-right; font-size: 14px; color: Theme.fg-secondary; }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
+                    if m.role == "tool": ToolRow { text: m.text; detail: m.detail; index: mi; }
                     if m.role != "tool": ActionRow { user: m.role == "user"; index: mi; }
                 }
                 Rectangle { horizontal-stretch: 1; }

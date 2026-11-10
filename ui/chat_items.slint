@@ -1,0 +1,62 @@
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+import { IconButton } from "widgets.slint";
+import { MessageActions } from "chat_actions.slint";
+
+// One tool / thinking / plan / diff row. A row with a body opens on click and shows the body
+// (command output, changed files, reasoning summary, plan steps) with a copy button.
+export component ToolRow inherits VerticalLayout {
+    in property <string> text;
+    in property <string> detail;
+    in property <int> index;
+    property <bool> open: false;
+    property <bool> expandable: root.detail != "";
+    spacing: 4px;
+
+    Rectangle {
+        height: 22px;
+        HorizontalLayout {
+            spacing: 2px;
+            Text {
+                text: root.text;
+                color: Theme.fg-secondary;
+                font-size: 12px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+            }
+            if root.expandable: Icon {
+                width: 14px;
+                text: root.open ? Glyph.expand-more : Glyph.chevron-right;
+                font-size: 14px;
+                color: Theme.fg-secondary;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if root.open: IconButton {
+                glyph: Glyph.copy;
+                box-size: 22px;
+                icon-size: 14px;
+                clicked => { MessageActions.act("copy-detail", root.index); }
+            }
+        }
+        if root.expandable: TouchArea {
+            width: root.open ? parent.width - 26px : parent.width;
+            mouse-cursor: pointer;
+            clicked => { root.open = !root.open; }
+        }
+    }
+    if root.open && root.expandable: Rectangle {
+        border-radius: 8px;
+        background: Theme.bubble;
+        VerticalLayout {
+            padding: 8px;
+            Text {
+                text: root.detail;
+                wrap: word-wrap;
+                color: Theme.fg;
+                font-family: "Consolas";
+                font-size: 12px;
+            }
+        }
+    }
+}

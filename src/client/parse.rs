@@ -53,7 +53,124 @@ pub fn tool_text(item: &Value) -> Option<String> {
             let tool = item.get("tool").and_then(Value::as_str).unwrap_or("");
             Some(format!("ツール {tool}{suffix}"))
         }
+        // Claude: "Thinking…" while it runs, "Thought for {s}s" afterwards.
+        "reasoning" => {
+            let ms = |k: &str| item.get(k).and_then(Value::as_i64);
+            Some(match (ms("startedAtMs"), ms("completedAtMs")) {
+                (Some(a), Some(b)) if b >= a => format!("{}秒間思考しました", ((b - a) + 500) / 1000),
+                _ if item.get("status").and_then(Value::as_str) == Some("completed") => "思考しました".to_string(),
+                _ => "思考中…".to_string(),
+            })
+        }
+        "plan" => Some("プラン".to_string()),
+        "contextCompaction" => Some("コンテキストを圧縮しました".to_string()),
+        "webSearch" => {
+            let q = item
+                .get("query")
+                .and_then(Value::as_str)
+                .or_else(|| item.pointer("/action/query").and_then(Value::as_str))
+                .unwrap_or("");
+            Some(if q.is_empty() { "ウェブ検索".to_string() } else { format!("ウェブ検索: {q}") })
+        }
+        "imageView" => Some(format!("画像を表示: {}", item.get("path").and_then(Value::as_str).unwrap_or(""))),
+        "collabAgentToolCall" => {
+            let states = item.get("agentsStates").and_then(Value::as_object);
+            let count = |want: &[&str]| {
+                states
+                    .map(|m| m.values().filter(|v| want.contains(&v.get("status").and_then(Value::as_str).unwrap_or(""))).count())
+                    .unwrap_or(0)
+            };
+            let done = item.get("status").and_then(Value::as_str) != Some("inProgress");
+            Some(match item.get("tool").and_then(Value::as_str).unwrap_or("") {
+                "spawnAgent" => "サブエージェントを起動".to_string(),
+                "wait" if done => format!("待機が完了 ({} 件完了)", count(&["completed", "errored", "shutdown", "interrupted"])),
+                "wait" => format!("待機中 ({} 件実行中)", count(&["running", "pendingInit"])),
+                "sendInput" | "sendMessage" | "followupTask" => "サブエージェントへメッセージを送信".to_string(),
+                "closeAgent" => "サブエージェントを終了".to_string(),
+                "interruptAgent" => "サブエージェントを中断".to_string(),
+                "resumeAgent" => "サブエージェントを再開".to_string(),
+                _ => "サブエージェントの一覧".to_string(),
+            })
+        }
+        "subAgentActivity" => {
+            let path = item.get("agentPath").and_then(Value::as_str).unwrap_or("");
+            let what = match item.get("kind").and_then(Value::as_str).unwrap_or("") {
+                "started" => "が起動",
+                "interacted" => "が応答",
+                "interrupted" => "が中断",
+                "completed" => "が完了",
+                _ => "",
+            };
+            Some(format!("サブエージェント {path} {what}"))
+        }
         _ => None,
+    }
+}
+
+/// The body shown when a tool row is expanded.
+pub fn tool_detail(item: &Value) -> String {
+    let text = |k: &str| item.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    match item.get("type").and_then(Value::as_str).unwrap_or("") {
+        "commandExecution" => {
+            let out = text("aggregatedOutput");
+            if out.is_empty() {
+                format!("$ {}", text("command"))
+            } else {
+                format!("$ {}\n{}", text("command"), out)
+            }
+        }
+        "fileChange" => item
+            .get("changes")
+            .and_then(Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .map(|c| {
+                        let kind = match c.pointer("/kind/type").and_then(Value::as_str) {
+                            Some("add") => "追加",
+                            Some("delete") => "削除",
+                            _ => "変更",
+                        };
+                        format!(
+                            "{kind} {}\n{}",
+                            c.get("path").and_then(Value::as_str).unwrap_or(""),
+                            c.get("diff").and_then(Value::as_str).unwrap_or("")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default(),
+        "mcpToolCall" | "dynamicToolCall" => {
+            let mut out = String::new();
+            if let Some(a) = item.get("arguments").filter(|a| !a.is_null()) {
+                out.push_str(&format!("引数: {a}\n"));
+            }
+            if let Some(r) = item.get("result").filter(|r| !r.is_null()) {
+                out.push_str(&format!("結果: {r}\n"));
+            }
+            if let Some(e) = item.get("error").filter(|e| !e.is_null()) {
+                out.push_str(&format!("エラー: {e}\n"));
+            }
+            out.trim_end().to_string()
+        }
+        "reasoning" => item
+            .get("summary")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n\n"))
+            .unwrap_or_default(),
+        "plan" => text("text"),
+        "collabAgentToolCall" => {
+            let mut out = text("prompt");
+            if let Some(m) = item.get("agentsStates").and_then(Value::as_object) {
+                for (agent, st) in m {
+                    let status = st.get("status").and_then(Value::as_str).unwrap_or("");
+                    let msg = st.get("message").and_then(Value::as_str).unwrap_or("");
+                    out.push_str(&format!("\n{agent}: {status} {msg}"));
+                }
+            }
+            out.trim().to_string()
+        }
+        _ => String::new(),
     }
 }
 
@@ -130,15 +247,15 @@ pub fn history_from_thread(thread: &Value) -> Vec<Msg> {
                                 .join("\n")
                         })
                         .unwrap_or_default();
-                    out.push(Msg { id, role: "user".into(), text });
+                    out.push(Msg { id, role: "user".into(), text, detail: String::new() });
                 }
                 Some("agentMessage") => {
                     let text = item.get("text").and_then(Value::as_str).unwrap_or("").to_string();
-                    out.push(Msg { id, role: "assistant".into(), text });
+                    out.push(Msg { id, role: "assistant".into(), text, detail: String::new() });
                 }
                 _ => {
                     if let Some(text) = tool_text(&item) {
-                        out.push(Msg { id, role: "tool".into(), text });
+                        out.push(Msg { id, role: "tool".into(), text, detail: tool_detail(&item) });
                     }
                 }
             }

@@ -84,7 +84,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::History(list) => {
             let rows: Vec<Message> = list
                 .into_iter()
-                .map(|Msg { id, role, text }| Message { id: id.into(), role: role.into(), text: text.into() })
+                .map(|Msg { id, role, text, detail }| Message { id: id.into(), role: role.into(), text: text.into(), detail: clip_detail(&detail).into() })
                 .collect();
             app.global::<AppState>().set_messages(ModelRc::from(Rc::new(VecModel::from(rows))));
             app.global::<AppState>().set_approvals(ModelRc::from(Rc::new(VecModel::<Approval>::default())));
@@ -106,19 +106,27 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             });
             app.invoke_scroll_bottom();
         }
-        Event::Tool { id, text } => {
+        Event::Tool { id, text, detail } => {
+            // A finished item brings its whole body; an empty one keeps what streamed in.
+            messages_with(app, |model| upsert_tool(model, &id, &text, if detail.is_empty() { None } else { Some(&detail) }));
+            app.invoke_scroll_bottom();
+        }
+        Event::ToolDelta { id, delta } => {
             messages_with(app, |model| {
                 for i in 0..model.row_count() {
                     if let Some(mut row) = model.row_data(i) {
                         if row.role == "tool" && row.id == id.as_str() {
-                            row.text = text.as_str().into();
+                            let joined = format!("{}{}", row.detail, delta);
+                            row.detail = clip_detail(&joined).into();
                             model.set_row_data(i, row);
                             return;
                         }
                     }
                 }
-                push(model, &id, "tool", &text);
             });
+        }
+        Event::Note { id, text, detail } => {
+            messages_with(app, |model| upsert_tool(model, &id, &text, Some(&detail)));
             app.invoke_scroll_bottom();
         }
         Event::TurnStarted => {
@@ -132,6 +140,18 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             st.busy = false;
             app.global::<AppState>().set_busy(false);
             rebuild_projects(app, &st);
+            // The turn's plan and file changes end up at the bottom, and the next turn starts new rows.
+            messages_with(app, |model| {
+                for key in ["turn-diff", "turn-plan"] {
+                    if let Some(i) = (0..model.row_count()).find(|i| model.row_data(*i).map(|r| r.role == "tool" && r.id == key).unwrap_or(false)) {
+                        if let Some(mut row) = model.row_data(i) {
+                            model.remove(i);
+                            row.id = format!("{key}-done").into();
+                            model.push(row);
+                        }
+                    }
+                }
+            });
             if interrupted {
                 messages_with(app, |m| push(m, "", "tool", "中断しました"));
                 app.invoke_scroll_bottom();

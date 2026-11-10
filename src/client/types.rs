@@ -17,6 +17,8 @@ pub struct Msg {
     pub id: String,
     pub role: String,
     pub text: String,
+    /// Body of an expandable tool row.
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -205,7 +207,11 @@ pub enum Event {
     AssistantStart,
     Delta(String),
     /// Insert or update a command / tool row.
-    Tool { id: String, text: String },
+    Tool { id: String, text: String, detail: String },
+    /// Streamed text for the body of a tool row (command output, reasoning summary, plan text).
+    ToolDelta { id: String, delta: String },
+    /// A row that is not an item: the turn's plan, the turn's file diff, a warning.
+    Note { id: String, text: String, detail: String },
     TurnStarted,
     TurnDone { interrupted: bool },
     Approval { key: String, title: String, detail: String },

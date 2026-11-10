@@ -62,9 +62,53 @@ impl<F: Fn(Event)> Session<'_, F> {
                     }
                     _ => {
                         if let (Some(id), Some(text)) = (item_id(item), tool_text(item)) {
-                            (self.on_event)(Event::Tool { id, text });
+                            (self.on_event)(Event::Tool { id, text, detail: tool_detail(item) });
                         }
                     }
+                }
+            }
+            "item/commandExecution/outputDelta" | "item/reasoning/summaryTextDelta" | "item/plan/delta" => {
+                let (id, delta) = (
+                    params.get("itemId").and_then(Value::as_str),
+                    params.get("delta").and_then(Value::as_str),
+                );
+                if let (Some(id), Some(delta)) = (id, delta) {
+                    (self.on_event)(Event::ToolDelta { id: id.to_string(), delta: delta.to_string() });
+                }
+            }
+            "turn/diff/updated" => {
+                let diff = params.get("diff").and_then(Value::as_str).unwrap_or("");
+                let files = diff.lines().filter(|l| l.starts_with("diff --git ")).count();
+                if files > 0 {
+                    (self.on_event)(Event::Note {
+                        id: "turn-diff".into(),
+                        text: format!("{files} 件のファイルを編集しました"),
+                        detail: diff.to_string(),
+                    });
+                }
+            }
+            "turn/plan/updated" => {
+                let steps = params.get("plan").and_then(Value::as_array).cloned().unwrap_or_default();
+                let done = steps.iter().filter(|s| s.get("status").and_then(Value::as_str) == Some("completed")).count();
+                let mut detail = params.get("explanation").and_then(Value::as_str).unwrap_or("").to_string();
+                for s in &steps {
+                    let mark = match s.get("status").and_then(Value::as_str) {
+                        Some("completed") => "完了",
+                        Some("inProgress") => "進行中",
+                        _ => "未着手",
+                    };
+                    detail.push_str(&format!("\n[{mark}] {}", s.get("step").and_then(Value::as_str).unwrap_or("")));
+                }
+                (self.on_event)(Event::Note {
+                    id: "turn-plan".into(),
+                    text: format!("{done}/{} 件のタスク", steps.len()),
+                    detail: detail.trim().to_string(),
+                });
+            }
+            "warning" => {
+                let message = params.get("message").and_then(Value::as_str).unwrap_or("");
+                if !message.is_empty() {
+                    (self.on_event)(Event::Note { id: format!("warning:{message}"), text: format!("警告: {message}"), detail: String::new() });
                 }
             }
             "item/agentMessage/delta" => {
@@ -85,7 +129,7 @@ impl<F: Fn(Event)> Session<'_, F> {
                     }
                 } else if let (Some(id), Some(text)) = (item_id(item), tool_text(item)) {
                     self.flush();
-                    (self.on_event)(Event::Tool { id, text });
+                    (self.on_event)(Event::Tool { id, text, detail: tool_detail(item) });
                 }
             }
             "turn/completed" => {
