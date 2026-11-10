@@ -73,3 +73,23 @@ fn fixture(method: &str) -> Result<Value, String> {
     }
     Err(format!("モック: {method} のフィクスチャがありません ({})", dir.display()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn candidate_names_include_area_dash_name() {
+        let names: Vec<String> = candidates("inocode/knowledge/list").iter().map(|p| p.display().to_string()).collect();
+        assert!(names.contains(&"knowledge-list.json".to_string()));
+    }
+
+    #[test]
+    fn reads_repo_fixtures() {
+        if let Some(dir) = fixture_dir() {
+            if dir.join("knowledge-list.json").exists() {
+                assert!(fixture("inocode/knowledge/list").is_ok());
+            }
+        }
+    }
+}
