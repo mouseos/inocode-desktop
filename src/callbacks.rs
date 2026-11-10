@@ -19,20 +19,20 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         app.invoke_scroll_bottom();
     });
     let h = handle.clone();
-    app.on_new_chat(move || h.send(Command::NewThread));
+    app.global::<AppState>().on_new_chat(move || h.send(Command::NewThread));
     let h = handle.clone();
-    app.on_open_thread(move |id| h.send(Command::OpenThread(id.to_string())));
+    app.global::<AppState>().on_open_thread(move |id| h.send(Command::OpenThread(id.to_string())));
     let h = handle.clone();
-    app.on_interrupt(move || h.send(Command::Interrupt));
+    app.global::<AppState>().on_interrupt(move || h.send(Command::Interrupt));
     let h = handle.clone();
-    app.on_decide(move |key, decision| {
+    app.global::<AppState>().on_decide(move |key, decision| {
         h.send(Command::Approve { key: key.to_string(), decision: Decision::parse(&decision) })
     });
 
     // ---- composer pickers (model, effort, speed, Daybreak, permissions, project)
     let weak = app.as_weak();
     let h = handle.clone();
-    app.on_pick_model(move |i| {
+    app.global::<AppState>().on_pick_model(move |i| {
         let Some(app) = weak.upgrade() else { return };
         let before = STATE.with(|s| s.borrow().settings.daybreak);
         change(&app, &h, |st| {
@@ -56,7 +56,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         }
     });
     let weak = app.as_weak();
-    app.on_search_model(move |q| {
+    app.global::<AppState>().on_search_model(move |q| {
         let Some(app) = weak.upgrade() else { return };
         STATE.with(|s| {
             let mut st = s.borrow_mut();
@@ -66,7 +66,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     });
     let weak = app.as_weak();
     let h = handle.clone();
-    app.on_pick_default(move || {
+    app.global::<AppState>().on_pick_default(move || {
         let Some(app) = weak.upgrade() else { return };
         let before = STATE.with(|s| s.borrow().settings.daybreak);
         change(&app, &h, |st| {
@@ -83,7 +83,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     });
     let weak = app.as_weak();
     let h = handle.clone();
-    app.on_reset_model(move || {
+    app.global::<AppState>().on_reset_model(move || {
         let Some(app) = weak.upgrade() else { return };
         change(&app, &h, |st| {
             st.settings.model = None;
@@ -93,7 +93,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     });
     let weak = app.as_weak();
     let h = handle.clone();
-    app.on_pick_effort(move |i| {
+    app.global::<AppState>().on_pick_effort(move |i| {
         let Some(app) = weak.upgrade() else { return };
         change(&app, &h, |st| {
             let visible = visible_models(st);
@@ -105,32 +105,32 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     });
     let weak = app.as_weak();
     let h = handle.clone();
-    app.on_pick_perm(move |i| {
+    app.global::<AppState>().on_pick_perm(move |i| {
         let Some(app) = weak.upgrade() else { return };
         let Some(perm) = PERM_ORDER.get(i as usize).copied() else { return };
         if perm == Perm::Full {
             // Full access asks for confirmation first.
-            app.set_full_confirm_open(true);
+            app.global::<AppState>().set_full_confirm_open(true);
             return;
         }
         change(&app, &h, |st| st.settings.perm = Some(perm));
     });
     let weak = app.as_weak();
     let h = handle.clone();
-    app.on_confirm_full(move || {
+    app.global::<AppState>().on_confirm_full(move || {
         let Some(app) = weak.upgrade() else { return };
-        app.set_full_confirm_open(false);
+        app.global::<AppState>().set_full_confirm_open(false);
         change(&app, &h, |st| st.settings.perm = Some(Perm::Full));
     });
     let weak = app.as_weak();
-    app.on_cancel_full(move || {
+    app.global::<AppState>().on_cancel_full(move || {
         if let Some(app) = weak.upgrade() {
-            app.set_full_confirm_open(false);
+            app.global::<AppState>().set_full_confirm_open(false);
         }
     });
     let weak = app.as_weak();
     let h = handle.clone();
-    app.on_pick_project(move |i| {
+    app.global::<AppState>().on_pick_project(move |i| {
         let Some(app) = weak.upgrade() else { return };
         let cwd = STATE.with(|s| s.borrow().project_cwds.get(i as usize).cloned());
         if let Some(cwd) = cwd {
@@ -140,7 +140,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     });
 
     let weak = app.as_weak();
-    app.on_toggle_discovery(move || {
+    app.global::<AppState>().on_toggle_discovery(move || {
         let Some(app) = weak.upgrade() else { return };
         STATE.with(|s| {
             let mut st = s.borrow_mut();
@@ -162,22 +162,22 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             start_discovery(&app, false);
         };
         if up {
-            app.on_headroom_up(handler);
+            app.global::<AppState>().on_headroom_up(handler);
         } else {
-            app.on_headroom_down(handler);
+            app.global::<AppState>().on_headroom_down(handler);
         }
     }
     let weak = app.as_weak();
-    app.on_run_discovery(move || {
+    app.global::<AppState>().on_run_discovery(move || {
         if let Some(app) = weak.upgrade() {
             start_discovery(&app, true);
         }
     });
 
     let h = handle.clone();
-    app.on_login(move || h.send(Command::Login));
+    app.global::<AppState>().on_login(move || h.send(Command::Login));
     let h = handle.clone();
-    app.on_new_chat_in(move |cwd| h.send(Command::NewThreadIn(cwd.to_string())));
+    app.global::<AppState>().on_new_chat_in(move |cwd| h.send(Command::NewThreadIn(cwd.to_string())));
     let h = handle.clone();
-    app.on_switch_transport(move || h.send(Command::SwitchTransport));
+    app.global::<AppState>().on_switch_transport(move || h.send(Command::SwitchTransport));
 }

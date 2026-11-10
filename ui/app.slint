@@ -2,7 +2,8 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton } from "widgets.slint";
 import { Sidebar, ChatItem, ProjectItem } from "sidebar.slint";
-import { Home, Message, Approval } from "home.slint";
+import { Home } from "home.slint";
+import { AppState } from "state.slint";
 import { TaskPanel } from "panel.slint";
 import { IntelligenceState, PermState, ProjectState, FullAccessDialog } from "pickers.slint";
 import { DiscoveryState, SettingsDialog } from "settings.slint";
@@ -10,6 +11,7 @@ import { Tabs, TabStrip, TabHost } from "tabs.slint";
 
 // Rust から各タブの状態へ届くように、ここで書き出す(タブを足したら 1 行足す)。
 export { Tabs } from "tabs.slint";
+export { AppState, Message, Approval } from "state.slint";
 export { KnowledgeState } from "tabs/knowledge.slint";
 export { EvidenceState } from "tabs/evidence.slint";
 export { TeamState } from "tabs/team.slint";
@@ -28,50 +30,8 @@ export component AppWindow inherits Window {
     in-out property <bool> sidebar-open: true;
     in-out property <bool> panel-open: true;
     in-out property <string> prompt;
-    in-out property <[Message]> messages;
-    in property <string> status: "接続中…";
-    in property <string> session-title: "新しいセッション";
     callback submit(string);
     public function scroll-bottom() { home.scroll-bottom(); }
-
-    in property <[ProjectItem]> projects;
-    in property <[Approval]> approvals;
-    in property <bool> busy: false;
-    // 0 info, 1 ok, 2 warning, 3 error
-    in property <int> status-level: 0;
-    in property <string> transport: "WS";
-    in property <IntelligenceState> intelligence;
-    in property <PermState> perm;
-    in property <ProjectState> project;
-    in property <bool> full-confirm-open: false;
-    in-out property <bool> settings-open: false;
-    in property <DiscoveryState> discovery;
-    callback toggle-discovery;
-    callback headroom-up;
-    callback headroom-down;
-    callback run-discovery;
-    in property <int> context-percent: 0;
-    in property <string> usage-text;
-    in property <string> rate-text;
-    in property <string> cwd-text;
-    in property <string> account-label: "ローカル";
-    in property <bool> logged-in: true;
-    callback search-model(string);
-    callback pick-effort(int);
-    callback pick-model(int);
-    callback pick-default;
-    callback reset-model;
-    callback pick-perm(int);
-    callback pick-project(int);
-    callback confirm-full;
-    callback cancel-full;
-    callback login;
-    callback new-chat-in(string);
-    callback new-chat;
-    callback open-thread(string);
-    callback interrupt;
-    callback decide(string, string);
-    callback switch-transport;
 
     VerticalLayout {
         // Chrome bar: menu, sidebar toggle, history and mode switch on the left,
@@ -109,7 +69,7 @@ export component AppWindow inherits Window {
                     TabStrip { }
                     Rectangle { width: 12px; }
                     if Tabs.current == 0: Text {
-                        text: root.session-title;
+                        text: AppState.session-title;
                         color: Theme.fg;
                         font-size: 13px;
                         font-weight: 500;
@@ -123,9 +83,9 @@ export component AppWindow inherits Window {
                         border-radius: Theme.radius-row;
                         background: sta.has-hover ? Theme.hover : transparent;
                         st := Text {
-                            text: root.status + " · " + root.transport;
-                            color: root.status-level == 3 ? Theme.danger
-                                : root.status-level == 2 ? Theme.warning
+                            text: AppState.status + " · " + AppState.transport;
+                            color: AppState.status-level == 3 ? Theme.danger
+                                : AppState.status-level == 2 ? Theme.warning
                                 : Theme.fg-tertiary;
                             font-size: 12px;
                             vertical-alignment: center;
@@ -133,7 +93,7 @@ export component AppWindow inherits Window {
                         }
                         sta := TouchArea {
                             mouse-cursor: MouseCursor.pointer;
-                            clicked => { root.switch-transport(); }
+                            clicked => { AppState.switch-transport(); }
                         }
                     }
                     Rectangle { width: 6px; }
@@ -158,42 +118,25 @@ export component AppWindow inherits Window {
                 height: parent.height;
                 visible: Tabs.current == 0;
                 if root.sidebar-open: Sidebar {
-                    projects: root.projects;
-                    user-name: root.account-label;
-                    logged-in: root.logged-in;
-                    login => { root.login(); }
-                    open-settings => { root.settings-open = true; }
-                    new-chat-in(cwd) => { root.new-chat-in(cwd); }
-                    new-chat => { root.new-chat(); }
-                    open-thread(id) => { root.open-thread(id); }
+                    projects: AppState.projects;
+                    user-name: AppState.account-label;
+                    logged-in: AppState.logged-in;
+                    login => { AppState.login(); }
+                    open-settings => { AppState.settings-open = true; }
+                    new-chat-in(cwd) => { AppState.new-chat-in(cwd); }
+                    new-chat => { AppState.new-chat(); }
+                    open-thread(id) => { AppState.open-thread(id); }
                 }
                 home := Home {
                     horizontal-stretch: 1;
-                    project-name: "ino-code";
-                    messages: root.messages;
-                    chat-active: root.messages.length > 0;
-                    busy: root.busy;
-                    approvals: root.approvals;
-                    intelligence: root.intelligence;
-                    perm: root.perm;
-                    project: root.project;
-                    search-model(q) => { root.search-model(q); }
-                    pick-effort(i) => { root.pick-effort(i); }
-                    pick-model(i) => { root.pick-model(i); }
-                    pick-default => { root.pick-default(); }
-                    reset-model => { root.reset-model(); }
-                    pick-perm(i) => { root.pick-perm(i); }
-                    pick-project(i) => { root.pick-project(i); }
-                    interrupt => { root.interrupt(); }
-                    decide(k, d) => { root.decide(k, d); }
                     prompt <=> root.prompt;
                     submit(t) => { root.submit(t); }
                 }
                 if root.panel-open: TaskPanel {
-                    cwd: root.cwd-text;
-                    context-percent: root.context-percent;
-                    usage-text: root.usage-text;
-                    rate-text: root.rate-text;
+                    cwd: AppState.cwd-text;
+                    context-percent: AppState.context-percent;
+                    usage-text: AppState.usage-text;
+                    rate-text: AppState.rate-text;
                 }
             }
             if Tabs.current != 0: TabHost {
@@ -203,25 +146,25 @@ export component AppWindow inherits Window {
         }
     }
 
-    if root.settings-open: SettingsDialog {
+    if AppState.settings-open: SettingsDialog {
         x: 0px;
         y: 0px;
         width: root.width;
         height: root.height;
-        discovery: root.discovery;
-        close => { root.settings-open = false; }
-        toggle-enabled => { root.toggle-discovery(); }
-        headroom-up => { root.headroom-up(); }
-        headroom-down => { root.headroom-down(); }
-        run-now => { root.run-discovery(); }
+        discovery: AppState.discovery;
+        close => { AppState.settings-open = false; }
+        toggle-enabled => { AppState.toggle-discovery(); }
+        headroom-up => { AppState.headroom-up(); }
+        headroom-down => { AppState.headroom-down(); }
+        run-now => { AppState.run-discovery(); }
     }
 
-    if root.full-confirm-open: FullAccessDialog {
+    if AppState.full-confirm-open: FullAccessDialog {
         x: 0px;
         y: 0px;
         width: root.width;
         height: root.height;
-        confirm => { root.confirm-full(); }
-        cancel => { root.cancel-full(); }
+        confirm => { AppState.confirm-full(); }
+        cancel => { AppState.cancel-full(); }
     }
 }

@@ -15,15 +15,16 @@ use discovery::{Outcome, Prefs};
 use slint::{Model, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use slint::ComponentHandle;
 use std::rc::Rc;
 
 slint::include_modules!();
 
 fn main() {
     let app = AppWindow::new().unwrap();
-    app.set_messages(ModelRc::from(Rc::new(VecModel::<Message>::default())));
-    app.set_approvals(ModelRc::from(Rc::new(VecModel::<Approval>::default())));
-    app.set_projects(ModelRc::from(Rc::new(VecModel::<ProjectItem>::default())));
+    app.global::<AppState>().set_messages(ModelRc::from(Rc::new(VecModel::<Message>::default())));
+    app.global::<AppState>().set_approvals(ModelRc::from(Rc::new(VecModel::<Approval>::default())));
+    app.global::<AppState>().set_projects(ModelRc::from(Rc::new(VecModel::<ProjectItem>::default())));
     STATE.with(|s| {
         s.borrow_mut().prefs = discovery::load_prefs();
         refresh_pickers(&app, &s.borrow());

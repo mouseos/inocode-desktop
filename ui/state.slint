@@ -1,0 +1,63 @@
+import { IntelligenceState, PermState, ProjectState } from "pickers.slint";
+import { ProjectItem } from "sidebar.slint";
+import { DiscoveryState } from "settings.slint";
+
+export struct Approval {
+    key: string,
+    title: string,
+    detail: string,
+}
+
+export struct Message {
+    id: string,
+    // "user", "assistant" or "tool" (collapsed command summary row)
+    role: string,
+    text: string,
+}
+
+// チャット画面の状態とコールバックをここに集約する。Rust は app.global::<AppState>() で触り、
+// 各コンポーネントは AppState を直接読む(AppWindow → Home → Composer の受け渡しはしない)。
+export global AppState {
+    in property <[Message]> messages;
+    in property <[Approval]> approvals;
+    in property <[ProjectItem]> projects;
+    in property <bool> busy: false;
+    in property <string> status: "接続中…";
+    // 0 info, 1 ok, 2 warning, 3 error
+    in property <int> status-level: 0;
+    in property <string> transport: "WS";
+    in property <string> session-title: "新しいセッション";
+    in property <IntelligenceState> intelligence;
+    in property <PermState> perm;
+    in property <ProjectState> project;
+    in-out property <bool> full-confirm-open: false;
+    in-out property <bool> settings-open: false;
+    in property <DiscoveryState> discovery;
+    in property <int> context-percent: 0;
+    in property <string> usage-text;
+    in property <string> rate-text;
+    in property <string> cwd-text;
+    in property <string> account-label: "ローカル";
+    in property <bool> logged-in: true;
+
+    callback search-model(string);
+    callback pick-effort(int);
+    callback pick-model(int);
+    callback pick-default;
+    callback reset-model;
+    callback pick-perm(int);
+    callback pick-project(int);
+    callback confirm-full;
+    callback cancel-full;
+    callback toggle-discovery;
+    callback headroom-up;
+    callback headroom-down;
+    callback run-discovery;
+    callback login;
+    callback new-chat-in(string);
+    callback new-chat;
+    callback open-thread(string);
+    callback interrupt;
+    callback decide(string, string);
+    callback switch-transport;
+}

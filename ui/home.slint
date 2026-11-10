@@ -2,19 +2,7 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Chip, SelectChip } from "widgets.slint";
 import { IntelligenceMenu, PermMenu, LocationRow, IntelligenceState, PermState, ProjectState } from "pickers.slint";
-
-export struct Approval {
-    key: string,
-    title: string,
-    detail: string,
-}
-
-export struct Message {
-    id: string,
-    // "user", "assistant" or "tool" (collapsed command summary row)
-    role: string,
-    text: string,
-}
+import { AppState, Message, Approval } from "state.slint";
 
 // InoCode mark: a ring with a dot, drawn as vector paths.
 component Logo inherits Rectangle {
@@ -319,24 +307,8 @@ component ChatView inherits Rectangle {
 
 export component Home inherits Rectangle {
     in-out property <string> prompt;
-    in property <string> project-name;
-    in property <[Message]> messages;
-    in property <bool> chat-active: false;
-    in property <bool> busy: false;
-    in property <[Approval]> approvals;
-    in property <IntelligenceState> intelligence;
-    in property <PermState> perm;
-    in property <ProjectState> project;
-    callback search-model(string);
-    callback pick-effort(int);
-    callback pick-model(int);
-    callback pick-default;
-    callback reset-model;
-    callback pick-perm(int);
-    callback pick-project(int);
     callback submit(string);
-    callback interrupt;
-    callback decide(string, string);
+    property <bool> chat-active: AppState.messages.length > 0;
     public function scroll-bottom() { chat.scroll-bottom(); }
 
     background: Theme.surface;
@@ -348,7 +320,7 @@ export component Home inherits Rectangle {
         chat := ChatView {
             visible: root.chat-active;
             vertical-stretch: root.chat-active ? 1 : 0;
-            messages: root.messages;
+            messages: AppState.messages;
         }
 
         Rectangle {
@@ -358,10 +330,10 @@ export component Home inherits Rectangle {
                 padding-left: 16px;
                 padding-right: 16px;
 
-                for a in root.approvals: ApprovalCard {
+                for a in AppState.approvals: ApprovalCard {
                     item: a;
                     max-width: Theme.composer-max-width;
-                    decide(k, d) => { root.decide(k, d); }
+                    decide(k, d) => { AppState.decide(k, d); }
                 }
 
                 if !root.chat-active: HorizontalLayout {
@@ -384,19 +356,19 @@ export component Home inherits Rectangle {
                         max-width: Theme.composer-max-width;
                         horizontal-stretch: 1000;
                         text <=> root.prompt;
-                        busy: root.busy;
-                        intelligence: root.intelligence;
-                        perm: root.perm;
-                        project: root.project;
+                        busy: AppState.busy;
+                        intelligence: AppState.intelligence;
+                        perm: AppState.perm;
+                        project: AppState.project;
                         fresh: !root.chat-active;
-                        search-model(q) => { root.search-model(q); }
-                        pick-effort(i) => { root.pick-effort(i); }
-                        pick-model(i) => { root.pick-model(i); }
-                        pick-default => { root.pick-default(); }
-                        reset-model => { root.reset-model(); }
-                        pick-perm(i) => { root.pick-perm(i); }
-                        pick-project(i) => { root.pick-project(i); }
-                        interrupt => { root.interrupt(); }
+                        search-model(q) => { AppState.search-model(q); }
+                        pick-effort(i) => { AppState.pick-effort(i); }
+                        pick-model(i) => { AppState.pick-model(i); }
+                        pick-default => { AppState.pick-default(); }
+                        reset-model => { AppState.reset-model(); }
+                        pick-perm(i) => { AppState.pick-perm(i); }
+                        pick-project(i) => { AppState.pick-project(i); }
+                        interrupt => { AppState.interrupt(); }
                         placeholder: "Enter で送信、Shift+Enter で改行";
                         submit(t) => { root.submit(t); }
                     }

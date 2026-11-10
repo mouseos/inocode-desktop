@@ -7,15 +7,15 @@ use crate::*;
 pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
     match event {
         Event::Status(text, level) => {
-            app.set_status(text.into());
-            app.set_status_level(match level {
+            app.global::<AppState>().set_status(text.into());
+            app.global::<AppState>().set_status_level(match level {
                 Level::Info => 0,
                 Level::Ok => 1,
                 Level::Warn => 2,
                 Level::Error => 3,
             });
         }
-        Event::Transport(name) => app.set_transport(name.into()),
+        Event::Transport(name) => app.global::<AppState>().set_transport(name.into()),
         Event::Models(list) => {
             let mut st = state.borrow_mut();
             st.settings.programs = list.clone();
@@ -50,22 +50,22 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             }
             let _ = sandbox_label(&sandbox);
             st.active_cwd = cwd.clone();
-            app.set_cwd_text(cwd.into());
+            app.global::<AppState>().set_cwd_text(cwd.into());
             refresh_pickers(app, &st);
         }
         Event::Account { logged_in, label } => {
-            app.set_logged_in(logged_in);
-            app.set_account_label(label.into());
+            app.global::<AppState>().set_logged_in(logged_in);
+            app.global::<AppState>().set_account_label(label.into());
             if !logged_in {
-                app.set_status("未ログイン".into());
-                app.set_status_level(2);
+                app.global::<AppState>().set_status("未ログイン".into());
+                app.global::<AppState>().set_status_level(2);
             }
         }
         Event::Usage { percent, text } => {
-            app.set_context_percent(percent);
-            app.set_usage_text(text.into());
+            app.global::<AppState>().set_context_percent(percent);
+            app.global::<AppState>().set_usage_text(text.into());
         }
-        Event::RateLimits(text) => app.set_rate_text(text.into()),
+        Event::RateLimits(text) => app.global::<AppState>().set_rate_text(text.into()),
         Event::Threads(list) => {
             let mut st = state.borrow_mut();
             st.threads = list;
@@ -77,8 +77,8 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             let mut st = state.borrow_mut();
             st.active = id;
             st.busy = false;
-            app.set_busy(false);
-            app.set_session_title(if title.is_empty() { "新しいセッション".into() } else { SharedString::from(title) });
+            app.global::<AppState>().set_busy(false);
+            app.global::<AppState>().set_session_title(if title.is_empty() { "新しいセッション".into() } else { SharedString::from(title) });
             rebuild_projects(app, &st);
         }
         Event::History(list) => {
@@ -86,8 +86,8 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
                 .into_iter()
                 .map(|Msg { id, role, text }| Message { id: id.into(), role: role.into(), text: text.into() })
                 .collect();
-            app.set_messages(ModelRc::from(Rc::new(VecModel::from(rows))));
-            app.set_approvals(ModelRc::from(Rc::new(VecModel::<Approval>::default())));
+            app.global::<AppState>().set_messages(ModelRc::from(Rc::new(VecModel::from(rows))));
+            app.global::<AppState>().set_approvals(ModelRc::from(Rc::new(VecModel::<Approval>::default())));
             app.invoke_scroll_bottom();
         }
         Event::AssistantStart => {
@@ -124,13 +124,13 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::TurnStarted => {
             let mut st = state.borrow_mut();
             st.busy = true;
-            app.set_busy(true);
+            app.global::<AppState>().set_busy(true);
             rebuild_projects(app, &st);
         }
         Event::TurnDone { interrupted } => {
             let mut st = state.borrow_mut();
             st.busy = false;
-            app.set_busy(false);
+            app.global::<AppState>().set_busy(false);
             rebuild_projects(app, &st);
             if interrupted {
                 messages_with(app, |m| push(m, "", "tool", "中断しました"));
@@ -138,13 +138,13 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             }
         }
         Event::Approval { key, title, detail } => {
-            let model = app.get_approvals();
+            let model = app.global::<AppState>().get_approvals();
             if let Some(vec) = model.as_any().downcast_ref::<VecModel<Approval>>() {
                 vec.push(Approval { key: key.into(), title: title.into(), detail: detail.into() });
             }
         }
         Event::ApprovalResolved(key) => {
-            let model = app.get_approvals();
+            let model = app.global::<AppState>().get_approvals();
             if let Some(vec) = model.as_any().downcast_ref::<VecModel<Approval>>() {
                 for i in (0..vec.row_count()).rev() {
                     if vec.row_data(i).map(|a| a.key == key.as_str()).unwrap_or(false) {

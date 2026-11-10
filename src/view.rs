@@ -53,7 +53,7 @@ pub(crate) fn refresh_pickers(app: &AppWindow, st: &State) {
         Some(m) => format!("{} {}", m.name, eff_text),
         None => "モデルを選択".to_string(),
     };
-    app.set_intelligence(IntelligenceState {
+    app.global::<AppState>().set_intelligence(IntelligenceState {
         trigger: trigger.into(),
         efforts: strings(efforts.iter().map(|e| effort_label(e))),
         effort_index: ei.map(|i| i as i32).unwrap_or(-1),
@@ -94,7 +94,7 @@ pub(crate) fn refresh_pickers(app: &AppWindow, st: &State) {
         Perm::Full => ("フルアクセス", true),
         Perm::Server => ("カスタム", false),
     };
-    app.set_perm(PermState { trigger: trigger.into(), danger, rows: rows(perm_rows) });
+    app.global::<AppState>().set_perm(PermState { trigger: trigger.into(), danger, rows: rows(perm_rows) });
 
     // Projects: folders of the known threads.
     let mut cwds: Vec<String> = Vec::new();
@@ -111,7 +111,7 @@ pub(crate) fn refresh_pickers(app: &AppWindow, st: &State) {
             .unwrap_or_else(|| p.to_string())
     };
     let project_rows: Vec<MenuRow> = cwds.iter().map(|c| row(&base(c), c, *c == chosen, false)).collect();
-    app.set_project(ProjectState {
+    app.global::<AppState>().set_project(ProjectState {
         location: "ローカルで作業".into(),
         project: if chosen.is_empty() { "プロジェクトを選択".into() } else { base(&chosen).into() },
         projects: rows(project_rows),
@@ -130,7 +130,7 @@ pub(crate) fn sync_project_cwds(st: &mut State) {
 }
 
 pub(crate) fn messages_with<R>(app: &AppWindow, f: impl FnOnce(&VecModel<Message>) -> R) -> Option<R> {
-    let model = app.get_messages();
+    let model = app.global::<AppState>().get_messages();
     let vec = model.as_any().downcast_ref::<VecModel<Message>>()?;
     Some(f(vec))
 }
@@ -165,7 +165,7 @@ pub(crate) fn rebuild_projects(app: &AppWindow, state: &State) {
             chats: ModelRc::from(Rc::new(VecModel::from(chats))),
         })
         .collect();
-    app.set_projects(ModelRc::from(Rc::new(VecModel::from(projects))));
+    app.global::<AppState>().set_projects(ModelRc::from(Rc::new(VecModel::from(projects))));
 }
 
 pub(crate) fn sandbox_label(t: &str) -> &'static str {
@@ -184,7 +184,7 @@ pub(crate) fn refresh_discovery(app: &AppWindow, st: &State) {
         Some(o) => (discovery::format_time(o.at), o.summary()),
         None => (String::new(), String::new()),
     };
-    app.set_discovery(DiscoveryState {
+    app.global::<AppState>().set_discovery(DiscoveryState {
         base: base.into(),
         limit: limit.into(),
         headroom: st.prefs.headroom as i32,
