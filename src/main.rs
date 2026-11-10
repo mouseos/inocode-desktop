@@ -242,7 +242,7 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| p.to_string())
     };
-    let project_rows: Vec<MenuRow> = cwds.iter().map(|c| row(&base(c), c, *c == chosen, false)).collect();
+    let project_rows: Vec<MenuRow> = cwds.iter().map(|c| row(&base(c), &client::scrub(c), *c == chosen, false)).collect();
     app.set_project(ProjectState {
         location: "ローカルで作業".into(),
         project: if chosen.is_empty() { "プロジェクトを選択".into() } else { base(&chosen).into() },
@@ -283,7 +283,7 @@ fn rebuild_projects(app: &AppWindow, state: &State) {
         let selected = t.id == state.active;
         groups.entry(name).or_insert_with(|| (t.cwd.clone(), Vec::new())).1.push(ChatItem {
             id: t.id.as_str().into(),
-            title: t.title.as_str().into(),
+            title: client::mask_emails(&t.title).into(),
             status: if selected && state.busy { 1 } else { 0 },
             selected,
             depth: 0,
@@ -382,7 +382,7 @@ fn start_discovery(app: &AppWindow, force: bool) {
 fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
     match event {
         Event::Status(text, level) => {
-            app.set_status(text.into());
+            app.set_status(client::scrub(&text).into());
             app.set_status_level(match level {
                 Level::Info => 0,
                 Level::Ok => 1,
@@ -425,7 +425,7 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             }
             let _ = sandbox_label(&sandbox);
             st.active_cwd = cwd.clone();
-            app.set_cwd_text(cwd.into());
+            app.set_cwd_text(client::scrub(&cwd).into());
             refresh_pickers(app, &st);
         }
         Event::Account { logged_in, label } => {
@@ -529,6 +529,7 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             }
         }
         Event::Error(e) => {
+            let e = client::scrub(&e);
             // A model found only through version discovery is not verified with InoCode:
             // when its turn fails, say so as part of the error.
             let unverified = {

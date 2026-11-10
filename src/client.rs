@@ -1020,6 +1020,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
     }
 
     fn report_error(&mut self, message: &str) {
+        let message = &mask_emails(message);
         if is_auth_error(message) {
             (self.on_event)(Event::Status("認証が必要です (401)".into(), Level::Error));
         }
@@ -1153,7 +1154,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 let message = params.pointer("/error/message").and_then(Value::as_str).unwrap_or("error");
                 let will_retry = params.get("willRetry").and_then(Value::as_bool).unwrap_or(false);
                 if will_retry {
-                    (self.on_event)(Event::Status(message.to_string(), Level::Warn));
+                    (self.on_event)(Event::Status(mask_emails(message), Level::Warn));
                 } else {
                     self.report_error(message);
                     (self.on_event)(Event::TurnDone { interrupted: false });
@@ -1440,20 +1441,67 @@ pub fn parse_models(result: &Value) -> Vec<ModelInfo> {
         .unwrap_or_default()
 }
 
+/// Account state for the screen: logged in or not, and a label that never carries personal
+/// data. The `account/read` reply may contain an e-mail address and a name; neither is read.
 pub fn parse_account(result: &Value) -> (bool, String) {
     match result.pointer("/account/type").and_then(Value::as_str) {
         Some("chatgpt") => {
-            let email = result.pointer("/account/email").and_then(Value::as_str).unwrap_or("ChatGPT");
             let plan = result.pointer("/account/planType").and_then(Value::as_str).unwrap_or("");
-            (true, if plan.is_empty() { email.to_string() } else { format!("{email} · {plan}") })
+            (true, if plan.is_empty() { "アカウント".to_string() } else { plan.to_string() })
         }
         Some("apiKey") => (true, "API キー".to_string()),
-        Some(other) => (true, other.to_string()),
+        Some(_) => (true, "アカウント".to_string()),
         None => {
             let need = result.get("requiresOpenaiAuth").and_then(Value::as_bool).unwrap_or(true);
             (!need, if need { "未ログイン".to_string() } else { "ローカル".to_string() })
         }
     }
+}
+
+/// `mask_emails` plus the user's home directory shown as `~` (it carries the account name).
+pub fn scrub(text: &str) -> String {
+    let masked = mask_emails(text);
+    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_default();
+    if home.len() > 3 {
+        let slashed = home.replace('\\', "/");
+        masked.replace(&home, "~").replace(&slashed, "~")
+    } else {
+        masked
+    }
+}
+
+/// Replace anything that looks like an e-mail address with `***`. Applied to every piece of
+/// server text that can reach the screen (error messages, status lines).
+pub fn mask_emails(text: &str) -> String {
+    let is_local = |c: char| c.is_alphanumeric() || "._%+-".contains(c);
+    let is_domain = |c: char| c.is_alphanumeric() || ".-".contains(c);
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '@' {
+            // the local part is already in `out`: cut it off again
+            let mut start = out.chars().count();
+            let out_chars: Vec<char> = out.chars().collect();
+            while start > 0 && is_local(out_chars[start - 1]) {
+                start -= 1;
+            }
+            let mut end = i + 1;
+            while end < chars.len() && is_domain(chars[end]) {
+                end += 1;
+            }
+            let domain: String = chars[i + 1..end].iter().collect();
+            if start < out_chars.len() && domain.contains('.') && !domain.starts_with('.') {
+                out = out_chars[..start].iter().collect();
+                out.push_str("***");
+                i = end;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
 }
 
 fn window_label(mins: Option<i64>) -> String {
@@ -1577,6 +1625,38 @@ mod tests {
         assert_eq!(p["approvalsReviewer"], "auto_review");
         assert_eq!(Perm::from_server("never", "dangerFullAccess", "user"), Perm::Full);
         assert_eq!(Perm::from_server("on-request", "workspaceWrite", "auto_review"), Perm::Guardian);
+    }
+
+    #[test]
+    fn account_label_has_no_email() {
+        let reply = json!({
+            "account": { "type": "chatgpt", "email": "someone@example.com", "planType": "pro", "name": "A B" },
+            "requiresOpenaiAuth": true
+        });
+        let (ok, label) = parse_account(&reply);
+        assert!(ok);
+        assert!(!label.contains('@') && !label.contains("example") && !label.contains("someone"));
+        assert_eq!(label, "pro");
+        let no_plan = json!({ "account": { "type": "chatgpt", "email": "x@y.zz" } });
+        assert_eq!(parse_account(&no_plan).1, "アカウント");
+    }
+
+    #[test]
+    fn emails_are_masked_in_server_text() {
+        assert_eq!(mask_emails("failed for a.b+c@mail.example.co.jp today"), "failed for *** today");
+        assert_eq!(mask_emails("x@y.zz and q@r.ss"), "*** and ***");
+        assert_eq!(mask_emails("no address @ here, user@host"), "no address @ here, user@host");
+        let m = mask_emails("unexpected status 401: account abc@def.gh not allowed");
+        assert!(!m.contains('@'));
+    }
+
+    #[test]
+    fn scrub_hides_home_directory() {
+        let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_default();
+        if home.len() > 3 {
+            let s = scrub(&format!("{home}/bin/inocode.exe を起動できません"));
+            assert!(!s.contains(&home) && s.starts_with('~'));
+        }
     }
 
     #[test]
