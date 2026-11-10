@@ -57,7 +57,10 @@ component Composer inherits Rectangle {
     background: Theme.composer;
     border-width: 1px;
     border-color: Theme.border;
-    min-height: 98px;
+    min-height: 76px;
+    drop-shadow-blur: 12px;
+    drop-shadow-color: #0000000d;
+    drop-shadow-offset-y: 2px;
 
     TouchArea {
         mouse-cursor: MouseCursor.text;
@@ -74,27 +77,27 @@ component Composer inherits Rectangle {
         }
 
         VerticalLayout {
-            padding: 12px;
-            spacing: 4px;
+            padding: 10px;
+            padding-left: 14px;
+            spacing: 2px;
 
             Rectangle {
-                min-height: max(44px, input.preferred-height);
-                max-height: 240px;
+                min-height: max(28px, input.preferred-height);
+                max-height: 200px;
                 input := TextInput {
-                    x: 4px;
-                    width: parent.width - 8px;
+                    width: parent.width;
                     text <=> root.text;
                     wrap: word-wrap;
                     single-line: false;
                     color: Theme.fg;
-                    font-size: 14px;
+                    font-size: 15px;
                     selection-background-color: #d9775766;
                 }
                 if root.text == "": Text {
-                    x: 4px;
-                    width: parent.width - 8px;
+                    width: parent.width;
                     text: root.placeholder;
                     color: Theme.fg-tertiary;
+                    font-size: 15px;
                     overflow: elide;
                     wrap: no-wrap;
                 }
@@ -104,19 +107,12 @@ component Composer inherits Rectangle {
                 height: 32px;
                 spacing: 2px;
                 IconButton { glyph: Glyph.add; box-size: 32px; icon-size: 20px; }
-                Chip {
-                    glyph: Glyph.shield;
-                    label: "フルアクセス";
-                    tint: Theme.warning;
-                    height: 32px;
-                }
                 Rectangle { horizontal-stretch: 1; }
                 Chip {
                     label: "モデル 中";
                     expandable: true;
                     height: 32px;
                 }
-                IconButton { glyph: Glyph.mic; box-size: 32px; icon-size: 20px; }
                 SendButton {
                     active: root.text != "";
                     clicked => { root.submit(root.text); }
@@ -136,8 +132,8 @@ component ChatView inherits Rectangle {
         content-height: content.preferred-height;
         content := VerticalLayout {
             width: parent.width;
-            padding: 16px;
-            spacing: 20px;
+            padding: 12px;
+            spacing: 14px;
             alignment: start;
             for m in root.messages: HorizontalLayout {
                 Rectangle { horizontal-stretch: 1; }
@@ -147,12 +143,14 @@ component ChatView inherits Rectangle {
                     HorizontalLayout {
                         if m.role == "user": Rectangle { horizontal-stretch: 1; }
                         Rectangle {
-                            max-width: m.role == "user" ? 560px : Theme.composer-max-width;
+                            max-width: m.role == "user" ? 520px : Theme.composer-max-width;
                             horizontal-stretch: m.role == "user" ? 0 : 1;
                             border-radius: Theme.radius-bubble;
                             background: m.role == "user" ? Theme.bubble : transparent;
                             VerticalLayout {
-                                padding: m.role == "user" ? 12px : 0px;
+                                padding: m.role == "user" ? 10px : 0px;
+                                padding-left: m.role == "user" ? 14px : 0px;
+                                padding-right: m.role == "user" ? 14px : 0px;
                                 Text {
                                     text: m.text;
                                     wrap: word-wrap;
@@ -175,92 +173,83 @@ export component Home inherits Rectangle {
     in property <[Message]> messages;
     in property <bool> chat-active: false;
     in property <string> status;
+    in property <bool> sidebar-open: true;
     callback submit(string);
+    callback toggle-sidebar;
     public function scroll-bottom() { chat.scroll-bottom(); }
 
     background: Theme.surface;
 
-    Text {
-        x: parent.width - self.width - 16px;
-        y: 14px;
-        text: root.status;
-        color: Theme.fg-tertiary;
-        font-size: 12px;
-    }
-
     VerticalLayout {
-        padding-top: 46px;
-        padding-bottom: root.chat-active ? 16px : 112px;
-        alignment: root.chat-active ? LayoutAlignment.stretch : LayoutAlignment.center;
-
-        chat := ChatView {
-            visible: root.chat-active;
-            vertical-stretch: root.chat-active ? 1 : 0;
-            messages: root.messages;
+        // Top bar: sidebar toggle (when collapsed), title and connection status.
+        HorizontalLayout {
+            height: Theme.titlebar-height;
+            padding: 6px;
+            padding-left: 8px;
+            padding-right: 12px;
+            spacing: 4px;
+            if !root.sidebar-open: IconButton {
+                glyph: Glyph.sidebar;
+                clicked => { root.toggle-sidebar(); }
+            }
+            Text {
+                text: root.chat-active ? "InoCode GUI" : "";
+                color: Theme.fg;
+                font-size: 14px;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.status;
+                color: Theme.fg-tertiary;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
         }
 
-        Rectangle {
-            height: col.preferred-height;
-            col := VerticalLayout {
-            spacing: 24px;
-            padding-left: 16px;
-            padding-right: 16px;
+        VerticalLayout {
+            padding-bottom: root.chat-active ? 12px : 96px;
+            alignment: root.chat-active ? LayoutAlignment.stretch : LayoutAlignment.center;
 
-            if !root.chat-active: HorizontalLayout {
-                alignment: center;
-                Logo { }
+            chat := ChatView {
+                visible: root.chat-active;
+                vertical-stretch: root.chat-active ? 1 : 0;
+                messages: root.messages;
             }
 
-            if !root.chat-active: HorizontalLayout {
-                alignment: center;
-                spacing: 0px;
-                if root.project-name != "": VerticalLayout {
-                    Text {
-                        text: root.project-name;
-                        font-size: 32px;
-                        font-family: Theme.font-serif;
-                        color: Theme.fg;
+            Rectangle {
+                height: col.preferred-height;
+                col := VerticalLayout {
+                    spacing: 20px;
+                    padding-left: 16px;
+                    padding-right: 16px;
+
+                    if !root.chat-active: HorizontalLayout {
+                        alignment: center;
+                        spacing: 12px;
+                        Logo { width: 32px; height: 32px; }
+                        Text {
+                            text: "こんにちは、何を作りましょうか？";
+                            font-size: 30px;
+                            font-family: Theme.font-serif;
+                            color: Theme.fg;
+                            vertical-alignment: center;
+                        }
                     }
-                    Rectangle { height: 1px; background: Theme.brand; }
-                }
-                Text {
-                    text: root.project-name != "" ? " で何を作りますか？" : "何を作成しましょうか？";
-                    font-size: 32px;
-                    font-family: Theme.font-serif;
-                    color: Theme.fg;
-                }
-            }
 
-            HorizontalLayout {
-                Rectangle { horizontal-stretch: 1; }
-                composer := Composer {
-                    max-width: Theme.composer-max-width;
-                    horizontal-stretch: 1000;
-                    text <=> root.prompt;
-                    placeholder: "InoCode にご用件をどうぞ";
-                    submit(t) => { root.submit(t); }
-                }
-                Rectangle { horizontal-stretch: 1; }
-            }
-
-            // Run location and branch, shown under the composer.
-            if !root.chat-active: HorizontalLayout {
-                Rectangle { horizontal-stretch: 1; }
-                Rectangle {
-                    max-width: Theme.composer-max-width;
-                    horizontal-stretch: 1000;
-                    height: 28px;
                     HorizontalLayout {
-                        padding-left: 8px;
-                        spacing: 2px;
-                        alignment: start;
-                        Chip { glyph: Glyph.computer; label: "ローカルで作業"; expandable: true; }
-                        Chip { glyph: Glyph.branch; label: "main"; expandable: true; }
+                        Rectangle { horizontal-stretch: 1; }
+                        composer := Composer {
+                            max-width: Theme.composer-max-width;
+                            horizontal-stretch: 1000;
+                            text <=> root.prompt;
+                            placeholder: "InoCode にご用件をどうぞ";
+                            submit(t) => { root.submit(t); }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
                     }
                 }
-                Rectangle { horizontal-stretch: 1; }
             }
-        }
         }
     }
 }

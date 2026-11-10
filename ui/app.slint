@@ -4,27 +4,6 @@ import { IconButton } from "widgets.slint";
 import { Sidebar, ChatItem, ProjectItem } from "sidebar.slint";
 import { Home, Message } from "home.slint";
 
-component RailButton inherits IconButton {
-    box-size: 36px;
-    icon-size: 20px;
-}
-
-component MenuLabel inherits Rectangle {
-    in property <string> label;
-    height: 26px;
-    width: t.preferred-width + 16px;
-    border-radius: 6px;
-    background: ta.has-hover ? Theme.hover : transparent;
-    t := Text {
-        text: root.label;
-        color: Theme.fg-secondary;
-        font-size: 13px;
-        x: 8px;
-        vertical-alignment: center;
-    }
-    ta := TouchArea { }
-}
-
 export component AppWindow inherits Window {
     title: "InoCode";
     preferred-width: 1100px;
@@ -57,70 +36,24 @@ export component AppWindow inherits Window {
         { title: "ビルド手順の整理", busy: false },
     ];
 
-    VerticalLayout {
-        // Title strip: sidebar toggle, history navigation and the application menu.
-        Rectangle {
-            height: Theme.titlebar-height;
-            background: Theme.sidebar;
-            HorizontalLayout {
-                padding-left: 8px;
-                padding-right: 8px;
-                padding-top: 4px;
-                padding-bottom: 4px;
-                spacing: 2px;
-                IconButton {
-                    glyph: Glyph.sidebar;
-                    clicked => { root.sidebar-open = !root.sidebar-open; }
-                }
-                IconButton { glyph: Glyph.arrow-back; enabled: false; }
-                IconButton { glyph: Glyph.arrow-forward; enabled: false; }
-                Rectangle { width: 8px; }
-                MenuLabel { label: "ファイル"; height: 28px; }
-                MenuLabel { label: "編集"; height: 28px; }
-                MenuLabel { label: "表示"; height: 28px; }
-                MenuLabel { label: "ヘルプ"; height: 28px; }
-                Rectangle { horizontal-stretch: 1; }
-            }
+    HorizontalLayout {
+        if root.sidebar-open: Sidebar {
+            pinned: root.pinned;
+            projects: root.projects;
+            recent: root.recent;
+            toggle => { root.sidebar-open = false; }
         }
 
-        HorizontalLayout {
-            // Navigation rail.
-            Rectangle {
-                width: 52px;
-                background: Theme.sidebar;
-                VerticalLayout {
-                    padding: 8px;
-                    spacing: 4px;
-                    alignment: start;
-                    RailButton { glyph: Glyph.home; selected: true; }
-                    RailButton { glyph: Glyph.schedule; }
-                    RailButton { glyph: Glyph.extension; }
-                    RailButton { glyph: Glyph.difference; }
-                }
-                VerticalLayout {
-                    padding: 8px;
-                    spacing: 4px;
-                    alignment: end;
-                    RailButton { glyph: Glyph.bar-chart; }
-                    RailButton { glyph: Glyph.account; }
-                }
-            }
-
-            if root.sidebar-open: Sidebar {
-                pinned: root.pinned;
-                projects: root.projects;
-                recent: root.recent;
-            }
-
-            home := Home {
-                horizontal-stretch: 1;
-                project-name: "ino-code";
-                messages: root.messages;
-                chat-active: root.messages.length > 0;
-                status: root.status;
-                prompt <=> root.prompt;
-                submit(t) => { root.submit(t); }
-            }
+        home := Home {
+            horizontal-stretch: 1;
+            project-name: "ino-code";
+            messages: root.messages;
+            chat-active: root.messages.length > 0;
+            status: root.status;
+            sidebar-open: root.sidebar-open;
+            toggle-sidebar => { root.sidebar-open = true; }
+            prompt <=> root.prompt;
+            submit(t) => { root.submit(t); }
         }
     }
 }

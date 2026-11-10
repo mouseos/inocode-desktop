@@ -35,6 +35,7 @@ export component NavRow inherits Rectangle {
     in property <bool> selected: false;
     in property <length> indent: 0px;
     in property <bool> busy: false;
+    in property <bool> accent: false;
     callback clicked;
 
     height: Theme.row-height;
@@ -50,10 +51,12 @@ export component NavRow inherits Rectangle {
             width: 20px;
             text: root.glyph;
             font-size: 18px;
+            color: root.accent ? Theme.brand : Theme.fg-secondary;
         }
         Text {
             text: root.label;
             color: Theme.fg;
+            font-size: 14px;
             vertical-alignment: center;
             overflow: elide;
             min-width: 0px;

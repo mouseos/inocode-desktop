@@ -16,15 +16,15 @@ component SectionHeader inherits HorizontalLayout {
     in property <string> label;
     in property <string> action-glyph;
     callback action;
-    height: 28px;
+    height: 26px;
     padding-left: 8px;
     padding-right: 2px;
-    padding-top: 2px;
-    padding-bottom: 2px;
+    padding-top: 8px;
+    padding-bottom: 0px;
     Text {
         text: root.label;
         color: Theme.fg-tertiary;
-        font-size: 13px;
+        font-size: 12px;
         vertical-alignment: center;
         horizontal-stretch: 1;
     }
@@ -49,12 +49,12 @@ component ProjectGroup inherits VerticalLayout {
         color: Theme.fg-tertiary;
         height: Theme.row-height;
         vertical-alignment: center;
-        x: 36px;
+        x: 32px;
     }
     if root.open: VerticalLayout {
         for chat in root.project.chats: NavRow {
             label: chat.title;
-            indent: 28px;
+            indent: 20px;
             busy: chat.busy;
         }
     }
@@ -65,38 +65,38 @@ export component Sidebar inherits Rectangle {
     in property <[ProjectItem]> projects;
     in property <[ChatItem]> recent;
     callback new-chat;
+    callback toggle;
 
     background: Theme.sidebar;
-    preferred-width: 275px;
-    min-width: 220px;
-    max-width: 360px;
+    preferred-width: Theme.sidebar-width;
+    min-width: 200px;
+    max-width: 340px;
     horizontal-stretch: 0;
 
     VerticalLayout {
-        padding: 8px;
-        spacing: 2px;
+        padding: 6px;
+        spacing: 1px;
 
         HorizontalLayout {
-            height: 40px;
-            padding-left: 8px;
-            padding-top: 6px;
-            padding-bottom: 6px;
+            height: 36px;
+            padding-left: 4px;
+            spacing: 2px;
+            IconButton { glyph: Glyph.sidebar; clicked => { root.toggle(); } }
             Text {
                 text: "InoCode";
                 color: Theme.fg;
                 font-family: Theme.font-serif;
-                font-size: 18px;
-                font-weight: 500;
+                font-size: 17px;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
             }
-            IconButton { glyph: Glyph.notifications; }
             IconButton { glyph: Glyph.search; }
         }
 
         NavRow {
             glyph: Glyph.edit-note;
             label: "新しいチャット";
+            accent: true;
             clicked => { root.new-chat(); }
         }
 
@@ -104,26 +104,44 @@ export component Sidebar inherits Rectangle {
             content-height: content.preferred-height;
             content := VerticalLayout {
                 width: parent.width;
-                spacing: 2px;
+                spacing: 1px;
                 alignment: start;
 
-                Rectangle { height: 8px; }
                 if root.pinned.length > 0: SectionHeader { label: "ピン留め"; }
                 for chat in root.pinned: NavRow {
                     glyph: Glyph.push-pin;
                     label: chat.title;
                 }
 
-                Rectangle { height: 8px; }
                 SectionHeader { label: "プロジェクト"; action-glyph: Glyph.add; }
                 for project in root.projects: ProjectGroup { project: project; }
 
-                Rectangle { height: 8px; }
-                SectionHeader { label: "チャット"; }
+                SectionHeader { label: "最近"; }
                 for chat in root.recent: NavRow {
                     label: chat.title;
                     busy: chat.busy;
                 }
+            }
+        }
+
+        // Footer: account row.
+        HorizontalLayout {
+            height: 44px;
+            padding: 4px;
+            spacing: 8px;
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: Theme.bubble;
+                Text { text: "I"; color: Theme.fg-secondary; font-size: 13px; }
+            }
+            Text {
+                text: "ローカル";
+                color: Theme.fg-secondary;
+                font-size: 13px;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
             }
         }
     }
