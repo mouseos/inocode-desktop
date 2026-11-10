@@ -146,6 +146,24 @@ export component Home inherits Rectangle {
                 }
                 Rectangle { horizontal-stretch: 1; }
             }
+
+            // Run location and branch, shown under the composer.
+            HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    max-width: Theme.composer-max-width;
+                    horizontal-stretch: 1000;
+                    height: 28px;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        spacing: 2px;
+                        alignment: start;
+                        Chip { glyph: Glyph.computer; label: "ローカルで作業"; expandable: true; }
+                        Chip { glyph: Glyph.branch; label: "main"; expandable: true; }
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
         }
     }
 }
