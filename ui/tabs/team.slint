@@ -1,5 +1,6 @@
 import { Theme } from "../theme.slint";
 import { Tag } from "g_widgets.slint";
+import { LogRow, LogList } from "log_rows.slint";
 
 export struct AgentRow {
     name: string,
@@ -32,6 +33,19 @@ export global TeamState {
     in property <[MetricRow]> history;
     in property <[MetricRow]> tasks;
     callback period-changed(int);
+    // 停滞と相談役、やり取り、圧縮、退避した出力
+    in property <[LogRow]> advisor;
+    in property <[LogRow]> messages;
+    in property <[string]> message-agents;
+    in-out property <int> message-filter: 0;
+    in property <[MetricRow]> compaction;
+    in property <bool> breaker-tripped;
+    in property <[LogRow]> outputs;
+    callback advisor-toggled(int);
+    callback advisor-action(int);
+    callback message-toggled(int);
+    callback message-filter-changed(int);
+    callback output-toggled(int);
     in property <[AgentRow]> agents;
     in property <bool> has-estimate: false;
     in property <string> speedup;
@@ -218,6 +232,58 @@ export component TeamTab inherits Rectangle {
                         Text { text: t.asks; color: Theme.fg; font-size: 12px; width: 56px; vertical-alignment: center; }
                     }
                 }
+            }
+
+            if TeamState.advisor.length > 0: Rectangle { height: 8px; }
+            if TeamState.advisor.length > 0: Heading { text: "停滞と相談"; }
+            LogList {
+                rows: TeamState.advisor;
+                toggled(i) => { TeamState.advisor-toggled(i); }
+                action(i) => { TeamState.advisor-action(i); }
+            }
+
+            if TeamState.messages.length > 0: Rectangle { height: 8px; }
+            if TeamState.messages.length > 0: Heading { text: "やり取り"; }
+            if TeamState.messages.length > 0: Flickable {
+                height: 28px;
+                content-width: agents.preferred-width;
+                agents := HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    for a[i] in TeamState.message-agents: Tag {
+                        label: a;
+                        selected: TeamState.message-filter == i;
+                        clicked => { TeamState.message-filter = i; TeamState.message-filter-changed(i); }
+                    }
+                }
+            }
+            LogList {
+                rows: TeamState.messages;
+                toggled(i) => { TeamState.message-toggled(i); }
+            }
+
+            if TeamState.compaction.length > 0: Rectangle { height: 8px; }
+            if TeamState.compaction.length > 0: Heading { text: "圧縮"; }
+            if TeamState.compaction.length > 0: Rectangle {
+                height: cp.preferred-height;
+                border-radius: Theme.radius-row + 2px;
+                background: TeamState.breaker-tripped ? Theme.danger.transparentize(0.88) : Theme.bubble;
+                border-width: TeamState.breaker-tripped ? 1px : 0px;
+                border-color: Theme.danger;
+                cp := VerticalLayout {
+                    padding: 10px;
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    for c in TeamState.compaction: KeyValue { label: c.label; value: c.value; }
+                }
+            }
+
+            if TeamState.outputs.length > 0: Rectangle { height: 8px; }
+            if TeamState.outputs.length > 0: Heading { text: "退避した出力"; }
+            LogList {
+                rows: TeamState.outputs;
+                mono-detail: true;
+                toggled(i) => { TeamState.output-toggled(i); }
             }
         }
     }

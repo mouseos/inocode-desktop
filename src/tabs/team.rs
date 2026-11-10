@@ -28,6 +28,7 @@ thread_local! {
 }
 
 pub fn install(app: &AppWindow, host: &Host) {
+    super::team_log::install(app, host);
     let h = host.clone();
     app.global::<TeamState>().on_refresh(move || request(&h, 0));
     let h = host.clone();
@@ -60,9 +61,11 @@ fn request(host: &Host, period: i32) {
         host.rpc(TAG_STATUS, "inocode/team/status", json!({ "threadId": thread_id }));
     }
     request_metrics(host, period);
+    super::team_log::request(host, &thread_id);
 }
 
 pub fn event(app: &AppWindow, host: &Host, event: &Event) {
+    super::team_log::event(app, host, event);
     match event {
         Event::ThreadActive { id, .. } => {
             DATA.with(|d| {
@@ -240,7 +243,7 @@ fn counter_rows(c: &Value) -> Vec<MetricRow> {
     rows
 }
 
-fn thread_name(id: &str) -> String {
+pub(super) fn thread_name(id: &str) -> String {
     DATA.with(|d| d.borrow().titles.iter().find(|(i, _)| i == id).map(|(_, t)| t.clone()).filter(|t| !t.is_empty()))
         .unwrap_or_else(|| id.to_string())
 }
@@ -389,7 +392,7 @@ fn parse_rfc3339(s: &str) -> Option<i64> {
     Some(days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + sec)
 }
 
-fn rfc3339(t: i64) -> String {
+pub(super) fn rfc3339(t: i64) -> String {
     let (y, m, d) = civil_from_days(t.div_euclid(86400));
     let r = t.rem_euclid(86400);
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", r / 3600, r % 3600 / 60, r % 60)
@@ -420,7 +423,7 @@ mod tests {
 
     #[test]
     fn period_since_and_bucket() {
-        assert_eq!(period_params(0, 90_000), ("1970-01-02T01:00:00Z".to_string(), "hour"));
+        assert_eq!(period_params(0, 90_000), ("1970-01-01T01:00:00Z".to_string(), "hour"));
         assert_eq!(period_params(1, 8 * 86400).1, "day");
         assert_eq!(period_params(3, 5).0, "1970-01-01T00:00:00Z");
     }

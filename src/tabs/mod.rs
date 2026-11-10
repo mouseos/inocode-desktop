@@ -13,6 +13,7 @@ mod evidence;
 mod knowledge;
 mod settings;
 mod team;
+mod team_log;
 
 /// タブから app-server へ要求を出すための窓口。
 #[derive(Clone)]

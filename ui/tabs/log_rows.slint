@@ -1,0 +1,61 @@
+import { Theme } from "../theme.slint";
+import { Button } from "g_widgets.slint";
+
+// 開閉できる記録の行(停滞と相談、やり取り、発動の記録、退避した出力で共有)。
+// tone: 0 = 通常、1 = 警告、2 = 目立たせる(ブロックなど)。
+export struct LogRow {
+    head: string,
+    meta: string,
+    detail: string,
+    tone: int,
+    open: bool,
+    action-label: string,
+}
+
+export component LogList inherits VerticalLayout {
+    in property <[LogRow]> rows;
+    in property <bool> mono-detail: false;
+    callback toggled(int);
+    callback action(int);
+    spacing: 3px;
+    for r[i] in root.rows: Rectangle {
+        height: col.preferred-height;
+        border-radius: Theme.radius-row + 2px;
+        background: r.tone == 2 ? Theme.danger.transparentize(0.88) : r.tone == 1 ? Theme.warning.transparentize(0.88) : Theme.bubble;
+        border-width: r.tone == 2 ? 1px : 0px;
+        border-color: Theme.danger;
+        col := VerticalLayout {
+            padding: 8px;
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 4px;
+            Rectangle {
+                height: head.preferred-height;
+                head := VerticalLayout {
+                    spacing: 2px;
+                    Text {
+                        text: r.head;
+                        color: r.tone == 2 ? Theme.danger : r.tone == 1 ? Theme.warning : Theme.fg;
+                        font-size: 13px;
+                        font-weight: r.tone == 2 ? 700 : 500;
+                        wrap: r.open ? word-wrap : no-wrap;
+                        overflow: r.open ? TextOverflow.clip : TextOverflow.elide;
+                    }
+                    Text { text: r.meta; color: Theme.fg-tertiary; font-size: 11px; overflow: elide; }
+                }
+                TouchArea { mouse-cursor: pointer; clicked => { root.toggled(i); } }
+            }
+            if r.open: Text {
+                text: r.detail;
+                color: Theme.fg-secondary;
+                font-size: 12px;
+                font-family: root.mono-detail ? "Consolas" : "";
+                wrap: word-wrap;
+            }
+            if r.open && r.action-label != "": HorizontalLayout {
+                alignment: start;
+                Button { label: r.action-label; clicked => { root.action(i); } }
+            }
+        }
+    }
+}
