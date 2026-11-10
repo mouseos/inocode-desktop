@@ -136,6 +136,7 @@ component Composer inherits VerticalLayout {
     in property <bool> busy: false;
     callback submit(string);
     callback interrupt;
+    callback search-model(string);
     callback pick-effort(int);
     callback pick-speed(int);
     callback pick-model(int);
@@ -217,6 +218,7 @@ component Composer inherits VerticalLayout {
                     picker := IntelligenceMenu {
                         y: 1px;
                         state: root.intelligence;
+                        search(q) => { root.search-model(q); }
                         pick-effort(i) => { root.pick-effort(i); }
                         pick-speed(i) => { root.pick-speed(i); }
                         pick-model(i) => { root.pick-model(i); }
@@ -329,6 +331,7 @@ export component Home inherits Rectangle {
     in property <IntelligenceState> intelligence;
     in property <PermState> perm;
     in property <ProjectState> project;
+    callback search-model(string);
     callback pick-effort(int);
     callback pick-speed(int);
     callback pick-model(int);
@@ -392,6 +395,7 @@ export component Home inherits Rectangle {
                         perm: root.perm;
                         project: root.project;
                         fresh: !root.chat-active;
+                        search-model(q) => { root.search-model(q); }
                         pick-effort(i) => { root.pick-effort(i); }
                         pick-speed(i) => { root.pick-speed(i); }
                         pick-model(i) => { root.pick-model(i); }

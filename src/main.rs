@@ -37,6 +37,8 @@ struct State {
     outcome: Option<Outcome>,
     discovery_running: bool,
     discovery_started: bool,
+    /// Text of the model search box.
+    model_filter: String,
 }
 
 /// Order of the permission dropdown rows ("Managed" is appended when requirements restrict).
@@ -81,6 +83,15 @@ fn visible_models(st: &State) -> Vec<&ModelInfo> {
         .iter()
         .chain(extra)
         .filter(|m| !m.hidden && m.usable(st.settings.daybreak))
+        .collect()
+}
+
+/// The picker's rows: visible models narrowed by the search box.
+fn shown_models(st: &State) -> Vec<&ModelInfo> {
+    let q = st.model_filter.trim().to_lowercase();
+    visible_models(st)
+        .into_iter()
+        .filter(|m| q.is_empty() || m.name.to_lowercase().contains(&q) || m.id.to_lowercase().contains(&q))
         .collect()
 }
 
@@ -134,22 +145,9 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
         Some(t) => t.clone(),
         None => sel.and_then(|m| m.default_service_tier.clone()),
     };
-    let mut speeds = Vec::new();
-    if let Some(m) = sel {
-        if !m.service_tiers.is_empty() {
-            speeds.push(row("標準", "", tier_sel.is_none(), false));
-            for (id, name, _desc) in &m.service_tiers {
-                let fast = id == "priority" || name.eq_ignore_ascii_case("fast");
-                let label = if fast { "高速".to_string() } else { name.clone() };
-                let desc = if fast { "1.5倍速、使用量増加".to_string() } else { String::new() };
-                speeds.push(row(&label, &desc, tier_sel.as_deref() == Some(id.as_str()), false));
-            }
-        }
-    }
-
     // Models: the Default row, then the list.
     let explicit = st.settings.model.is_some();
-    let model_rows: Vec<MenuRow> = visible
+    let model_rows: Vec<MenuRow> = shown_models(st)
         .iter()
         .map(|m| row(&m.name, "", explicit && sel.map(|s| s.id == m.id).unwrap_or(false), false))
         .collect();
@@ -159,18 +157,25 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
         None => "モデルを選択".to_string(),
     };
     let daybreak_available = st.models.iter().any(|m| !m.hidden && m.daybreak());
+    // Fast mode: a model with exactly one faster service tier gets the toggle.
+    let fast_available = sel.map(|m| m.service_tiers.len() == 1).unwrap_or(false);
+    let fast_on = match (&tier_sel, sel) {
+        (Some(t), Some(m)) => m.service_tiers.iter().any(|(id, _, _)| id == t),
+        _ => false,
+    };
     app.set_intelligence(IntelligenceState {
         trigger: trigger.into(),
         efforts: strings(efforts.iter().map(|e| effort_label(e))),
         effort_index: ei.map(|i| i as i32).unwrap_or(-1),
         effort_enabled: !efforts.is_empty(),
-        speeds: rows(speeds),
+        effort_label: eff_text.clone().into(),
         models: rows(model_rows),
         default_row: row("デフォルト", "おすすめのモデルセット", !explicit, false),
         loading: !st.models_loaded,
         daybreak_available,
         daybreak_on: st.settings.daybreak,
-        daybreak_note: "".into(),
+        fast_available,
+        fast_on,
         ultra_warning: eff.as_deref() == Some("ultra"),
         can_reset: explicit || st.settings.effort.is_some() || st.settings.service_tier.is_some(),
     });
@@ -604,7 +609,7 @@ fn main() {
     app.on_pick_model(move |i| {
         let Some(app) = weak.upgrade() else { return };
         change(&app, &h, |st| {
-            let Some(m) = visible_models(st).get(i as usize).map(|m| (*m).clone()) else { return };
+            let Some(m) = shown_models(st).get(i as usize).map(|m| (*m).clone()) else { return };
             st.settings.model = Some(m.id.clone());
             if !st.settings.effort.as_ref().map(|e| m.efforts.contains(e)).unwrap_or(false) {
                 st.settings.effort = Some(m.default_effort.clone()).filter(|e| !e.is_empty());
@@ -615,6 +620,15 @@ fn main() {
                     st.settings.service_tier = Some(None);
                 }
             }
+        });
+    });
+    let weak = app.as_weak();
+    app.on_search_model(move |q| {
+        let Some(app) = weak.upgrade() else { return };
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            st.model_filter = q.to_string();
+            refresh_pickers(&app, &st);
         });
     });
     let weak = app.as_weak();
