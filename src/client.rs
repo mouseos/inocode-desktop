@@ -45,8 +45,43 @@ pub struct ModelInfo {
     pub name: String,
     pub efforts: Vec<String>,
     pub default_effort: String,
+    pub hidden: bool,
+    pub is_default: bool,
+    /// `availableAccessPrograms.cyber` as advertised by model/list for this caller
+    /// ("standard", "daybreakBlue", "daybreakRed").
+    pub programs: Vec<String>,
+}
+
+impl ModelInfo {
     /// The model advertises a Daybreak access program for this caller.
-    pub daybreak: bool,
+    pub fn daybreak(&self) -> bool {
+        self.programs.iter().any(|p| p.starts_with("daybreak"))
+    }
+
+    /// Program to request for a turn: the Daybreak program when the choice is on,
+    /// "standard" when off, and nothing when the model advertises no programs.
+    pub fn cyber_program(&self, daybreak: bool) -> Option<&'static str> {
+        let has = |p: &str| self.programs.iter().any(|x| x == p);
+        if daybreak {
+            if has("daybreakBlue") {
+                Some("daybreakBlue")
+            } else if has("daybreakRed") {
+                Some("daybreakRed")
+            } else {
+                None
+            }
+        } else if has("standard") {
+            Some("standard")
+        } else {
+            None
+        }
+    }
+
+    /// Whether the model can be used with the current Daybreak choice: a model that
+    /// advertises programs must offer the one the choice needs.
+    pub fn usable(&self, daybreak: bool) -> bool {
+        self.programs.is_empty() || self.cyber_program(daybreak).is_some()
+    }
 }
 
 /// Per-thread choices made in the UI. They are sent with `thread/start` and as
@@ -59,7 +94,11 @@ pub struct Settings {
     pub approval: String,
     /// "read-only", "workspace-write", "danger-full-access"
     pub sandbox: String,
+    /// The user picked a permission preset; until then the server's own defaults apply.
+    pub perm_changed: bool,
     pub daybreak: bool,
+    /// Model catalog from model/list, used to resolve the program sent with each turn.
+    pub programs: Vec<ModelInfo>,
     pub cwd: Option<String>,
 }
 
@@ -70,7 +109,9 @@ impl Default for Settings {
             effort: None,
             approval: "on-request".into(),
             sandbox: "workspace-write".into(),
+            perm_changed: false,
             daybreak: false,
+            programs: Vec::new(),
             cwd: None,
         }
     }
@@ -436,6 +477,7 @@ struct Session<'a, F: Fn(Event)> {
     last_flush: Instant,
     approvals: HashMap<String, (Value, String, Value)>,
     msg_streamed: bool,
+    login_pending: bool,
     ready: bool,
 }
 
@@ -458,6 +500,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             last_flush: Instant::now(),
             approvals: HashMap::new(),
             msg_streamed: false,
+            login_pending: false,
             ready: false,
         }
     }
@@ -466,7 +509,12 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
         let id = self.next_id;
         self.next_id += 1;
         self.pending.insert(id, kind);
-        self.conn.send(json!({ "id": id, "method": method, "params": params }))
+        // Like the desktop client, leave "params" out when there are none.
+        if params.is_null() {
+            self.conn.send(json!({ "id": id, "method": method }))
+        } else {
+            self.conn.send(json!({ "id": id, "method": method, "params": params }))
+        }
     }
 
     fn flush(&mut self) {
@@ -531,7 +579,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                     (self.on_event)(Event::Error("スレッドがまだ開始されていません".into()));
                     return Ok(None);
                 };
-                let mut params = json!({ "threadId": tid, "input": [{ "type": "text", "text": text }] });
+                let mut params = json!({ "threadId": tid, "input": [{ "type": "text", "text": text, "text_elements": [] }] });
                 turn_overrides(self.settings, &mut params);
                 self.request("turn/start", params, Pending::TurnStart)?;
             }
@@ -548,7 +596,11 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 *self.settings = s;
             }
             Command::Login => {
-                self.request("account/login/start", json!({ "type": "chatgpt" }), Pending::Login)?;
+                // One ChatGPT login at a time, as in the desktop client.
+                if !self.login_pending {
+                    self.login_pending = true;
+                    self.request("account/login/start", json!({ "type": "chatgpt" }), Pending::Login)?;
+                }
             }
             Command::OpenThread(id) => {
                 self.request("thread/resume", json!({ "threadId": id }), Pending::ThreadResume)?;
@@ -599,6 +651,10 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 // Listing is optional; an older server may not know the method.
                 Pending::ThreadList | Pending::Other | Pending::Models | Pending::RateLimits | Pending::Account => {}
                 Pending::Init => return Err(format!("initialize が失敗しました: {message}")),
+                Pending::Login => {
+                    self.login_pending = false;
+                    self.report_error(&message);
+                }
                 _ => self.report_error(&message),
             }
             return Ok(());
@@ -608,8 +664,12 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             Pending::Init => {
                 self.conn.send(json!({ "method": "initialized" }))?;
                 self.ready = true;
-                self.request("model/list", json!({}), Pending::Models)?;
-                self.request("account/read", json!({}), Pending::Account)?;
+                self.request(
+                    "model/list",
+                    json!({ "includeHidden": true, "cursor": null, "limit": 100 }),
+                    Pending::Models,
+                )?;
+                self.request("account/read", json!({ "refreshToken": false }), Pending::Account)?;
                 self.request("account/rateLimits/read", Value::Null, Pending::RateLimits)?;
                 self.list_threads()?;
                 match self.active_thread.clone() {
@@ -647,7 +707,11 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 (self.on_event)(Event::History(history_from_thread(thread)));
                 (self.on_event)(Event::Status("接続済み".into(), Level::Ok));
             }
-            Pending::Models => (self.on_event)(Event::Models(parse_models(result))),
+            Pending::Models => {
+                let list = parse_models(result);
+                self.settings.programs = list.clone();
+                (self.on_event)(Event::Models(list));
+            }
             Pending::Account => {
                 let (logged_in, label) = parse_account(result);
                 (self.on_event)(Event::Account { logged_in, label });
@@ -785,7 +849,8 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 }
             }
             "account/updated" | "account/login/completed" => {
-                let _ = self.request("account/read", json!({}), Pending::Account);
+                self.login_pending = false;
+                let _ = self.request("account/read", json!({ "refreshToken": false }), Pending::Account);
                 let _ = self.request("account/rateLimits/read", Value::Null, Pending::RateLimits);
             }
             "serverRequest/resolved" => {
@@ -934,7 +999,11 @@ pub fn history_from_thread(thread: &Value) -> Vec<Msg> {
 }
 
 fn thread_start_params(s: &Settings) -> Value {
-    let mut p = json!({ "approvalPolicy": s.approval, "sandbox": s.sandbox });
+    let mut p = json!({});
+    if s.perm_changed {
+        p["approvalPolicy"] = json!(s.approval);
+        p["sandbox"] = json!(s.sandbox);
+    }
     if let Some(m) = &s.model {
         p["model"] = json!(m);
     }
@@ -956,10 +1025,17 @@ fn sandbox_policy(mode: &str) -> Value {
 }
 
 fn turn_overrides(s: &Settings, params: &mut Value) {
-    params["approvalPolicy"] = json!(s.approval);
-    params["sandboxPolicy"] = sandbox_policy(&s.sandbox);
+    // Permission overrides only after the user picked a preset (the desktop client
+    // also leaves them out unless they were changed).
+    if s.perm_changed {
+        params["approvalPolicy"] = json!(s.approval);
+        params["sandboxPolicy"] = sandbox_policy(&s.sandbox);
+    }
     if let Some(m) = &s.model {
         params["model"] = json!(m);
+        if let Some(program) = s.programs.iter().find(|x| &x.id == m).and_then(|x| x.cyber_program(s.daybreak)) {
+            params["cyberAccessProgram"] = json!(program);
+        }
     }
     if let Some(e) = &s.effort {
         params["effort"] = json!(e);
@@ -988,7 +1064,6 @@ pub fn parse_models(result: &Value) -> Vec<ModelInfo> {
         .and_then(Value::as_array)
         .map(|list| {
             list.iter()
-                .filter(|m| !m.get("hidden").and_then(Value::as_bool).unwrap_or(false))
                 .filter_map(|m| {
                     let id = m.get("model").or_else(|| m.get("id"))?.as_str()?.to_string();
                     let name = m.get("displayName").and_then(Value::as_str).unwrap_or(&id).to_string();
@@ -1004,12 +1079,14 @@ pub fn parse_models(result: &Value) -> Vec<ModelInfo> {
                         .unwrap_or_default();
                     let default_effort =
                         m.get("defaultReasoningEffort").and_then(Value::as_str).unwrap_or("").to_string();
-                    let daybreak = m
+                    let programs = m
                         .pointer("/availableAccessPrograms/cyber")
                         .and_then(Value::as_array)
-                        .map(|a| a.iter().filter_map(Value::as_str).any(|p| p.starts_with("daybreak")))
-                        .unwrap_or(false);
-                    Some(ModelInfo { id, name, efforts, default_effort, daybreak })
+                        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                        .unwrap_or_default();
+                    let hidden = m.get("hidden").and_then(Value::as_bool).unwrap_or(false);
+                    let is_default = m.get("isDefault").and_then(Value::as_bool).unwrap_or(false);
+                    Some(ModelInfo { id, name, efforts, default_effort, hidden, is_default, programs })
                 })
                 .collect()
         })
@@ -1115,6 +1192,33 @@ mod tests {
     fn missing_binary_message() {
         let e = find_inocode("no-such-dir/inocode-missing.exe").unwrap_err();
         assert!(e.contains("INOCODE_BIN"));
+    }
+
+    #[test]
+    fn cyber_programs() {
+        let m = |programs: &[&str]| ModelInfo {
+            id: "m".into(),
+            name: "m".into(),
+            efforts: vec![],
+            default_effort: String::new(),
+            hidden: false,
+            is_default: false,
+            programs: programs.iter().map(|s| s.to_string()).collect(),
+        };
+        let sol = m(&["daybreakBlue"]);
+        assert_eq!(sol.cyber_program(true), Some("daybreakBlue"));
+        assert_eq!(sol.cyber_program(false), None);
+        assert!(!sol.usable(false) && sol.usable(true));
+        let std = m(&["standard"]);
+        assert_eq!(std.cyber_program(false), Some("standard"));
+        assert!(!std.usable(true));
+        assert!(m(&[]).usable(true) && m(&[]).usable(false));
+        let mut p = json!({});
+        let mut s = Settings { model: Some("m".into()), programs: vec![sol], ..Settings::default() };
+        s.daybreak = true;
+        turn_overrides(&s, &mut p);
+        assert_eq!(p["cyberAccessProgram"], "daybreakBlue");
+        assert!(p.get("approvalPolicy").is_none());
     }
 
     #[test]

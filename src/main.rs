@@ -52,20 +52,43 @@ fn effort_label(e: &str) -> String {
     .to_string()
 }
 
+/// Models offered in the picker: not hidden, usable with the current Daybreak choice,
+/// and never gpt-6-astra.
+fn visible_models(st: &State) -> Vec<&ModelInfo> {
+    st.models
+        .iter()
+        .filter(|m| !m.hidden && !m.id.contains("gpt-6-astra") && m.usable(st.settings.daybreak))
+        .collect()
+}
+
+/// Selected model: the user's choice, else what the server uses, else the catalog default,
+/// else the first visible model.
+fn selected_model<'a>(st: &'a State, visible: &[&'a ModelInfo]) -> Option<&'a ModelInfo> {
+    let by_id = |id: &str| visible.iter().copied().find(|m| m.id == id);
+    st.settings
+        .model
+        .as_deref()
+        .and_then(by_id)
+        .or_else(|| by_id(&st.applied_model))
+        .or_else(|| visible.iter().copied().find(|m| m.is_default))
+        .or_else(|| visible.first().copied())
+}
+
 /// Push the model / effort / permission choices into the window.
 fn refresh_selectors(app: &AppWindow, st: &State) {
-    let wanted = st.settings.model.clone().unwrap_or_else(|| st.applied_model.clone());
-    let mi = st.models.iter().position(|m| m.id == wanted).unwrap_or(0);
-    app.set_model_names(strings(st.models.iter().map(|m| m.name.clone())));
-    app.set_model_index(if st.models.is_empty() { -1 } else { mi as i32 });
-    let efforts: Vec<String> = st.models.get(mi).map(|m| m.efforts.clone()).unwrap_or_default();
+    let visible = visible_models(st);
+    let sel = selected_model(st, &visible);
+    let mi = sel.and_then(|m| visible.iter().position(|v| v.id == m.id));
+    app.set_model_names(strings(visible.iter().map(|m| m.name.clone())));
+    app.set_model_index(mi.map(|i| i as i32).unwrap_or(-1));
+    let efforts: Vec<String> = sel.map(|m| m.efforts.clone()).unwrap_or_default();
     let eff = st
         .settings
         .effort
         .clone()
         .filter(|e| efforts.contains(e))
         .or_else(|| Some(st.applied_effort.clone()).filter(|e| efforts.contains(e)))
-        .or_else(|| st.models.get(mi).map(|m| m.default_effort.clone()));
+        .or_else(|| sel.map(|m| m.default_effort.clone()));
     let ei = eff.and_then(|e| efforts.iter().position(|x| *x == e)).unwrap_or(0);
     app.set_effort_names(strings(efforts.iter().map(|e| format!("推論 {}", effort_label(e)))));
     app.set_effort_index(if efforts.is_empty() { -1 } else { ei as i32 });
@@ -74,7 +97,8 @@ fn refresh_selectors(app: &AppWindow, st: &State) {
         .position(|(_, a, sb)| *a == st.settings.approval && *sb == st.settings.sandbox)
         .unwrap_or(0);
     app.set_perm_index(pi as i32);
-    app.set_daybreak_available(st.models.iter().any(|m| m.daybreak));
+    // The switch is offered when any listed model advertises a Daybreak program.
+    app.set_daybreak_available(st.models.iter().any(|m| !m.hidden && m.daybreak()));
     app.set_daybreak_on(st.settings.daybreak);
 }
 
@@ -139,8 +163,8 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::Transport(name) => app.set_transport(name.into()),
         Event::Models(list) => {
             let mut st = state.borrow_mut();
-            // gpt-6-astra is never offered.
-            st.models = list.into_iter().filter(|m| !m.id.contains("gpt-6-astra")).collect();
+            st.settings.programs = list.clone();
+            st.models = list;
             refresh_selectors(app, &st);
         }
         Event::Applied { model, effort, approval, sandbox, cwd } => {
@@ -321,7 +345,7 @@ fn main() {
         let Some(app) = weak.upgrade() else { return };
         STATE.with(|s| {
             let mut st = s.borrow_mut();
-            let Some(m) = st.models.get(i as usize).cloned() else { return };
+            let Some(m) = visible_models(&st).get(i as usize).map(|m| (*m).clone()) else { return };
             st.settings.model = Some(m.id.clone());
             if !st.settings.effort.as_ref().map(|e| m.efforts.contains(e)).unwrap_or(false) {
                 st.settings.effort = Some(m.default_effort.clone()).filter(|e| !e.is_empty());
@@ -336,8 +360,8 @@ fn main() {
         let Some(app) = weak.upgrade() else { return };
         STATE.with(|s| {
             let mut st = s.borrow_mut();
-            let wanted = st.settings.model.clone().unwrap_or_else(|| st.applied_model.clone());
-            let efforts = st.models.iter().find(|m| m.id == wanted).map(|m| m.efforts.clone()).unwrap_or_default();
+            let visible = visible_models(&st);
+            let efforts = selected_model(&st, &visible).map(|m| m.efforts.clone()).unwrap_or_default();
             if let Some(e) = efforts.get(i as usize) {
                 st.settings.effort = Some(e.clone());
                 h.send(Command::SetSettings(st.settings.clone()));
@@ -354,6 +378,7 @@ fn main() {
             let Some((_, approval, sandbox)) = PERMS.get(i as usize) else { return };
             st.settings.approval = approval.to_string();
             st.settings.sandbox = sandbox.to_string();
+            st.settings.perm_changed = true;
             h.send(Command::SetSettings(st.settings.clone()));
             refresh_selectors(&app, &st);
         });
@@ -365,6 +390,16 @@ fn main() {
         STATE.with(|s| {
             let mut st = s.borrow_mut();
             st.settings.daybreak = !st.settings.daybreak;
+            let usable = st
+                .settings
+                .model
+                .as_deref()
+                .and_then(|id| st.models.iter().find(|m| m.id == id))
+                .map(|m| m.usable(st.settings.daybreak))
+                .unwrap_or(true);
+            if !usable {
+                st.settings.model = None;
+            }
             h.send(Command::SetSettings(st.settings.clone()));
             // The choice is made when a thread is created, so start a fresh one.
             h.send(Command::NewThread);
