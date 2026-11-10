@@ -1,0 +1,49 @@
+import { Theme } from "theme.slint";
+import { KnowledgeTab } from "tabs/knowledge.slint";
+import { EvidenceTab } from "tabs/evidence.slint";
+import { TeamTab } from "tabs/team.slint";
+import { SettingsTab } from "tabs/settings.slint";
+
+// タブの登録は、このファイルの 2 か所だけ: titles(帯の名前)と TabHost(画面の差し込み)。
+// 0 がチャット(app.slint の既存画面)、1 以降が各タブの画面。
+export global Tabs {
+    out property <[string]> titles: ["チャット", "知識", "根拠", "チーム", "設定"];
+    in-out property <int> current: 0;
+    callback opened(int);
+    public function select(i: int) {
+        root.current = i;
+        root.opened(i);
+    }
+}
+
+export component TabStrip inherits HorizontalLayout {
+    spacing: 2px;
+    for title[i] in Tabs.titles: Rectangle {
+        width: label.preferred-width + 20px;
+        border-radius: Theme.radius-row;
+        background: ta.pressed ? Theme.pressed
+            : Tabs.current == i ? Theme.selected
+            : ta.has-hover ? Theme.hover : transparent;
+        label := Text {
+            text: title;
+            color: Tabs.current == i ? Theme.fg : Theme.fg-secondary;
+            font-size: 13px;
+            font-weight: Tabs.current == i ? 600 : 400;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Tabs.select(i); }
+        }
+    }
+}
+
+// チャット以外のタブの画面。タブを足すときは、ここに 1 行足す。
+export component TabHost inherits Rectangle {
+    background: Theme.surface;
+    if Tabs.current == 1: KnowledgeTab { }
+    if Tabs.current == 2: EvidenceTab { }
+    if Tabs.current == 3: TeamTab { }
+    if Tabs.current == 4: SettingsTab { }
+}

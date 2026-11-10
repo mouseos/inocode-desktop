@@ -216,6 +216,10 @@ pub enum Event {
     Error(String),
     /// Which transport is in use ("WS" or "stdio").
     Transport(String),
+    /// Response to a Command::Rpc (the tag is the caller's); the error is the JSON-RPC message.
+    Rpc { tag: String, result: Result<Value, String> },
+    /// A server notification the client does not handle itself (the `inocode/*` ones).
+    Notify { method: String, params: Value },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -256,6 +260,9 @@ pub enum Command {
     Interrupt,
     Approve { key: String, decision: Decision },
     SwitchTransport,
+    /// Generic request for the screen tabs; answered with Event::Rpc.
+    #[allow(dead_code)]
+    Rpc { tag: String, method: String, params: Value },
     Quit,
 }
 
@@ -288,6 +295,9 @@ pub struct Config {
 const FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 const POLL: Duration = Duration::from_millis(8);
 const MODELS_STALE: Duration = Duration::from_secs(300);
+
+mod mock;
+use mock::mock_rpc;
 
 pub fn spawn(cfg: Config, on_event: impl Fn(Event) + Send + 'static) -> Handle {
     let (tx, rx) = mpsc::channel();
@@ -609,6 +619,11 @@ fn supervise(mut cfg: Config, rx: Receiver<Command>, on_event: impl Fn(Event)) {
                         }
                         Ok(Command::Quit) => return,
                         Ok(Command::Prompt(_)) => on_event(Event::Error("未接続のため送信できません".into())),
+                        Ok(Command::Rpc { tag, method, .. }) => {
+                            if !mock_rpc(&on_event, &tag, &method) {
+                                on_event(Event::Rpc { tag, result: Err("未接続です".into()) });
+                            }
+                        }
                         Ok(_) => {}
                         Err(mpsc::RecvTimeoutError::Timeout) => {}
                         Err(mpsc::RecvTimeoutError::Disconnected) => return,
@@ -648,6 +663,8 @@ struct Session<'a, F: Fn(Event)> {
     settings_update_unsupported: bool,
     next_id: u64,
     pending: HashMap<u64, Pending>,
+    /// Tags of Command::Rpc requests in flight, by request id.
+    rpc_tags: HashMap<u64, String>,
     turn_id: Option<String>,
     delta: String,
     last_flush: Instant,
@@ -675,6 +692,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             settings_update_unsupported: false,
             next_id: 1,
             pending: HashMap::new(),
+            rpc_tags: HashMap::new(),
             turn_id: None,
             delta: String::new(),
             last_flush: Instant::now(),
@@ -760,6 +778,14 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 return Ok(Some(End::Switch));
             }
             Command::Quit => return Ok(Some(End::Quit)),
+            Command::Rpc { tag, method, params } => {
+                if mock_rpc(self.on_event, &tag, &method) {
+                    return Ok(None);
+                }
+                let id = self.next_id;
+                self.rpc_tags.insert(id, tag);
+                self.request(&method, params, Pending::Other)?;
+            }
             Command::Prompt(text) => {
                 let Some(tid) = self.active_thread.clone() else {
                     (self.on_event)(Event::Error("スレッドがまだ開始されていません".into()));
@@ -895,6 +921,15 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
         }
         // Response to one of ours.
         if let Some(id) = id.and_then(Value::as_u64) {
+            if let Some(tag) = self.rpc_tags.remove(&id) {
+                self.pending.remove(&id);
+                let result = match value.get("error") {
+                    Some(err) => Err(err.get("message").and_then(Value::as_str).unwrap_or("error").to_string()),
+                    None => Ok(value.get("result").cloned().unwrap_or(Value::Null)),
+                };
+                (self.on_event)(Event::Rpc { tag, result });
+                return Ok(());
+            }
             let kind = self.pending.remove(&id).unwrap_or(Pending::Other);
             return self.response(kind, value);
         }
@@ -1158,6 +1193,9 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                     self.report_error(message);
                     (self.on_event)(Event::TurnDone { interrupted: false });
                 }
+            }
+            m if m.starts_with("inocode/") => {
+                (self.on_event)(Event::Notify { method: m.to_string(), params: params.clone() });
             }
             _ => {}
         }

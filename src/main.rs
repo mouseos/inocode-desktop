@@ -2,6 +2,7 @@
 
 mod client;
 mod discovery;
+mod tabs;
 
 use client::{Command, Config, Decision, Event, Level, ModelInfo, Msg, Perm, Settings, ThreadInfo};
 use discovery::{Outcome, Prefs};
@@ -528,6 +529,8 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
                 }
             }
         }
+        // Rpc / Notify are delivered to the screen tabs (src/tabs) before apply().
+        Event::Rpc { .. } | Event::Notify { .. } => {}
         Event::Error(e) => {
             // A model found only through version discovery is not verified with InoCode:
             // when its turn fails, say so as part of the error.
@@ -552,6 +555,7 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
 }
 
 thread_local! {
+    static TAB_HOST: RefCell<Option<tabs::Host>> = const { RefCell::new(None) };
     static STATE: RefCell<State> = RefCell::new(State::default());
 }
 
@@ -592,10 +596,18 @@ fn main() {
         let weak = weak.clone();
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(app) = weak.upgrade() {
+                TAB_HOST.with(|h| {
+                    if let Some(host) = h.borrow().as_ref() {
+                        tabs::event(&app, host, &event);
+                    }
+                });
                 STATE.with(|s| apply(&app, s, event));
             }
         });
     }));
+    let host = tabs::Host::new(handle.clone());
+    tabs::install(&app, &host);
+    TAB_HOST.with(|h| *h.borrow_mut() = Some(host));
 
     let weak = app.as_weak();
     let h = handle.clone();

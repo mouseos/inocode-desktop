@@ -1,0 +1,13 @@
+import { Theme } from "../theme.slint";
+
+// チームタブ。このファイルと src/tabs/team.rs だけを編集して実装する。
+// Rust 側から触る状態とコールバックは、下の global にまとめる
+// (Rust では app.global::<TeamState>() で取得できる)。
+
+export global TeamState {
+    // 例: in property <[Row]> rows;  callback refresh();
+}
+
+export component TeamTab inherits Rectangle {
+    background: Theme.surface;
+}

@@ -6,25 +6,14 @@ import { Home, Message, Approval } from "home.slint";
 import { TaskPanel } from "panel.slint";
 import { IntelligenceState, PermState, ProjectState, FullAccessDialog } from "pickers.slint";
 import { DiscoveryState, SettingsDialog } from "settings.slint";
+import { Tabs, TabStrip, TabHost } from "tabs.slint";
 
-// Segmented Chat / Code switch at the top of the sidebar.
-component ModeSwitch inherits Rectangle {
-    width: 64px;
-    height: 24px;
-    border-radius: 7px;
-    background: Theme.hover;
-    HorizontalLayout {
-        padding: 2px;
-        spacing: 2px;
-        IconButton { glyph: Glyph.chat; box-size: 28px; icon-size: 15px; }
-        Rectangle {
-            width: 28px;
-            border-radius: 5px;
-            background: Theme.pressed;
-            Icon { text: Glyph.code; font-size: 15px; color: Theme.fg; }
-        }
-    }
-}
+// Rust から各タブの状態へ届くように、ここで書き出す(タブを足したら 1 行足す)。
+export { Tabs } from "tabs.slint";
+export { KnowledgeState } from "tabs/knowledge.slint";
+export { EvidenceState } from "tabs/evidence.slint";
+export { TeamState } from "tabs/team.slint";
+export { SettingsTabState } from "tabs/settings.slint";
 
 export component AppWindow inherits Window {
     title: "InoCode";
@@ -90,8 +79,8 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             height: Theme.chrome-height;
             Rectangle {
-                width: root.sidebar-open ? Theme.sidebar-width : 160px;
-                background: root.sidebar-open ? Theme.sidebar : Theme.chrome;
+                width: root.sidebar-open && Tabs.current == 0 ? Theme.sidebar-width : 160px;
+                background: root.sidebar-open && Tabs.current == 0 ? Theme.sidebar : Theme.chrome;
                 HorizontalLayout {
                     padding-left: 10px;
                     padding-right: 8px;
@@ -106,8 +95,6 @@ export component AppWindow inherits Window {
                     }
                     IconButton { glyph: Glyph.arrow-back; }
                     IconButton { glyph: Glyph.arrow-forward; enabled: false; }
-                    Rectangle { horizontal-stretch: 1; }
-                    if root.sidebar-open: ModeSwitch { }
                 }
             }
             Rectangle {
@@ -119,7 +106,9 @@ export component AppWindow inherits Window {
                     padding-top: 6px;
                     padding-bottom: 6px;
                     spacing: 2px;
-                    Text {
+                    TabStrip { }
+                    Rectangle { width: 12px; }
+                    if Tabs.current == 0: Text {
                         text: root.session-title;
                         color: Theme.fg;
                         font-size: 13px;
@@ -127,7 +116,7 @@ export component AppWindow inherits Window {
                         vertical-alignment: center;
                         overflow: elide;
                     }
-                    Icon { width: 16px; text: Glyph.expand-more; font-size: 16px; color: Theme.fg-secondary; }
+                    if Tabs.current == 0: Icon { width: 16px; text: Glyph.expand-more; font-size: 16px; color: Theme.fg-secondary; }
                     Rectangle { horizontal-stretch: 1; }
                     Rectangle {
                         width: st.preferred-width + 12px;
@@ -148,57 +137,68 @@ export component AppWindow inherits Window {
                         }
                     }
                     Rectangle { width: 6px; }
-                    IconButton {
+                    if Tabs.current == 0: IconButton {
                         glyph: Glyph.list;
                         selected: root.panel-open;
                         clicked => { root.panel-open = !root.panel-open; }
                     }
-                    IconButton { glyph: Glyph.terminal; }
-                    IconButton { glyph: Glyph.language; }
-                    IconButton { glyph: Glyph.folder; }
-                    IconButton { glyph: Glyph.more-horiz; }
+                    if Tabs.current == 0: IconButton { glyph: Glyph.terminal; }
+                    if Tabs.current == 0: IconButton { glyph: Glyph.language; }
+                    if Tabs.current == 0: IconButton { glyph: Glyph.folder; }
+                    if Tabs.current == 0: IconButton { glyph: Glyph.more-horiz; }
                 }
             }
         }
 
-        HorizontalLayout {
-            if root.sidebar-open: Sidebar {
-                projects: root.projects;
-                user-name: root.account-label;
-                logged-in: root.logged-in;
-                login => { root.login(); }
-                open-settings => { root.settings-open = true; }
-                new-chat-in(cwd) => { root.new-chat-in(cwd); }
-                new-chat => { root.new-chat(); }
-                open-thread(id) => { root.open-thread(id); }
+        // チャットは常に生きている(タブを切り替えても、スクロールと入力が残る)。
+        Rectangle {
+            vertical-stretch: 1;
+            HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
+                visible: Tabs.current == 0;
+                if root.sidebar-open: Sidebar {
+                    projects: root.projects;
+                    user-name: root.account-label;
+                    logged-in: root.logged-in;
+                    login => { root.login(); }
+                    open-settings => { root.settings-open = true; }
+                    new-chat-in(cwd) => { root.new-chat-in(cwd); }
+                    new-chat => { root.new-chat(); }
+                    open-thread(id) => { root.open-thread(id); }
+                }
+                home := Home {
+                    horizontal-stretch: 1;
+                    project-name: "ino-code";
+                    messages: root.messages;
+                    chat-active: root.messages.length > 0;
+                    busy: root.busy;
+                    approvals: root.approvals;
+                    intelligence: root.intelligence;
+                    perm: root.perm;
+                    project: root.project;
+                    search-model(q) => { root.search-model(q); }
+                    pick-effort(i) => { root.pick-effort(i); }
+                    pick-model(i) => { root.pick-model(i); }
+                    pick-default => { root.pick-default(); }
+                    reset-model => { root.reset-model(); }
+                    pick-perm(i) => { root.pick-perm(i); }
+                    pick-project(i) => { root.pick-project(i); }
+                    interrupt => { root.interrupt(); }
+                    decide(k, d) => { root.decide(k, d); }
+                    prompt <=> root.prompt;
+                    submit(t) => { root.submit(t); }
+                }
+                if root.panel-open: TaskPanel {
+                    cwd: root.cwd-text;
+                    context-percent: root.context-percent;
+                    usage-text: root.usage-text;
+                    rate-text: root.rate-text;
+                }
             }
-            home := Home {
-                horizontal-stretch: 1;
-                project-name: "ino-code";
-                messages: root.messages;
-                chat-active: root.messages.length > 0;
-                busy: root.busy;
-                approvals: root.approvals;
-                intelligence: root.intelligence;
-                perm: root.perm;
-                project: root.project;
-                search-model(q) => { root.search-model(q); }
-                pick-effort(i) => { root.pick-effort(i); }
-                pick-model(i) => { root.pick-model(i); }
-                pick-default => { root.pick-default(); }
-                reset-model => { root.reset-model(); }
-                pick-perm(i) => { root.pick-perm(i); }
-                pick-project(i) => { root.pick-project(i); }
-                interrupt => { root.interrupt(); }
-                decide(k, d) => { root.decide(k, d); }
-                prompt <=> root.prompt;
-                submit(t) => { root.submit(t); }
-            }
-            if root.panel-open: TaskPanel {
-                cwd: root.cwd-text;
-                context-percent: root.context-percent;
-                usage-text: root.usage-text;
-                rate-text: root.rate-text;
+            if Tabs.current != 0: TabHost {
+                width: parent.width;
+                height: parent.height;
             }
         }
     }

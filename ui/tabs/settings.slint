@@ -1,0 +1,13 @@
+import { Theme } from "../theme.slint";
+
+// 設定タブ。このファイルと src/tabs/settings.rs だけを編集して実装する。
+// Rust 側から触る状態とコールバックは、下の global にまとめる
+// (Rust では app.global::<SettingsTabState>() で取得できる)。
+
+export global SettingsTabState {
+    // 例: in property <[Row]> rows;  callback refresh();
+}
+
+export component SettingsTab inherits Rectangle {
+    background: Theme.surface;
+}
