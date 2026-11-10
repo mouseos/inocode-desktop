@@ -2,7 +2,7 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton } from "widgets.slint";
 import { Sidebar, ChatItem, ProjectItem } from "sidebar.slint";
-import { Home } from "home.slint";
+import { Home, Message } from "home.slint";
 
 component RailButton inherits IconButton {
     box-size: 36px;
@@ -36,7 +36,10 @@ export component AppWindow inherits Window {
 
     in-out property <bool> sidebar-open: true;
     in-out property <string> prompt;
+    in-out property <[Message]> messages;
+    in property <string> status: "接続中…";
     callback submit(string);
+    public function scroll-bottom() { home.scroll-bottom(); }
 
     in property <[ChatItem]> pinned: [{ title: "サンプルの固定チャット", busy: false }];
     in property <[ProjectItem]> projects: [
@@ -108,9 +111,12 @@ export component AppWindow inherits Window {
                 recent: root.recent;
             }
 
-            Home {
+            home := Home {
                 horizontal-stretch: 1;
                 project-name: "ino-code";
+                messages: root.messages;
+                chat-active: root.messages.length > 0;
+                status: root.status;
                 prompt <=> root.prompt;
                 submit(t) => { root.submit(t); }
             }

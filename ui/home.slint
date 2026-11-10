@@ -2,6 +2,11 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Chip } from "widgets.slint";
 
+export struct Message {
+    role: string,
+    text: string,
+}
+
 // InoCode mark: a ring with a dot, drawn as vector paths.
 component Logo inherits Rectangle {
     width: 40px;
@@ -122,29 +127,89 @@ component Composer inherits Rectangle {
     }
 }
 
+component ChatView inherits Rectangle {
+    in property <[Message]> messages;
+    public function scroll-bottom() {
+        flick.content-y = min(0px, flick.height - content.preferred-height);
+    }
+
+    flick := Flickable {
+        content-height: content.preferred-height;
+        content := VerticalLayout {
+            width: parent.width;
+            padding: 16px;
+            spacing: 20px;
+            alignment: start;
+            for m in root.messages: HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    max-width: Theme.composer-max-width;
+                    horizontal-stretch: 1000;
+                    HorizontalLayout {
+                        if m.role == "user": Rectangle { horizontal-stretch: 1; }
+                        Rectangle {
+                            max-width: m.role == "user" ? 560px : Theme.composer-max-width;
+                            horizontal-stretch: m.role == "user" ? 0 : 1;
+                            border-radius: 18px;
+                            background: m.role == "user" ? Theme.composer : transparent;
+                            VerticalLayout {
+                                padding: m.role == "user" ? 12px : 0px;
+                                Text {
+                                    text: m.text;
+                                    wrap: word-wrap;
+                                    color: Theme.fg;
+                                }
+                            }
+                        }
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+    }
+}
+
 export component Home inherits Rectangle {
     in-out property <string> prompt;
     in property <string> project-name;
+    in property <[Message]> messages;
+    in property <bool> chat-active: false;
+    in property <string> status;
     callback submit(string);
+    public function scroll-bottom() { chat.scroll-bottom(); }
 
     background: Theme.surface;
 
+    Text {
+        x: parent.width - self.width - 16px;
+        y: 14px;
+        text: root.status;
+        color: Theme.fg-tertiary;
+        font-size: 12px;
+    }
+
     VerticalLayout {
         padding-top: 46px;
-        padding-bottom: 112px;
-        alignment: center;
+        padding-bottom: root.chat-active ? 16px : 112px;
+        alignment: root.chat-active ? LayoutAlignment.stretch : LayoutAlignment.center;
+
+        chat := ChatView {
+            visible: root.chat-active;
+            vertical-stretch: root.chat-active ? 1 : 0;
+            messages: root.messages;
+        }
 
         VerticalLayout {
             spacing: 24px;
             padding-left: 16px;
             padding-right: 16px;
 
-            HorizontalLayout {
+            if !root.chat-active: HorizontalLayout {
                 alignment: center;
                 Logo { }
             }
 
-            HorizontalLayout {
+            if !root.chat-active: HorizontalLayout {
                 alignment: center;
                 spacing: 0px;
                 if root.project-name != "": VerticalLayout {
@@ -175,7 +240,7 @@ export component Home inherits Rectangle {
             }
 
             // Run location and branch, shown under the composer.
-            HorizontalLayout {
+            if !root.chat-active: HorizontalLayout {
                 Rectangle { horizontal-stretch: 1; }
                 Rectangle {
                     max-width: Theme.composer-max-width;
