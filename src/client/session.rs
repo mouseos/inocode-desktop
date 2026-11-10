@@ -271,7 +271,6 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             Command::OpenThread(id) => {
                 self.request("thread/resume", json!({ "threadId": id }), Pending::ThreadResume)?;
             }
-            Command::ListThreads => self.list_threads()?,
             Command::Interrupt => {
                 if let (Some(tid), Some(turn)) = (self.active_thread.clone(), self.turn_id.clone()) {
                     self.request("turn/interrupt", json!({ "threadId": tid, "turnId": turn }), Pending::Other)?;

@@ -69,13 +69,9 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             app.global::<AppState>().set_usage_text(text.into());
         }
         Event::RateLimits(text) => app.global::<AppState>().set_rate_text(text.into()),
-        Event::Threads(list) => {
-            let mut st = state.borrow_mut();
-            st.threads = list;
-            sync_project_cwds(&mut st);
-            rebuild_projects(app, &st);
-            refresh_pickers(app, &st);
-        }
+        // The sidebar owns the list request (sort, filter, paging), so a list the client reloaded
+        // on its own only triggers a refresh with the sidebar's own parameters.
+        Event::Threads(_) => crate::sidebar::refresh(),
         Event::ThreadActive { id, title } => {
             crate::sidebar::on_thread_active(&id);
             let mut st = state.borrow_mut();

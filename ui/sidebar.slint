@@ -2,6 +2,7 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, NavRow } from "widgets.slint";
 import { SidebarState } from "menus.slint";
+import { PaletteState } from "palette.slint";
 
 export struct ChatItem {
     id: string,
@@ -50,7 +51,12 @@ component GroupHeader inherits Rectangle {
             color: Theme.fg-tertiary;
         }
         Rectangle { horizontal-stretch: 1; }
-        if !root.pinned: IconButton { glyph: Glyph.swap-vert; icon-size: 15px; y: 2px; }
+        if !root.pinned: sortbtn := IconButton {
+            glyph: Glyph.swap-vert;
+            icon-size: 15px;
+            y: 2px;
+            clicked => { SidebarState.open-menu("sort", "", self.absolute-position.x, self.absolute-position.y + self.height); }
+        }
         if !root.pinned: IconButton { glyph: Glyph.add; icon-size: 17px; y: 2px; clicked => { root.add(); } }
     }
 }
@@ -109,10 +115,14 @@ export component Sidebar inherits Rectangle {
         spacing: Theme.stack-gap;
 
         NavRow { glyph: Glyph.add; label: "新規作成"; clicked => { root.new-chat(); } }
-        NavRow { glyph: Glyph.search; label: "検索"; }
+        NavRow { glyph: Glyph.search; label: "検索"; clicked => { PaletteState.open = true; } }
         NavRow { glyph: Glyph.category; label: "Artifacts"; action-glyph: Glyph.add; }
         NavRow { glyph: Glyph.work; label: "カスタマイズ"; }
-        NavRow { glyph: Glyph.more-horiz; label: "その他"; }
+        more := NavRow {
+            glyph: Glyph.more-horiz;
+            label: "その他";
+            clicked => { SidebarState.open-menu("more", "", self.absolute-position.x, self.absolute-position.y + self.height); }
+        }
 
         Rectangle { height: 8px; }
 
@@ -133,6 +143,10 @@ export component Sidebar inherits Rectangle {
                     project: project;
                     open-thread(id) => { root.open-thread(id); }
                     new-in(cwd) => { root.new-chat-in(cwd); }
+                }
+                if SidebarState.has-more: NavRow {
+                    label: "さらに表示";
+                    clicked => { SidebarState.load-more(); }
                 }
             }
         }

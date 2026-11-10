@@ -103,6 +103,7 @@ pub fn parse_threads(result: &Value) -> Vec<ThreadInfo> {
                         unread,
                         revision,
                         status,
+                        parent: t.get("parentThreadId").and_then(Value::as_str).unwrap_or("").to_string(),
                     })
                 })
                 .collect()

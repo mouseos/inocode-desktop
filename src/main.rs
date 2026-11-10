@@ -4,6 +4,7 @@ mod client;
 mod callbacks;
 mod discovery;
 mod events;
+mod palette;
 mod sidebar;
 mod state;
 mod tabs;
@@ -15,7 +16,6 @@ use client::{Command, Config, Decision, Event, Level, ModelInfo, Msg, Perm, Sett
 use discovery::{Outcome, Prefs};
 use slint::{Model, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use slint::ComponentHandle;
 use std::rc::Rc;
 

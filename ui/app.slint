@@ -9,11 +9,13 @@ import { IntelligenceState, PermState, ProjectState, FullAccessDialog } from "pi
 import { DiscoveryState, SettingsDialog } from "settings.slint";
 import { Tabs, TabStrip, TabHost } from "tabs.slint";
 import { MenuOverlay } from "menus.slint";
+import { PaletteOverlay, PaletteState } from "palette.slint";
 
 // Rust から各タブの状態へ届くように、ここで書き出す(タブを足したら 1 行足す)。
 export { Tabs } from "tabs.slint";
 export { AppState, Message, Approval } from "state.slint";
 export { SidebarState } from "menus.slint";
+export { PaletteState } from "palette.slint";
 export { KnowledgeState } from "tabs/knowledge.slint";
 export { EvidenceState } from "tabs/evidence.slint";
 export { TeamState } from "tabs/team.slint";
@@ -35,6 +37,15 @@ export component AppWindow inherits Window {
     callback submit(string);
     public function scroll-bottom() { home.scroll-bottom(); }
 
+    // Ctrl+K opens the command palette from anywhere in the window (key events bubble up).
+    FocusScope {
+    key-pressed(e) => {
+        if e.modifiers.control && !e.modifiers.shift && e.text == "k" {
+            PaletteState.open = true;
+            return accept;
+        }
+        return reject;
+    }
     VerticalLayout {
         // Chrome bar: menu, sidebar toggle, history and mode switch on the left,
         // session title and panel toggles on the right.
@@ -148,6 +159,8 @@ export component AppWindow inherits Window {
         }
     }
 
+    }
+
     if AppState.settings-open: SettingsDialog {
         x: 0px;
         y: 0px;
@@ -168,6 +181,13 @@ export component AppWindow inherits Window {
         height: root.height;
         confirm => { AppState.confirm-full(); }
         cancel => { AppState.cancel-full(); }
+    }
+
+    PaletteOverlay {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
     }
 
     MenuOverlay {

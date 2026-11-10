@@ -32,6 +32,8 @@ pub struct ThreadInfo {
     pub revision: String,
     /// 0 idle, 1 running, 3 system error, 4 waiting for approval or input.
     pub status: i32,
+    /// parentThreadId (a child session), empty for top-level sessions.
+    pub parent: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -252,8 +254,6 @@ pub enum Command {
     SetDaybreak(bool),
     Login,
     OpenThread(String),
-    /// Reload the session list (thread/list).
-    ListThreads,
     Interrupt,
     Approve { key: String, decision: Decision },
     SwitchTransport,

@@ -140,7 +140,8 @@ pub(crate) fn push(model: &VecModel<Message>, id: &str, role: &str, text: &str) 
 }
 
 pub(crate) fn rebuild_projects(app: &AppWindow, state: &State) {
-    let chat = |t: &ThreadInfo| {
+    let (flat, filter) = crate::sidebar::mode();
+    let chat = |t: &ThreadInfo, depth: i32| {
         let selected = t.id == state.active;
         // Needs you, then working, then error, then unread.
         let status = if selected && state.busy {
@@ -152,34 +153,73 @@ pub(crate) fn rebuild_projects(app: &AppWindow, state: &State) {
         } else {
             0
         };
-        ChatItem { id: t.id.as_str().into(), title: t.title.as_str().into(), status, selected, depth: 0 }
+        ChatItem { id: t.id.as_str().into(), title: t.title.as_str().into(), status, selected, depth }
     };
-    // Pinned sessions first, in their own group; the rest by the last component of the folder.
-    let mut groups: BTreeMap<String, (String, Vec<ChatItem>)> = BTreeMap::new();
-    let mut pinned: Vec<ChatItem> = Vec::new();
-    for t in &state.threads {
-        if t.pinned {
-            pinned.push(chat(t));
-            continue;
+    let shown: Vec<&ThreadInfo> = state
+        .threads
+        .iter()
+        .filter(|t| match filter {
+            1 => t.unread,
+            2 => t.status == 4,
+            _ => true,
+        })
+        .collect();
+    // A child session follows its parent (indented) when the parent is in the same list.
+    let ordered = |items: &[&ThreadInfo]| -> Vec<ChatItem> {
+        let has = |id: &str| items.iter().any(|t| t.id == id);
+        let mut out = Vec::new();
+        for t in items.iter().filter(|t| t.parent.is_empty() || !has(&t.parent)) {
+            out.push(chat(t, 0));
+            for c in items.iter().filter(|c| c.parent == t.id) {
+                out.push(chat(c, 1));
+            }
         }
-        let name = std::path::Path::new(&t.cwd)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| "(フォルダなし)".to_string());
-        groups.entry(name).or_insert_with(|| (t.cwd.clone(), Vec::new())).1.push(chat(t));
-    }
+        out
+    };
     let model = |chats: Vec<ChatItem>| ModelRc::from(Rc::new(VecModel::from(chats)));
     let mut projects: Vec<ProjectItem> = Vec::new();
+    // Pinned sessions first, in their own group (not while viewing the archive).
+    let pinned: Vec<&ThreadInfo> = shown.iter().copied().filter(|t| t.pinned && filter != 3).collect();
     if !pinned.is_empty() {
-        projects.push(ProjectItem { name: "ピン留め".into(), cwd: "".into(), chats: model(pinned), pinned: true });
+        projects.push(ProjectItem { name: "ピン留め".into(), cwd: "".into(), chats: model(ordered(&pinned)), pinned: true });
     }
-    projects.extend(groups.into_iter().map(|(name, (cwd, chats))| ProjectItem {
-        name: name.into(),
-        cwd: cwd.into(),
-        chats: model(chats),
-        pinned: false,
-    }));
+    let rest: Vec<&ThreadInfo> = shown.iter().copied().filter(|t| !(t.pinned && filter != 3)).collect();
+    if flat {
+        if !rest.is_empty() {
+            projects.push(ProjectItem { name: "セッション".into(), cwd: "".into(), chats: model(ordered(&rest)), pinned: true });
+        }
+    } else {
+        // One group per folder; a folder is keyed by its full path (two folders can share a name).
+        let mut groups: Vec<(String, Vec<&ThreadInfo>)> = Vec::new();
+        for t in rest {
+            match groups.iter_mut().find(|(cwd, _)| *cwd == t.cwd) {
+                Some(g) => g.1.push(t),
+                None => groups.push((t.cwd.clone(), vec![t])),
+            }
+        }
+        for (cwd, items) in groups {
+            let base = std::path::Path::new(&cwd)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| "(フォルダなし)".to_string());
+            // Same name, different folder: show the parent folder too.
+            let dup = projects.iter().any(|p| p.name.as_str() == base) || state.threads.iter().any(|o| {
+                o.cwd != cwd && std::path::Path::new(&o.cwd).file_name() == std::path::Path::new(&cwd).file_name()
+            });
+            let name = if dup && !cwd.is_empty() {
+                let parent = std::path::Path::new(&cwd)
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if parent.is_empty() { base } else { format!("{base} — {parent}") }
+            } else {
+                base
+            };
+            projects.push(ProjectItem { name: name.into(), cwd: cwd.into(), chats: model(ordered(&items)), pinned: false });
+        }
+    }
     app.global::<AppState>().set_projects(ModelRc::from(Rc::new(VecModel::from(projects))));
 }
 

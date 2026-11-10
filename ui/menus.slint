@@ -9,6 +9,7 @@ export struct MenuItem {
     danger: bool,
     disabled: bool,
     separator: bool,
+    checked: bool,
 }
 
 // State of the sidebar's popup menu, the in-place rename and the confirmation dialog.
@@ -20,6 +21,8 @@ export global SidebarState {
     in property <[MenuItem]> menu-items;
     // First letter of the account label shown on the avatar.
     in property <string> account-initial: "I";
+    // More sessions can be loaded (thread/list nextCursor).
+    in property <bool> has-more: false;
     // Thread whose title is being edited in place ("" when none).
     in-out property <string> rename-id;
     in property <bool> confirm-open: false;
@@ -34,6 +37,7 @@ export global SidebarState {
     callback commit-rename(string, string);
     callback confirm;
     callback cancel-confirm;
+    callback load-more;
 }
 
 component MenuRow inherits Rectangle {
@@ -66,6 +70,7 @@ component MenuRow inherits Rectangle {
                 overflow: elide;
                 horizontal-stretch: 1;
             }
+            if root.item.checked: Icon { width: 16px; text: "\u{e5ca}"; font-size: 15px; color: Theme.fg; }
         }
         ta := TouchArea {
             enabled: !root.item.disabled;

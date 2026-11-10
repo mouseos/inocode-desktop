@@ -1,0 +1,173 @@
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+
+export struct PaletteRow {
+    // "new" for the action row, otherwise a thread id
+    id: string,
+    title: string,
+    sub: string,
+    // 0 action, 1 recent session, 2 search result
+    kind: int,
+}
+
+// Command palette (Ctrl+K): recents, actions and thread search results.
+export global PaletteState {
+    in-out property <bool> open: false;
+    in-out property <string> query;
+    in property <[PaletteRow]> rows;
+    in-out property <int> selected: 0;
+    in property <bool> searching: false;
+
+    callback query-changed(string);
+    callback pick(string);
+}
+
+component Row inherits Rectangle {
+    in property <PaletteRow> data;
+    in property <bool> active;
+    in property <bool> header;
+    callback clicked;
+    height: root.header ? 26px : 32px;
+    if root.header: Text {
+        x: 12px;
+        text: root.data.kind == 0 ? "アクション" : root.data.kind == 1 ? "最近" : "検索結果";
+        color: Theme.fg-tertiary;
+        font-size: 11px;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+    if !root.header: Rectangle {
+        x: 4px;
+        width: parent.width - 8px;
+        border-radius: 6px;
+        background: root.active ? Theme.selected : ta.has-hover ? Theme.hover : transparent;
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            spacing: 8px;
+            Icon {
+                width: 16px;
+                text: root.data.kind == 0 ? Glyph.add : Glyph.chat;
+                font-size: 15px;
+                color: Theme.fg-secondary;
+            }
+            Text {
+                text: root.data.title;
+                color: Theme.fg;
+                font-size: 13px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            if root.data.sub != "": Text {
+                text: root.data.sub;
+                color: Theme.fg-tertiary;
+                font-size: 12px;
+                vertical-alignment: center;
+                overflow: elide;
+                max-width: 160px;
+            }
+        }
+        ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.clicked(); }
+        }
+    }
+}
+
+export component PaletteOverlay inherits Rectangle {
+    if PaletteState.open: Rectangle {
+        background: #00000040;
+        TouchArea {
+            clicked => { PaletteState.open = false; }
+        }
+        Rectangle {
+            y: 70px;
+            width: min(560px, root.width - 32px);
+            height: min(col.preferred-height + 8px, root.height - 100px);
+            x: (root.width - self.width) / 2;
+            border-radius: 12px;
+            background: Theme.composer;
+            border-width: 1px;
+            border-color: Theme.border;
+            drop-shadow-blur: 30px;
+            drop-shadow-color: #00000066;
+            TouchArea { }
+            col := VerticalLayout {
+                padding: 4px;
+                HorizontalLayout {
+                    height: 40px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 8px;
+                    Icon { width: 18px; text: Glyph.search; font-size: 18px; color: Theme.fg-secondary; }
+                    Rectangle {
+                    horizontal-stretch: 1;
+                    input := TextInput {
+                        width: parent.width;
+                        height: parent.height;
+                        text <=> PaletteState.query;
+                        font-size: 14px;
+                        color: Theme.fg;
+                        vertical-alignment: center;
+                        single-line: true;
+                        edited => { PaletteState.query-changed(self.text); }
+                        accepted => {
+                            if PaletteState.selected >= 0 && PaletteState.selected < PaletteState.rows.length {
+                                PaletteState.pick(PaletteState.rows[PaletteState.selected].id);
+                            }
+                        }
+                        key-pressed(e) => {
+                            if e.text == Key.Escape {
+                                PaletteState.open = false;
+                                return accept;
+                            }
+                            if e.text == Key.DownArrow {
+                                PaletteState.selected = min(PaletteState.selected + 1, PaletteState.rows.length - 1);
+                                return accept;
+                            }
+                            if e.text == Key.UpArrow {
+                                PaletteState.selected = max(PaletteState.selected - 1, 0);
+                                return accept;
+                            }
+                            return reject;
+                        }
+                        init => { self.focus(); self.select-all(); }
+                    }
+                    if PaletteState.query == "": Text {
+                        text: "セッションを検索、または開始…";
+                        color: Theme.fg-tertiary;
+                        font-size: 14px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    }
+                }
+                Rectangle { height: 1px; background: Theme.border; }
+                Flickable {
+                    height: min(360px, rows.preferred-height);
+                    content-height: rows.preferred-height;
+                    rows := VerticalLayout {
+                        padding-top: 4px;
+                        for r[i] in PaletteState.rows: VerticalLayout {
+                            if i == 0 || PaletteState.rows[i - 1].kind != r.kind: Row { data: r; header: true; }
+                            Row {
+                                data: r;
+                                active: i == PaletteState.selected;
+                                clicked => { PaletteState.pick(r.id); }
+                            }
+                        }
+                        if PaletteState.rows.length == 0: Text {
+                            text: "一致するセッションはありません";
+                            color: Theme.fg-tertiary;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                            height: 40px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

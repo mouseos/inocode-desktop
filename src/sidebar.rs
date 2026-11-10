@@ -20,10 +20,89 @@ enum Confirm {
     Logout,
 }
 
-#[derive(Default)]
 struct Data {
     confirm: Option<Confirm>,
     pinned_section: Option<String>,
+    /// thread/list sortKey: "created_at", "updated_at" or "section_position" (manual).
+    sort: &'static str,
+    /// One flat list instead of one group per folder.
+    flat: bool,
+    /// 0 all, 1 unread, 2 needs you, 3 archived.
+    filter: i32,
+    cursor: Option<String>,
+}
+
+impl Default for Data {
+    fn default() -> Self {
+        Data { confirm: None, pinned_section: None, sort: "updated_at", flat: false, filter: 0, cursor: None }
+    }
+}
+
+/// (flat list, filter) as the sidebar shows them.
+pub(crate) fn mode() -> (bool, i32) {
+    DATA.with(|d| {
+        let d = d.borrow();
+        (d.flat, d.filter)
+    })
+}
+
+fn checked(mut m: MenuItem, on: bool) -> MenuItem {
+    m.checked = on;
+    m
+}
+
+/// Reload the session list with the sidebar's own sort and filter (thread/list).
+pub(crate) fn refresh() {
+    let Some(h) = HANDLE.with(|c| c.borrow().clone()) else { return };
+    let (sort, filter) = DATA.with(|d| {
+        let d = d.borrow();
+        (d.sort, d.filter)
+    });
+    let mut params = json!({ "limit": 50, "sortKey": sort });
+    if filter == 3 {
+        params["archived"] = json!(true);
+    }
+    rpc(&h, "chat.list".into(), "thread/list", params);
+}
+
+fn load_more() {
+    let Some(h) = HANDLE.with(|c| c.borrow().clone()) else { return };
+    let (sort, filter, cursor) = DATA.with(|d| {
+        let d = d.borrow();
+        (d.sort, d.filter, d.cursor.clone())
+    });
+    let Some(cursor) = cursor else { return };
+    let mut params = json!({ "limit": 50, "sortKey": sort, "cursor": cursor });
+    if filter == 3 {
+        params["archived"] = json!(true);
+    }
+    rpc(&h, "chat.list.more".into(), "thread/list", params);
+}
+
+fn sort_menu() -> Vec<MenuItem> {
+    let (sort, flat) = DATA.with(|d| {
+        let d = d.borrow();
+        (d.sort, d.flat)
+    });
+    vec![
+        checked(item("sort:created_at", "作成順", "", false, false), sort == "created_at"),
+        checked(item("sort:updated_at", "更新順", "", false, false), sort == "updated_at"),
+        checked(item("sort:section_position", "手動順", "", false, false), sort == "section_position"),
+        separator(),
+        checked(item("group:project", "プロジェクト別", "", false, false), !flat),
+        checked(item("group:flat", "フラット", "", false, false), flat),
+    ]
+}
+
+fn filter_menu() -> Vec<MenuItem> {
+    let f = DATA.with(|d| d.borrow().filter);
+    vec![
+        checked(item("filter:0", "すべて", "", false, false), f == 0),
+        checked(item("filter:1", "未読", "", false, false), f == 1),
+        checked(item("filter:2", "対応待ち", "", false, false), f == 2),
+        separator(),
+        checked(item("filter:3", "アーカイブ済み", "", false, false), f == 3),
+    ]
 }
 
 thread_local! {
@@ -31,11 +110,11 @@ thread_local! {
 }
 
 fn item(id: &str, label: &str, glyph: &str, danger: bool, disabled: bool) -> MenuItem {
-    MenuItem { id: id.into(), label: label.into(), glyph: glyph.into(), danger, disabled, separator: false }
+    MenuItem { id: id.into(), label: label.into(), glyph: glyph.into(), danger, disabled, separator: false, checked: false }
 }
 
 fn separator() -> MenuItem {
-    MenuItem { id: "".into(), label: "".into(), glyph: "".into(), danger: false, disabled: false, separator: true }
+    MenuItem { id: "".into(), label: "".into(), glyph: "".into(), danger: false, disabled: false, separator: true, checked: false }
 }
 
 fn set_menu(app: &AppWindow, items: Vec<MenuItem>, x: f32, y: f32) {
@@ -57,7 +136,11 @@ fn thread_menu(st: &State, id: &str) -> Vec<MenuItem> {
         // Like Claude: a session that is still working or needs you cannot be marked.
         item("read", if unread { "既読にする" } else { "未読にする" }, Glyph::done_all(), false, running),
         separator(),
-        item("archive", "アーカイブ", Glyph::folder(), false, false),
+        if mode().1 == 3 {
+            item("unarchive", "アーカイブを解除", Glyph::folder(), false, false)
+        } else {
+            item("archive", "アーカイブ", Glyph::folder(), false, false)
+        },
         item("delete", "削除", Glyph::close(), true, false),
     ]
 }
@@ -95,10 +178,13 @@ fn title_of(st: &State, id: &str) -> String {
 /// Called once from callbacks::register.
 pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     HANDLE.with(|c| *c.borrow_mut() = Some(handle.clone()));
+    crate::palette::register(app, handle);
     let weak = app.as_weak();
     app.global::<SidebarState>().on_open_menu(move |kind, id, x, y| {
         let Some(app) = weak.upgrade() else { return };
         match kind.as_str() {
+            "sort" => set_menu(&app, sort_menu(), x, y),
+            "more" => set_menu(&app, filter_menu(), x, y),
             "thread" => {
                 let items = STATE.with(|s| thread_menu(&s.borrow(), &id));
                 set_menu(&app, items, x, y);
@@ -128,7 +214,21 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     app.global::<SidebarState>().on_menu_pick(move |action| {
         let Some(app) = weak.upgrade() else { return };
         let id = MENU_FOR.with(|m| m.borrow().clone());
+        if let Some((kind, v)) = action.split_once(':') {
+            DATA.with(|d| {
+                let mut d = d.borrow_mut();
+                match kind {
+                    "sort" => d.sort = match v { "created_at" => "created_at", "section_position" => "section_position", _ => "updated_at" },
+                    "group" => d.flat = v == "flat",
+                    "filter" => d.filter = v.parse().unwrap_or(0),
+                    _ => {}
+                }
+            });
+            refresh();
+            return;
+        }
         match action.as_str() {
+            "unarchive" => rpc(&h, format!("chat.unarchive|{id}"), "thread/unarchive", json!({ "threadId": id })),
             "rename" => app.global::<SidebarState>().set_rename_id(id.as_str().into()),
             "pin" => {
                 let pinned = STATE.with(|s| s.borrow().threads.iter().any(|t| t.id == id && t.pinned));
@@ -210,6 +310,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             None => {}
         }
     });
+    app.global::<SidebarState>().on_load_more(load_more);
     let weak = app.as_weak();
     app.global::<SidebarState>().on_cancel_confirm(move || {
         if let Some(app) = weak.upgrade() {
@@ -260,6 +361,12 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
     if !kind.starts_with("chat.") {
         return;
     }
+    if kind == "chat.palette" {
+        if let Ok(v) = result {
+            crate::palette::on_search(app, &id, v);
+        }
+        return;
+    }
     let result = match result {
         Ok(v) => v,
         Err(e) => {
@@ -268,17 +375,37 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                 app.global::<AppState>().set_status(format!("操作に失敗しました: {e}").into());
                 app.global::<AppState>().set_status_level(2);
             }
-            h.send(Command::ListThreads);
+            refresh();
             return;
         }
     };
     match kind {
+        "chat.list" | "chat.list.more" => {
+            let mut list = client::parse_threads(result);
+            DATA.with(|d| d.borrow_mut().cursor = result.get("nextCursor").and_then(Value::as_str).map(str::to_string));
+            app.global::<SidebarState>().set_has_more(DATA.with(|d| d.borrow().cursor.is_some()));
+            STATE.with(|s| {
+                let mut st = s.borrow_mut();
+                if kind == "chat.list.more" {
+                    let mut all = std::mem::take(&mut st.threads);
+                    all.append(&mut list);
+                    list = all;
+                }
+                st.threads = list;
+                sync_project_cwds(&mut st);
+                rebuild_projects(app, &st);
+                refresh_pickers(app, &st);
+            });
+            if app.global::<PaletteState>().get_query().trim().is_empty() {
+                crate::palette::show_recents(app);
+            }
+        }
         "chat.rename" => {
             let active = STATE.with(|s| s.borrow().active == id);
             if active {
                 app.global::<AppState>().set_session_title(extra.as_str().into());
             }
-            h.send(Command::ListThreads);
+            refresh();
         }
         "chat.pin.list" => {
             let found = result
@@ -306,7 +433,7 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
             if active {
                 h.send(Command::NewThread);
             }
-            h.send(Command::ListThreads);
+            refresh();
         }
         "chat.logout" => {
             app.global::<AppState>().set_logged_in(false);
@@ -317,14 +444,13 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
             let n = result.get("data").and_then(Value::as_array).map(Vec::len).unwrap_or(0);
             app.global::<AppState>().set_status(format!("アカウントセッション {n} 件").into());
         }
-        // chat.pin, chat.unpin, chat.read
-        _ => h.send(Command::ListThreads),
+        // chat.pin, chat.unpin, chat.read, chat.unarchive
+        _ => refresh(),
     }
 }
 
 /// Session-list notifications from the server.
 pub(crate) fn on_notify(method: &str) {
-    let Some(h) = HANDLE.with(|c| c.borrow().clone()) else { return };
     if matches!(
         method,
         "thread/status/changed"
@@ -335,6 +461,6 @@ pub(crate) fn on_notify(method: &str) {
             | "thread/deleted"
             | "thread/section/changed"
     ) {
-        h.send(Command::ListThreads);
+        refresh();
     }
 }
