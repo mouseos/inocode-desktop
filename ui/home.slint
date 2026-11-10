@@ -2,6 +2,28 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Chip } from "widgets.slint";
 
+// InoCode mark: a ring with a dot, drawn as vector paths.
+component Logo inherits Rectangle {
+    width: 40px;
+    height: 40px;
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: 40;
+        viewbox-height: 40;
+        commands: "M20 4 a16 16 0 1 0 0.001 0 Z";
+        stroke: Theme.fg;
+        stroke-width: 3px;
+        fill: transparent;
+    }
+    Rectangle {
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background: Theme.fg;
+    }
+}
+
 component SendButton inherits Rectangle {
     in property <bool> active;
     callback clicked;
@@ -116,6 +138,11 @@ export component Home inherits Rectangle {
             spacing: 24px;
             padding-left: 16px;
             padding-right: 16px;
+
+            HorizontalLayout {
+                alignment: center;
+                Logo { }
+            }
 
             HorizontalLayout {
                 alignment: center;

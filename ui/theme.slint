@@ -1,19 +1,23 @@
-// Design tokens. Values follow the dark theme of the Codex Desktop web assets
-// (gray scale, alpha overlays, 14px base text). Sidebar colour approximates
-// the translucent "surface-under" material with a solid colour.
+import { Palette } from "std-widgets.slint";
+
+// Design tokens. Values follow the light/dark pairs of the Codex Desktop web
+// assets (gray scale, alpha overlays, 14px base text). The sidebar colour
+// approximates the translucent "surface-under" material with a solid colour.
+// The scheme follows the operating system.
 export global Theme {
-    out property <color> surface: #181818;
-    out property <color> sidebar: #111111;
-    out property <color> fg: #dfdfdf;
-    out property <color> fg-secondary: #dfdfdfb3;
-    out property <color> fg-tertiary: #dfdfdf80;
-    out property <color> border: #ffffff1f;
-    out property <color> hover: #ffffff14;
-    out property <color> pressed: #ffffff1f;
-    out property <color> composer: #262626;
-    out property <color> warning: #ff8549;
+    out property <bool> dark: Palette.color-scheme != ColorScheme.light;
+    out property <color> surface: dark ? #181818 : #ffffff;
+    out property <color> sidebar: dark ? #111111 : #f9f9f9;
+    out property <color> fg: dark ? #dfdfdf : #1a1c1f;
+    out property <color> fg-secondary: dark ? #dfdfdfb3 : #1a1c1fb3;
+    out property <color> fg-tertiary: dark ? #dfdfdf80 : #1a1c1f80;
+    out property <color> border: dark ? #ffffff1f : #0000001a;
+    out property <color> hover: dark ? #ffffff14 : #00000014;
+    out property <color> pressed: dark ? #ffffff1f : #0000001f;
+    out property <color> composer: dark ? #262626 : #ffffff;
+    out property <color> warning: dark ? #ff8549 : #fb6a22;
     out property <color> accent: #339cff;
-    out property <color> on-primary: #0d0d0d;
+    out property <color> on-primary: dark ? #0d0d0d : #ffffff;
     out property <length> radius-row: 8px;
     out property <length> radius-composer: 22px;
     out property <length> row-height: 32px;
