@@ -1,0 +1,106 @@
+import { Theme } from "../theme.slint";
+
+// 知識タブと根拠タブで共有する小さな部品。
+
+export component Tag inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked;
+    height: 24px;
+    width: t.preferred-width + 18px;
+    border-radius: 12px;
+    background: root.selected ? Theme.pressed : ta.has-hover ? Theme.hover : transparent;
+    border-width: 1px;
+    border-color: root.selected ? transparent : Theme.border;
+    t := Text {
+        text: root.label;
+        color: root.selected ? Theme.fg : Theme.fg-secondary;
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component Button inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    callback clicked;
+    height: 28px;
+    width: t.preferred-width + 24px;
+    border-radius: Theme.radius-row;
+    background: root.primary ? (ta.has-hover ? Theme.fg-secondary : Theme.fg) : ta.has-hover ? Theme.pressed : Theme.selected;
+    t := Text {
+        text: root.label;
+        color: root.primary ? Theme.surface : Theme.fg;
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component StatusLabel inherits Rectangle {
+    in property <string> status;
+    in property <string> label;
+    height: 18px;
+    width: t.preferred-width + 12px;
+    border-radius: 4px;
+    background: (root.status == "verified" || root.status == "supported") ? #2e9d5b33
+        : (root.status == "retracted" || root.status == "unsupported") ? #d9484833
+        : root.status == "superseded" ? Theme.hover : #d9a43a33;
+    t := Text {
+        text: root.label;
+        font-size: 11px;
+        color: (root.status == "verified" || root.status == "supported") ? #3fb06d
+            : (root.status == "retracted" || root.status == "unsupported") ? Theme.danger
+            : root.status == "superseded" ? Theme.fg-tertiary : Theme.warning;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component LineEdit inherits Rectangle {
+    in-out property <string> text;
+    callback edited(string);
+    height: 28px;
+    border-radius: 6px;
+    background: Theme.hover;
+    ti := TextInput {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        vertical-alignment: center;
+        font-size: 12px;
+        color: Theme.fg;
+        single-line: true;
+        text <=> root.text;
+        edited => { root.edited(self.text); }
+    }
+    TouchArea { mouse-cursor: MouseCursor.text; clicked => { ti.focus(); } }
+}
+
+// 複数行の入力欄(本文など)。
+
+export component AreaEdit inherits Rectangle {
+    in-out property <string> text;
+    in property <length> lines-height: 90px;
+    callback edited(string);
+    min-height: root.lines-height;
+    border-radius: 6px;
+    background: Theme.hover;
+    ti := TextInput {
+        x: 8px;
+        y: 6px;
+        width: parent.width - 16px;
+        height: max(parent.height - 12px, self.preferred-height);
+        font-size: 12px;
+        color: Theme.fg;
+        wrap: word-wrap;
+        single-line: false;
+        text <=> root.text;
+        edited => { root.edited(self.text); }
+    }
+    TouchArea { mouse-cursor: MouseCursor.text; clicked => { ti.focus(); } }
+}
+

@@ -1,13 +1,354 @@
 import { Theme } from "../theme.slint";
+import { Icon, Glyph } from "../icons.slint";
+import { Tag, Button, StatusLabel, LineEdit, AreaEdit } from "g_widgets.slint";
 
 // 知識タブ。このファイルと src/tabs/knowledge.rs だけを編集して実装する。
-// Rust 側から触る状態とコールバックは、下の global にまとめる
+// Rust 側から触る状態とコールバックは KnowledgeState にまとめる
 // (Rust では app.global::<KnowledgeState>() で取得できる)。
 
+export struct KRow {
+    id: string,
+    kind-label: string,
+    title: string,
+    summary: string,
+    status: string,
+    status-label: string,
+    confidence-label: string,
+    updated: string,
+    selected: bool,
+}
+
+// 表示用の front-matter の 1 項目、および編集フォームの 1 項目。
+export struct KField {
+    key: string,
+    label: string,
+    value: string,
+    multiline: bool,
+}
+
+export struct KRecord {
+    id: string,
+    title: string,
+    kind-label: string,
+    scope-label: string,
+    status: string,
+    status-label: string,
+    confidence-label: string,
+    updated: string,
+    body: string,
+}
+
 export global KnowledgeState {
-    // 例: in property <[Row]> rows;  callback refresh();
+    // 一覧
+    in property <[KRow]> rows;
+    in property <string> note;
+    in property <bool> loading;
+    // 範囲: 0 = プロジェクト、1 = 共通
+    in-out property <int> scope: 0;
+    // 種類: 0 = すべて、1.. = kinds の並び
+    in-out property <int> kind-index: 0;
+    in-out property <string> query;
+    out property <[string]> kinds: ["すべて", "禁止事項", "失敗例", "課題", "決定", "事実", "契約", "手順"];
+    out property <[string]> new-kinds: ["禁止事項", "失敗例", "課題", "決定", "事実", "契約", "手順"];
+    out property <[string]> statuses: ["未検証", "検証済み", "置換済み", "撤回"];
+    out property <[string]> confidences: ["高", "中", "低"];
+    // 表示
+    in property <bool> has-record;
+    in property <KRecord> record;
+    in property <[KField]> fields;
+    // 編集(新規作成も同じフォーム)
+    in-out property <bool> editing;
+    in property <bool> creating;
+    in-out property <string> edit-title;
+    in-out property <string> edit-body;
+    in-out property <int> edit-kind;
+    in-out property <int> edit-status;
+    in-out property <int> edit-confidence;
+    in property <[KField]> edit-fields;
+    in property <string> edit-error;
+
+    callback refresh();
+    callback select(string);
+    callback search(string);
+    callback scope-changed(int);
+    callback kind-changed(int);
+    callback new-record();
+    callback start-edit();
+    callback cancel-edit();
+    callback save();
+    callback set-status(int);
+    callback edit-kind-changed(int);
+    callback field-edited(int, string);
+}
+
+component RowItem inherits Rectangle {
+    in property <KRow> item;
+    callback clicked;
+    height: 62px;
+    border-radius: Theme.radius-row;
+    background: root.item.selected ? Theme.selected : ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    VerticalLayout {
+        padding: 8px;
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 3px;
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: root.item.title;
+                color: Theme.fg;
+                font-size: 13px;
+                font-weight: 500;
+                overflow: elide;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+            StatusLabel { status: root.item.status; label: root.item.status-label; }
+        }
+        Text {
+            text: root.item.summary;
+            color: Theme.fg-secondary;
+            font-size: 12px;
+            overflow: elide;
+        }
+        Text {
+            text: root.item.kind-label + " · 確度 " + root.item.confidence-label + " · " + root.item.updated;
+            color: Theme.fg-tertiary;
+            font-size: 11px;
+            overflow: elide;
+        }
+    }
+}
+
+component SearchBox inherits Rectangle {
+    height: 30px;
+    border-radius: 6px;
+    background: Theme.hover;
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 6px;
+        Icon { width: 16px; text: Glyph.search; font-size: 14px; color: Theme.fg-tertiary; }
+        Rectangle {
+            horizontal-stretch: 1;
+            si := TextInput {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                height: parent.height;
+                vertical-alignment: center;
+                font-size: 12px;
+                color: Theme.fg;
+                single-line: true;
+                text <=> KnowledgeState.query;
+                edited => { KnowledgeState.search(self.text); }
+            }
+            if si.text == "": Text {
+                text: "知識を検索";
+                color: Theme.fg-tertiary;
+                font-size: 12px;
+                height: parent.height;
+                horizontal-alignment: left;
+                vertical-alignment: center;
+            }
+        }
+    }
+    TouchArea { mouse-cursor: MouseCursor.text; clicked => { si.focus(); } }
+}
+
+// 1 行の入力欄(編集フォーム)。
+component ListPane inherits Rectangle {
+    background: Theme.surface;
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 6px;
+            Tag { label: "プロジェクト"; selected: KnowledgeState.scope == 0; clicked => { KnowledgeState.scope = 0; KnowledgeState.scope-changed(0); } }
+            Tag { label: "共通"; selected: KnowledgeState.scope == 1; clicked => { KnowledgeState.scope = 1; KnowledgeState.scope-changed(1); } }
+            Rectangle { horizontal-stretch: 1; }
+            Button { label: "新規"; clicked => { KnowledgeState.new-record(); } }
+        }
+        SearchBox { }
+        Flickable {
+            height: 28px;
+            content-width: chips.preferred-width;
+            chips := HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for k[i] in KnowledgeState.kinds: Tag {
+                    label: k;
+                    selected: KnowledgeState.kind-index == i;
+                    clicked => { KnowledgeState.kind-index = i; KnowledgeState.kind-changed(i); }
+                }
+            }
+        }
+        if KnowledgeState.note != "": Text {
+            text: KnowledgeState.note;
+            color: Theme.fg-tertiary;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+        Flickable {
+            content-height: rows.preferred-height;
+            rows := VerticalLayout {
+                width: parent.width;
+                spacing: 2px;
+                alignment: start;
+                for r in KnowledgeState.rows: RowItem {
+                    item: r;
+                    clicked => { KnowledgeState.select(r.id); }
+                }
+            }
+        }
+    }
+}
+
+component DetailView inherits Rectangle {
+    background: Theme.surface;
+    Flickable {
+        content-height: col.preferred-height + 24px;
+        col := VerticalLayout {
+            padding: 20px;
+            spacing: 10px;
+            alignment: start;
+
+            Text {
+                text: KnowledgeState.record.title;
+                color: Theme.fg;
+                font-size: 18px;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+            Text {
+                text: KnowledgeState.record.kind-label + " · "
+                    + KnowledgeState.record.scope-label + " · 確度 "
+                    + KnowledgeState.record.confidence-label + " · "
+                    + KnowledgeState.record.updated;
+                color: Theme.fg-tertiary;
+                font-size: 12px;
+            }
+            // 状態の変更
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for s[i] in KnowledgeState.statuses: Tag {
+                    label: s;
+                    selected: KnowledgeState.record.status-label == s;
+                    clicked => { KnowledgeState.set-status(i); }
+                }
+                Rectangle { width: 12px; }
+                Button { label: "編集"; clicked => { KnowledgeState.start-edit(); } }
+            }
+            Rectangle { height: 1px; background: Theme.border; }
+            for f in KnowledgeState.fields: VerticalLayout {
+                spacing: 2px;
+                Text { text: f.label; color: Theme.fg-tertiary; font-size: 11px; }
+                Text { text: f.value; color: Theme.fg; font-size: 13px; wrap: word-wrap; }
+            }
+            if KnowledgeState.record.body != "": Rectangle { height: 1px; background: Theme.border; }
+            Text {
+                text: KnowledgeState.record.body;
+                color: Theme.fg;
+                font-size: 14px;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+component EditForm inherits Rectangle {
+    background: Theme.surface;
+    Flickable {
+        content-height: col.preferred-height + 24px;
+        col := VerticalLayout {
+            padding: 20px;
+            spacing: 10px;
+            alignment: start;
+
+            Text {
+                text: KnowledgeState.creating ? "新規作成" : "編集";
+                color: Theme.fg;
+                font-size: 16px;
+                font-weight: 600;
+            }
+            if KnowledgeState.creating: HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for k[i] in KnowledgeState.new-kinds: Tag {
+                    label: k;
+                    selected: KnowledgeState.edit-kind == i;
+                    clicked => { KnowledgeState.edit-kind = i; KnowledgeState.edit-kind-changed(i); }
+                }
+            }
+            Text { text: "タイトル"; color: Theme.fg-tertiary; font-size: 11px; }
+            LineEdit { text <=> KnowledgeState.edit-title; }
+            Text { text: "状態"; color: Theme.fg-tertiary; font-size: 11px; }
+            HorizontalLayout {
+                spacing: 6px;
+                for s[i] in KnowledgeState.statuses: Tag {
+                    label: s;
+                    selected: KnowledgeState.edit-status == i;
+                    clicked => { KnowledgeState.edit-status = i; }
+                }
+            }
+            Text { text: "確度"; color: Theme.fg-tertiary; font-size: 11px; }
+            HorizontalLayout {
+                spacing: 6px;
+                for c[i] in KnowledgeState.confidences: Tag {
+                    label: c;
+                    selected: KnowledgeState.edit-confidence == i;
+                    clicked => { KnowledgeState.edit-confidence = i; }
+                }
+            }
+            for f[i] in KnowledgeState.edit-fields: VerticalLayout {
+                spacing: 2px;
+                Text { text: f.label; color: Theme.fg-tertiary; font-size: 11px; }
+                if !f.multiline: LineEdit {
+                    text: f.value;
+                    edited(t) => { KnowledgeState.field-edited(i, t); }
+                }
+                if f.multiline: AreaEdit {
+                    text: f.value;
+                    lines-height: 64px;
+                    edited(t) => { KnowledgeState.field-edited(i, t); }
+                }
+            }
+            Text { text: "本文"; color: Theme.fg-tertiary; font-size: 11px; }
+            AreaEdit { text <=> KnowledgeState.edit-body; lines-height: 160px; }
+            if KnowledgeState.edit-error != "": Text {
+                text: KnowledgeState.edit-error;
+                color: Theme.danger;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                Button { label: "キャンセル"; clicked => { KnowledgeState.cancel-edit(); } }
+                Button { label: "保存"; primary: true; clicked => { KnowledgeState.save(); } }
+            }
+        }
+    }
 }
 
 export component KnowledgeTab inherits Rectangle {
     background: Theme.surface;
+    HorizontalLayout {
+        ListPane { width: 400px; }
+        Rectangle { width: 1px; background: Theme.border; }
+        Rectangle {
+            horizontal-stretch: 1;
+            if KnowledgeState.editing: EditForm { }
+            if !KnowledgeState.editing && KnowledgeState.has-record: DetailView { }
+            if !KnowledgeState.editing && !KnowledgeState.has-record: Text {
+                text: "レコードを選んでください";
+                color: Theme.fg-tertiary;
+                font-size: 13px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
 }
