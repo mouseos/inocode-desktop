@@ -1,5 +1,5 @@
 import { Theme } from "../theme.slint";
-import { Tag, Button, StatusLabel, AreaEdit } from "g_widgets.slint";
+import { Tag, Button, StatusLabel, AreaEdit, LineEdit } from "g_widgets.slint";
 
 // 根拠タブ。このファイルと src/tabs/evidence.rs だけを編集して実装する。
 // Rust 側から触る状態とコールバックは EvidenceState にまとめる
@@ -88,6 +88,38 @@ export global EvidenceState {
     in property <bool> verifying;
     in property <string> verify-note;
 
+    // 書き込み(importSource / addQuote / addClaim / setClaimStatus)
+    in property <string> write-note;
+    in-out property <bool> adding-source: false;
+    in-out property <string> new-src-title;
+    in-out property <string> new-src-version;
+    in-out property <string> new-src-path;
+    in-out property <string> new-src-text;
+    in-out property <int> new-src-kind: 1;
+    out property <[string]> src-kinds: ["法令", "文書", "判例", "その他"];
+    in-out property <string> quote-text;
+    in property <string> quote-note;
+    in-out property <bool> adding-claim: false;
+    in-out property <string> new-claim-text;
+    in-out property <string> new-claim-spans;
+    in-out property <int> new-claim-type: 0;
+    in-out property <int> new-claim-confidence: 1;
+    out property <[string]> claim-types: ["事実", "法的主張", "推論", "仮説"];
+    out property <[string]> claim-confidences: ["高", "中", "低"];
+    out property <[string]> claim-statuses: ["根拠あり", "根拠なし", "撤回"];
+    in property <[VSource]> premise-options;
+    in property <string> selected-claim;
+    in property <int> selected-claim-status: -1;
+    callback add-source();
+    callback save-source();
+    callback cancel-source();
+    callback add-quote();
+    callback add-claim();
+    callback save-claim();
+    callback cancel-claim();
+    callback toggle-premise(int);
+    callback set-claim-status(int);
+
     callback refresh();
     callback tab-changed(int);
     callback select-source(string);
@@ -156,6 +188,11 @@ component SourcesView inherits Rectangle {
                     padding: 12px;
                     spacing: 2px;
                     alignment: start;
+                    HorizontalLayout {
+                        alignment: start;
+                        Button { label: "原資料を追加"; clicked => { EvidenceState.add-source(); } }
+                    }
+                    Rectangle { height: 6px; }
                     for s in EvidenceState.sources: SourceRow {
                         item: s;
                         clicked => { EvidenceState.select-source(s.id); }
@@ -166,7 +203,41 @@ component SourcesView inherits Rectangle {
         Rectangle { width: 1px; background: Theme.border; }
         Rectangle {
             horizontal-stretch: 1;
-            if EvidenceState.has-source: Flickable {
+            if EvidenceState.adding-source: Flickable {
+                content-height: sf.preferred-height + 24px;
+                sf := VerticalLayout {
+                    padding: 20px;
+                    spacing: 8px;
+                    alignment: start;
+                    Text { text: "原資料を追加"; color: Theme.fg; font-size: 16px; font-weight: 600; }
+                    Text { text: "題名"; color: Theme.fg-tertiary; font-size: 11px; }
+                    LineEdit { text <=> EvidenceState.new-src-title; }
+                    Text { text: "種別"; color: Theme.fg-tertiary; font-size: 11px; }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        for k[i] in EvidenceState.src-kinds: Tag {
+                            label: k;
+                            selected: EvidenceState.new-src-kind == i;
+                            clicked => { EvidenceState.new-src-kind = i; }
+                        }
+                    }
+                    Text { text: "版"; color: Theme.fg-tertiary; font-size: 11px; }
+                    LineEdit { text <=> EvidenceState.new-src-version; }
+                    Text { text: "ファイルのパス(本文を貼り付ける場合は空のまま)"; color: Theme.fg-tertiary; font-size: 11px; }
+                    LineEdit { text <=> EvidenceState.new-src-path; }
+                    Text { text: "本文"; color: Theme.fg-tertiary; font-size: 11px; }
+                    AreaEdit { text <=> EvidenceState.new-src-text; lines-height: 200px; }
+                    if EvidenceState.write-note != "": Text { text: EvidenceState.write-note; color: Theme.danger; font-size: 12px; wrap: word-wrap; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        Button { label: "キャンセル"; clicked => { EvidenceState.cancel-source(); } }
+                        Button { label: "追加"; primary: true; clicked => { EvidenceState.save-source(); } }
+                    }
+                }
+            }
+            if !EvidenceState.adding-source && EvidenceState.has-source: Flickable {
                 content-height: col.preferred-height + 24px;
                 col := VerticalLayout {
                     padding: 20px;
@@ -176,9 +247,25 @@ component SourcesView inherits Rectangle {
                     Text { text: EvidenceState.source-meta; color: Theme.fg-tertiary; font-size: 11px; wrap: word-wrap; }
                     Rectangle { height: 1px; background: Theme.border; }
                     Text { text: EvidenceState.source-text; color: Theme.fg; font-size: 14px; wrap: word-wrap; }
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: "引用にする文字列(原文のとおりに入力)"; color: Theme.fg-tertiary; font-size: 11px; }
+                    LineEdit { text <=> EvidenceState.quote-text; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        if EvidenceState.quote-note != "": Text {
+                            text: EvidenceState.quote-note;
+                            color: Theme.fg-secondary;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            wrap: word-wrap;
+                        }
+                        Button { label: "引用にする"; clicked => { EvidenceState.add-quote(); } }
+                    }
                 }
             }
-            if !EvidenceState.has-source: Text {
+            if !EvidenceState.adding-source && !EvidenceState.has-source: Text {
                 text: "原資料を選んでください";
                 color: Theme.fg-tertiary;
                 font-size: 13px;
@@ -190,15 +277,103 @@ component SourcesView inherits Rectangle {
 }
 
 component ClaimsView inherits Rectangle {
-    Flickable {
-        content-height: list.preferred-height + 16px;
-        list := VerticalLayout {
+    VerticalLayout {
+        HorizontalLayout {
             padding: 12px;
-            spacing: 2px;
-            alignment: start;
-            for c in EvidenceState.claims: ClaimRow {
-                item: c;
-                clicked => { EvidenceState.select-claim(c.id); }
+            padding-bottom: 6px;
+            spacing: 6px;
+            height: 42px;
+            Button { label: "主張を追加"; clicked => { EvidenceState.add-claim(); } }
+            if EvidenceState.selected-claim != "": Text {
+                text: "  選択中: " + EvidenceState.selected-claim;
+                color: Theme.fg-secondary;
+                font-size: 12px;
+                vertical-alignment: center;
+                overflow: elide;
+                max-width: 320px;
+            }
+            if EvidenceState.selected-claim != "": HorizontalLayout {
+                spacing: 6px;
+                for s[i] in EvidenceState.claim-statuses: Tag {
+                    label: s;
+                    selected: EvidenceState.selected-claim-status == i;
+                    clicked => { EvidenceState.set-claim-status(i); }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        if !EvidenceState.adding-claim: Flickable {
+            content-height: list.preferred-height + 16px;
+            list := VerticalLayout {
+                padding: 12px;
+                spacing: 2px;
+                alignment: start;
+                for c in EvidenceState.claims: ClaimRow {
+                    item: c;
+                    clicked => { EvidenceState.select-claim(c.id); }
+                }
+            }
+        }
+        if EvidenceState.adding-claim: Flickable {
+            content-height: cf.preferred-height + 24px;
+            cf := VerticalLayout {
+                padding: 20px;
+                spacing: 8px;
+                alignment: start;
+                Text { text: "主張を追加"; color: Theme.fg; font-size: 16px; font-weight: 600; }
+                Text { text: "本文"; color: Theme.fg-tertiary; font-size: 11px; }
+                AreaEdit { text <=> EvidenceState.new-claim-text; lines-height: 90px; }
+                Text { text: "種類"; color: Theme.fg-tertiary; font-size: 11px; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    for t[i] in EvidenceState.claim-types: Tag {
+                        label: t;
+                        selected: EvidenceState.new-claim-type == i;
+                        clicked => { EvidenceState.new-claim-type = i; }
+                    }
+                }
+                Text { text: "確度"; color: Theme.fg-tertiary; font-size: 11px; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    for c[i] in EvidenceState.claim-confidences: Tag {
+                        label: c;
+                        selected: EvidenceState.new-claim-confidence == i;
+                        clicked => { EvidenceState.new-claim-confidence = i; }
+                    }
+                }
+                Text { text: "引用箇所の ID(カンマ区切り。引用にしたものは自動で入ります)"; color: Theme.fg-tertiary; font-size: 11px; }
+                LineEdit { text <=> EvidenceState.new-claim-spans; }
+                Text { text: "前提にする主張"; color: Theme.fg-tertiary; font-size: 11px; }
+                for p[i] in EvidenceState.premise-options: Rectangle {
+                    height: 26px;
+                    border-radius: 6px;
+                    background: pa.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        spacing: 8px;
+                        Rectangle {
+                            width: 14px;
+                            height: 14px;
+                            y: 6px;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: Theme.fg-tertiary;
+                            background: p.checked ? Theme.accent : transparent;
+                            Text { text: p.checked ? "✓" : ""; color: #ffffff; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                        Text { text: p.title; color: Theme.fg; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                    }
+                    pa := TouchArea { mouse-cursor: pointer; clicked => { EvidenceState.toggle-premise(i); } }
+                }
+                if EvidenceState.write-note != "": Text { text: EvidenceState.write-note; color: Theme.danger; font-size: 12px; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    Button { label: "キャンセル"; clicked => { EvidenceState.cancel-claim(); } }
+                    Button { label: "追加"; primary: true; clicked => { EvidenceState.save-claim(); } }
+                }
             }
         }
     }

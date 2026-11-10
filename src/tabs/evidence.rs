@@ -324,6 +324,168 @@ fn parse_findings(result: &Value) -> Vec<FindingData> {
         .unwrap_or_default()
 }
 
+// 書き込み(importSource / addQuote / addClaim / setClaimStatus)
+
+const SOURCE_KINDS: [&str; 4] = ["statute", "document", "case", "other"];
+const CLAIM_TYPES: [&str; 4] = ["fact", "legal", "inference", "hypothesis"];
+const CLAIM_CONFIDENCES: [&str; 3] = ["high", "medium", "low"];
+const CLAIM_STATUSES: [&str; 3] = ["supported", "unsupported", "retracted"];
+
+fn nonempty(t: &str) -> Option<String> {
+    let t = t.trim();
+    if t.is_empty() { None } else { Some(t.to_string()) }
+}
+
+/// 原資料の追加フォーム -> importSource のパラメータ。題名と、本文かパスのどちらかが要る。
+fn import_params(title: &str, kind: i32, version: &str, path: &str, text: &str) -> Result<Value, String> {
+    let title = nonempty(title).ok_or("題名を入力してください")?;
+    let mut p = json!({ "title": title, "kind": SOURCE_KINDS[(kind.max(0) as usize).min(SOURCE_KINDS.len() - 1)] });
+    if let Some(v) = nonempty(version) {
+        p["version"] = json!(v);
+    }
+    match (nonempty(path), nonempty(text)) {
+        (Some(path), _) => p["path"] = json!(path),
+        (None, Some(_)) => p["text"] = json!(text),
+        (None, None) => return Err("本文を貼り付けるか、ファイルのパスを入力してください".into()),
+    }
+    Ok(p)
+}
+
+/// 主張の追加フォーム -> addClaim のパラメータ。
+fn claim_params(text: &str, ty: i32, conf: i32, spans: &str, premises: &[String]) -> Result<Value, String> {
+    let text = nonempty(text).ok_or("主張の本文を入力してください")?;
+    let span_ids: Vec<String> = spans.split(|c| c == ',' || c == '、' || c == '\n').filter_map(nonempty).collect();
+    Ok(json!({
+        "text": text,
+        "type": CLAIM_TYPES[(ty.max(0) as usize).min(CLAIM_TYPES.len() - 1)],
+        "confidence": CLAIM_CONFIDENCES[(conf.max(0) as usize).min(CLAIM_CONFIDENCES.len() - 1)],
+        "spanIds": span_ids,
+        "premiseIds": premises,
+        "createdBy": "user",
+    }))
+}
+
+fn push_premises(app: &AppWindow) {
+    E.with(|e| {
+        let mut e = e.borrow_mut();
+        let n = e.claims.len();
+        e.premise_checked.resize(n, false);
+        let rows: Vec<VSource> = e
+            .claims
+            .iter()
+            .enumerate()
+            .map(|(i, c)| VSource { id: c.id.as_str().into(), title: c.text.as_str().into(), checked: e.premise_checked[i] })
+            .collect();
+        app.global::<EvidenceState>().set_premise_options(model(rows));
+    });
+}
+
+fn install_write(app: &AppWindow, host: &Host) {
+    let st = app.global::<EvidenceState>();
+
+    let weak = app.as_weak();
+    st.on_add_source(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<EvidenceState>();
+        st.set_new_src_title("".into());
+        st.set_new_src_version("".into());
+        st.set_new_src_path("".into());
+        st.set_new_src_text("".into());
+        st.set_new_src_kind(1);
+        st.set_write_note("".into());
+        st.set_adding_source(true);
+    });
+    let weak = app.as_weak();
+    st.on_cancel_source(move || {
+        if let Some(app) = weak.upgrade() {
+            app.global::<EvidenceState>().set_adding_source(false);
+        }
+    });
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_save_source(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<EvidenceState>();
+        match import_params(&st.get_new_src_title(), st.get_new_src_kind(), &st.get_new_src_version(), &st.get_new_src_path(), &st.get_new_src_text()) {
+            Ok(p) => {
+                st.set_write_note("".into());
+                h.rpc("evidence.w.source", "inocode/evidence/importSource", p);
+            }
+            Err(e) => st.set_write_note(e.into()),
+        }
+    });
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_add_quote(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<EvidenceState>();
+        let Some(source) = E.with(|e| e.borrow().selected_source.clone()) else { return };
+        match nonempty(&st.get_quote_text()) {
+            Some(quote) => {
+                st.set_quote_note("".into());
+                h.rpc("evidence.w.quote", "inocode/evidence/addQuote", json!({ "sourceId": source, "quote": quote, "cwd": cwd(&app) }));
+            }
+            None => st.set_quote_note("引用にする文字列を入力してください".into()),
+        }
+    });
+
+    let weak = app.as_weak();
+    st.on_add_claim(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<EvidenceState>();
+        E.with(|e| {
+            let mut e = e.borrow_mut();
+            let n = e.claims.len();
+            e.premise_checked = vec![false; n];
+        });
+        push_premises(&app);
+        st.set_new_claim_text("".into());
+        st.set_new_claim_type(0);
+        st.set_new_claim_confidence(1);
+        st.set_new_claim_spans(E.with(|e| e.borrow().last_spans.join(", ")).into());
+        st.set_write_note("".into());
+        st.set_adding_claim(true);
+    });
+    let weak = app.as_weak();
+    st.on_cancel_claim(move || {
+        if let Some(app) = weak.upgrade() {
+            app.global::<EvidenceState>().set_adding_claim(false);
+        }
+    });
+    let weak = app.as_weak();
+    st.on_toggle_premise(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        E.with(|e| {
+            if let Some(c) = e.borrow_mut().premise_checked.get_mut(i as usize) {
+                *c = !*c;
+            }
+        });
+        push_premises(&app);
+    });
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_save_claim(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<EvidenceState>();
+        let premises: Vec<String> = E.with(|e| {
+            let e = e.borrow();
+            e.claims.iter().enumerate().filter(|(i, _)| e.premise_checked.get(*i).copied().unwrap_or(false)).map(|(_, c)| c.id.clone()).collect()
+        });
+        match claim_params(&st.get_new_claim_text(), st.get_new_claim_type(), st.get_new_claim_confidence(), &st.get_new_claim_spans(), &premises) {
+            Ok(mut p) => {
+                st.set_write_note("".into());
+                p["cwd"] = json!(cwd(&app));
+                h.rpc("evidence.w.claim", "inocode/evidence/addClaim", p);
+            }
+            Err(e) => st.set_write_note(e.into()),
+        }
+    });
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_set_claim_status(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        let Some(id) = E.with(|e| e.borrow().selected_claim.clone()) else { return };
+        let status = CLAIM_STATUSES[(i.max(0) as usize).min(CLAIM_STATUSES.len() - 1)];
+        h.rpc("evidence.w.status", "inocode/evidence/setClaimStatus", json!({ "id": id, "status": status, "cwd": cwd(&app) }));
+    });
+}
+
 // ------------------------------------------------------------------ state
 
 #[derive(Default)]
@@ -337,6 +499,9 @@ struct E {
     layout: Option<Layout>,
     selected_node: Option<String>,
     verify_checked: Vec<bool>,
+    /// 追加した引用箇所の ID(主張の追加フォームに自動で入れる)
+    last_spans: Vec<String>,
+    premise_checked: Vec<bool>,
 }
 
 thread_local! {
@@ -384,6 +549,12 @@ fn push_sources(app: &AppWindow) {
 fn push_claims(app: &AppWindow) {
     E.with(|e| {
         let e = e.borrow();
+        let chosen = e.selected_claim.as_deref().and_then(|id| e.claims.iter().find(|c| c.id == id));
+        let st = app.global::<EvidenceState>();
+        st.set_selected_claim(chosen.map(|c| c.text.clone()).unwrap_or_default().into());
+        st.set_selected_claim_status(
+            chosen.and_then(|c| CLAIM_STATUSES.iter().position(|s| *s == c.status)).map(|i| i as i32).unwrap_or(-1),
+        );
         app.global::<EvidenceState>().set_claims(model(
             e.claims
                 .iter()
@@ -512,6 +683,7 @@ fn request_for_tab(app: &AppWindow, host: &Host, tab: i32) {
 
 /// 起動時に 1 回。コールバックの登録をここで行う。
 pub fn install(app: &AppWindow, host: &Host) {
+    install_write(app, host);
     let st = app.global::<EvidenceState>();
 
     let (weak, h) = (app.as_weak(), host.clone());
@@ -592,7 +764,7 @@ pub fn opened(app: &AppWindow, host: &Host) {
 }
 
 /// クライアントのイベント (Event::Rpc / Event::Notify) が届くたびに呼ばれる。
-pub fn event(app: &AppWindow, _host: &Host, event: &Event) {
+pub fn event(app: &AppWindow, host: &Host, event: &Event) {
     let Event::Rpc { tag, result } = event else { return };
     let st = app.global::<EvidenceState>();
     match (tag.as_str(), result) {
@@ -653,6 +825,30 @@ pub fn event(app: &AppWindow, _host: &Host, event: &Event) {
             st.set_verifying(false);
             st.set_verify_note(e.as_str().into());
         }
+        ("evidence.w.source", Ok(v)) => {
+            st.set_adding_source(false);
+            let id = payload(v).get("id").and_then(Value::as_str).map(str::to_string);
+            if let Some(id) = id {
+                E.with(|e| e.borrow_mut().selected_source = Some(id.clone()));
+                host.rpc("evidence.source", "inocode/evidence/readSource", json!({ "id": id, "cwd": cwd(app) }));
+            }
+            request_for_tab(app, host, 0);
+        }
+        ("evidence.w.source", Err(e)) => st.set_write_note(e.as_str().into()),
+        ("evidence.w.quote", Ok(v)) => {
+            let span = s(payload(v), "spanId");
+            st.set_quote_text("".into());
+            st.set_quote_note(format!("引用を追加しました ({span})").into());
+            E.with(|e| e.borrow_mut().last_spans.push(span));
+        }
+        ("evidence.w.quote", Err(e)) => st.set_quote_note(e.as_str().into()),
+        ("evidence.w.claim", Ok(_)) => {
+            st.set_adding_claim(false);
+            E.with(|e| e.borrow_mut().last_spans.clear());
+            request_for_tab(app, host, 1);
+        }
+        ("evidence.w.claim", Err(e)) => st.set_write_note(e.as_str().into()),
+        ("evidence.w.status", Ok(_)) => request_for_tab(app, host, 1),
         (t, Err(e)) if t.starts_with("evidence.") => st.set_note(e.as_str().into()),
         _ => {}
     }
@@ -727,5 +923,28 @@ mod tests {
         assert_eq!(f[0].text, "強盗致死罪");
         assert_eq!(f[0].range, "22–27 文字目");
         assert_eq!(f[2].kind_label, "引用が無い");
+    }
+
+    #[test]
+    fn import_needs_title_and_text_or_path() {
+        assert!(import_params(" ", 1, "", "", "x").is_err());
+        assert!(import_params("題", 1, "", "", "  ").is_err());
+        let p = import_params("告訴状", 1, " v1 ", "", "本文").unwrap();
+        assert_eq!((p["kind"].as_str(), p["version"].as_str(), p["text"].as_str()), (Some("document"), Some("v1"), Some("本文")));
+        let f = import_params("刑法", 0, "", "D:/x.txt", "ignored").unwrap();
+        assert_eq!(f["kind"], "statute");
+        assert_eq!(f["path"], "D:/x.txt");
+        assert!(f.get("text").is_none());
+    }
+
+    #[test]
+    fn claim_params_split_spans_and_carry_premises() {
+        let p = claim_params("被告人は…", 1, 0, "span-1, span-2、span-3", &["claim-001".to_string()]).unwrap();
+        assert_eq!(p["type"], "legal");
+        assert_eq!(p["confidence"], "high");
+        assert_eq!(p["spanIds"], json!(["span-1", "span-2", "span-3"]));
+        assert_eq!(p["premiseIds"], json!(["claim-001"]));
+        assert_eq!(p["createdBy"], "user");
+        assert!(claim_params("", 0, 0, "", &[]).is_err());
     }
 }
