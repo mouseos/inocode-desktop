@@ -1,0 +1,147 @@
+//! Server requests (approvals) and notification handling.
+
+use serde_json::{json, Value};
+use super::*;
+
+impl<F: Fn(Event)> Session<'_, F> {
+    pub(super) fn server_request(&mut self, id: Value, method: &str, params: Value) -> Result<(), String> {
+        let (title, detail) = match method {
+            "item/commandExecution/requestApproval" => {
+                let mut detail = String::new();
+                if let Some(c) = params.get("command").and_then(Value::as_str) {
+                    detail.push_str(c);
+                }
+                if let Some(d) = params.get("cwd").and_then(Value::as_str) {
+                    detail.push_str(&format!("\n作業フォルダ: {d}"));
+                }
+                if let Some(r) = params.get("reason").and_then(Value::as_str) {
+                    detail.push_str(&format!("\n理由: {r}"));
+                }
+                ("コマンドの実行を許可しますか？".to_string(), detail)
+            }
+            "item/fileChange/requestApproval" => {
+                let mut detail = String::new();
+                if let Some(r) = params.get("reason").and_then(Value::as_str) {
+                    detail.push_str(r);
+                }
+                if let Some(g) = params.get("grantRoot").and_then(Value::as_str) {
+                    detail.push_str(&format!("\n対象フォルダ: {g}"));
+                }
+                ("ファイルの変更を許可しますか？".to_string(), detail)
+            }
+            "item/permissions/requestApproval" => {
+                let detail = params.get("reason").and_then(Value::as_str).unwrap_or("").to_string();
+                ("追加の権限を許可しますか？".to_string(), detail)
+            }
+            _ => {
+                return self.conn.send(json!({
+                    "id": id,
+                    "error": { "code": -32601, "message": "unsupported by InoCode Desktop" }
+                }));
+            }
+        };
+        let key = id.to_string();
+        self.approvals.insert(key.clone(), (id, method.to_string(), params));
+        (self.on_event)(Event::Approval { key, title, detail: detail.trim().to_string() });
+        Ok(())
+    }
+
+    pub(super) fn notification(&mut self, method: &str, params: &Value) {
+        match method {
+            "turn/started" => {
+                self.turn_id = params.pointer("/turn/id").and_then(Value::as_str).map(str::to_string);
+                (self.on_event)(Event::TurnStarted);
+            }
+            "item/started" => {
+                let item = params.get("item").unwrap_or(&Value::Null);
+                match item.get("type").and_then(Value::as_str) {
+                    Some("agentMessage") => {
+                        self.flush();
+                        self.msg_streamed = false;
+                        (self.on_event)(Event::AssistantStart);
+                    }
+                    _ => {
+                        if let (Some(id), Some(text)) = (item_id(item), tool_text(item)) {
+                            (self.on_event)(Event::Tool { id, text });
+                        }
+                    }
+                }
+            }
+            "item/agentMessage/delta" => {
+                if let Some(delta) = params.get("delta").and_then(Value::as_str) {
+                    self.msg_streamed = true;
+                    self.delta.push_str(delta);
+                }
+            }
+            "item/completed" => {
+                let item = params.get("item").unwrap_or(&Value::Null);
+                if item.get("type").and_then(Value::as_str) == Some("agentMessage") {
+                    // A message that never streamed (no deltas) still has to show up.
+                    if !self.msg_streamed {
+                        if let Some(text) = item.get("text").and_then(Value::as_str) {
+                            self.delta.push_str(text);
+                            self.flush();
+                        }
+                    }
+                } else if let (Some(id), Some(text)) = (item_id(item), tool_text(item)) {
+                    self.flush();
+                    (self.on_event)(Event::Tool { id, text });
+                }
+            }
+            "turn/completed" => {
+                self.flush();
+                let interrupted = params.pointer("/turn/status").and_then(Value::as_str) == Some("interrupted");
+                self.turn_id = None;
+                (self.on_event)(Event::TurnDone { interrupted });
+                (self.on_event)(Event::Status("接続済み".into(), Level::Ok));
+                let _ = self.list_threads();
+            }
+            "thread/tokenUsage/updated" => {
+                let total = params.pointer("/tokenUsage/total/totalTokens").and_then(Value::as_i64).unwrap_or(0);
+                let last = params.pointer("/tokenUsage/last/totalTokens").and_then(Value::as_i64).unwrap_or(0);
+                let window = params.pointer("/tokenUsage/modelContextWindow").and_then(Value::as_i64).unwrap_or(0);
+                let percent = if window > 0 { ((last * 100) / window).clamp(0, 100) as i32 } else { 0 };
+                let text = if window > 0 {
+                    format!("{last} / {window} トークン (累計 {total})")
+                } else {
+                    format!("累計 {total} トークン")
+                };
+                (self.on_event)(Event::Usage { percent, text });
+            }
+            "account/rateLimits/updated" => {
+                if let Some(text) = rate_limit_text(params.get("rateLimits").unwrap_or(&Value::Null)) {
+                    (self.on_event)(Event::RateLimits(text));
+                }
+            }
+            "account/updated" | "account/login/completed" => {
+                self.login_pending = false;
+                let _ = self.refresh_models();
+                let _ = self.request("account/read", json!({ "refreshToken": false }), Pending::Account);
+                let _ = self.request("account/rateLimits/read", Value::Null, Pending::RateLimits);
+            }
+            "serverRequest/resolved" => {
+                if let Some(rid) = params.get("requestId") {
+                    let key = rid.to_string();
+                    if self.approvals.remove(&key).is_some() {
+                        (self.on_event)(Event::ApprovalResolved(key));
+                    }
+                }
+            }
+            "error" => {
+                let message = params.pointer("/error/message").and_then(Value::as_str).unwrap_or("error");
+                let will_retry = params.get("willRetry").and_then(Value::as_bool).unwrap_or(false);
+                if will_retry {
+                    (self.on_event)(Event::Status(message.to_string(), Level::Warn));
+                } else {
+                    self.report_error(message);
+                    (self.on_event)(Event::TurnDone { interrupted: false });
+                }
+            }
+            m if m.starts_with("inocode/") => {
+                (self.on_event)(Event::Notify { method: m.to_string(), params: params.clone() });
+            }
+            _ => {}
+        }
+    }
+}
+
