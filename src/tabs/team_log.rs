@@ -260,6 +260,7 @@ fn render_advisor(app: &AppWindow) {
                 tone,
                 open: l.open.contains(&key),
                 action_label: action.into(),
+                action2_label: "".into(),
             });
             keys.push(i);
         }
@@ -289,7 +290,7 @@ fn render_messages(app: &AppWindow) {
                 }
             }
             let (head, meta, detail, tone) = message_row(m);
-            rows.push(LogRow { head: head.into(), meta: meta.into(), detail: detail.into(), tone, open: l.open.contains(&msg_key(m)), action_label: "".into() });
+            rows.push(LogRow { head: head.into(), meta: meta.into(), detail: detail.into(), tone, open: l.open.contains(&msg_key(m)), action_label: "".into(), action2_label: "".into() });
             keys.push(i);
         }
         l.message_keys = keys;
@@ -319,6 +320,7 @@ fn render_outputs(app: &AppWindow) {
                 tone: 0,
                 open: l.open.contains(&format!("o{id}")),
                 action_label: "".into(),
+                action2_label: "".into(),
             });
             ids.push(id);
         }

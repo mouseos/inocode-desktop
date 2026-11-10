@@ -1,6 +1,7 @@
 import { Theme } from "../theme.slint";
 import { Icon, Glyph } from "../icons.slint";
 import { Tag, Button, StatusLabel, LineEdit, AreaEdit } from "g_widgets.slint";
+import { LogRow, LogList } from "log_rows.slint";
 
 // 知識タブ。このファイルと src/tabs/knowledge.rs だけを編集して実装する。
 // Rust 側から触る状態とコールバックは KnowledgeState にまとめる
@@ -48,7 +49,7 @@ export global KnowledgeState {
     // 種類: 0 = すべて、1.. = kinds の並び
     in-out property <int> kind-index: 0;
     in-out property <string> query;
-    out property <[string]> kinds: ["すべて", "禁止事項", "失敗例", "課題", "決定", "事実", "契約", "手順"];
+    out property <[string]> kinds: ["すべて", "禁止事項", "失敗例", "課題", "決定", "事実", "契約", "手順", "常に有効な禁止リスト"];
     out property <[string]> new-kinds: ["禁止事項", "失敗例", "課題", "決定", "事実", "契約", "手順"];
     out property <[string]> statuses: ["未検証", "検証済み", "置換済み", "撤回"];
     out property <[string]> confidences: ["高", "中", "低"];
@@ -66,6 +67,20 @@ export global KnowledgeState {
     in-out property <int> edit-confidence;
     in property <[KField]> edit-fields;
     in property <string> edit-error;
+
+    // 画面: 0 = 一覧、1 = 発動の記録、2 = 引き継ぎ
+    in-out property <int> mode: 0;
+    out property <[string]> modes: ["一覧", "発動の記録", "引き継ぎ"];
+    in property <[LogRow]> guard;
+    in-out property <string> handoff-task;
+    in property <string> handoff-text;
+    // レコードを選んでいないときに右側へ出す文(常に有効な禁止リストの文面など)
+    in property <string> aside;
+    callback mode-changed(int);
+    callback guard-toggled(int);
+    callback guard-open-rule(int);
+    callback guard-false-positive(int);
+    callback handoff-preview();
 
     callback refresh();
     callback select(string);
@@ -165,13 +180,21 @@ component ListPane inherits Rectangle {
         spacing: 8px;
         HorizontalLayout {
             spacing: 6px;
+            for m[i] in KnowledgeState.modes: Tag {
+                label: m;
+                selected: KnowledgeState.mode == i;
+                clicked => { KnowledgeState.mode = i; KnowledgeState.mode-changed(i); }
+            }
+        }
+        if KnowledgeState.mode == 0: HorizontalLayout {
+            spacing: 6px;
             Tag { label: "プロジェクト"; selected: KnowledgeState.scope == 0; clicked => { KnowledgeState.scope = 0; KnowledgeState.scope-changed(0); } }
             Tag { label: "共通"; selected: KnowledgeState.scope == 1; clicked => { KnowledgeState.scope = 1; KnowledgeState.scope-changed(1); } }
             Rectangle { horizontal-stretch: 1; }
             Button { label: "新規"; clicked => { KnowledgeState.new-record(); } }
         }
-        SearchBox { }
-        Flickable {
+        if KnowledgeState.mode == 0: SearchBox { }
+        if KnowledgeState.mode == 0: Flickable {
             height: 28px;
             content-width: chips.preferred-width;
             chips := HorizontalLayout {
@@ -190,7 +213,7 @@ component ListPane inherits Rectangle {
             font-size: 12px;
             wrap: word-wrap;
         }
-        Flickable {
+        if KnowledgeState.mode == 0: Flickable {
             content-height: rows.preferred-height;
             rows := VerticalLayout {
                 width: parent.width;
@@ -200,6 +223,26 @@ component ListPane inherits Rectangle {
                     item: r;
                     clicked => { KnowledgeState.select(r.id); }
                 }
+            }
+        }
+        if KnowledgeState.mode == 1: Flickable {
+            content-height: glist.preferred-height;
+            glist := LogList {
+                width: parent.width;
+                rows: KnowledgeState.guard;
+                toggled(i) => { KnowledgeState.guard-toggled(i); }
+                action(i) => { KnowledgeState.guard-open-rule(i); }
+                action2(i) => { KnowledgeState.guard-false-positive(i); }
+            }
+        }
+        if KnowledgeState.mode == 2: VerticalLayout {
+            spacing: 8px;
+            alignment: start;
+            Text { text: "タスク"; color: Theme.fg-tertiary; font-size: 11px; }
+            AreaEdit { text <=> KnowledgeState.handoff-task; lines-height: 90px; }
+            HorizontalLayout {
+                alignment: end;
+                Button { label: "プレビュー"; primary: true; clicked => { KnowledgeState.handoff-preview(); } }
             }
         }
     }
@@ -340,9 +383,33 @@ export component KnowledgeTab inherits Rectangle {
         Rectangle { width: 1px; background: Theme.border; }
         Rectangle {
             horizontal-stretch: 1;
-            if KnowledgeState.editing: EditForm { }
-            if !KnowledgeState.editing && KnowledgeState.has-record: DetailView { }
-            if !KnowledgeState.editing && !KnowledgeState.has-record: Text {
+            if KnowledgeState.mode == 2: Flickable {
+                content-height: ho.preferred-height + 24px;
+                ho := Text {
+                    x: 20px;
+                    y: 20px;
+                    width: parent.width - 40px;
+                    text: KnowledgeState.handoff-text == "" ? "タスクを入力してプレビューを押してください" : KnowledgeState.handoff-text;
+                    color: KnowledgeState.handoff-text == "" ? Theme.fg-tertiary : Theme.fg;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                }
+            }
+            if KnowledgeState.mode != 2 && KnowledgeState.editing: EditForm { }
+            if KnowledgeState.mode != 2 && !KnowledgeState.editing && KnowledgeState.has-record: DetailView { }
+            if KnowledgeState.mode != 2 && !KnowledgeState.editing && !KnowledgeState.has-record && KnowledgeState.aside != "": Flickable {
+                content-height: asd.preferred-height + 24px;
+                asd := Text {
+                    x: 20px;
+                    y: 20px;
+                    width: parent.width - 40px;
+                    text: KnowledgeState.aside;
+                    color: Theme.fg;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                }
+            }
+            if KnowledgeState.mode != 2 && !KnowledgeState.editing && !KnowledgeState.has-record && KnowledgeState.aside == "": Text {
                 text: "レコードを選んでください";
                 color: Theme.fg-tertiary;
                 font-size: 13px;

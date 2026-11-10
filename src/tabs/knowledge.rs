@@ -2,15 +2,18 @@
 //! 呼び出し元は src/tabs/mod.rs (登録は 1 か所)。
 //!
 //! app-server の `inocode/knowledge/{list,search,read,write,setStatus}` を使う。
+//! 追加: ガードの発動(inocode/guard/list、通知 guard/fired)、常に有効な禁止リスト(inocode/knowledge/pinned)、
+//! 引き継ぎパックのプレビュー(inocode/knowledge/handoffPreview)、失敗例の自動記録の通知(inocode/knowledge/recorded)。
 //! 応答は contract (ref/docs/09-overnight-contract.md 3, 4 章) の形。モックの応答は
 //! `{method, request, response}` の形なので、`response` があればそれを使う。
 
 use super::Host;
 use crate::client::Event;
-use crate::{AppWindow, KField, KRecord, KRow, KnowledgeState};
+use crate::{AppWindow, KField, KRecord, KRow, KnowledgeState, LogRow};
 use serde_json::{json, Map, Value};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 /// (wire 名, 画面の名前)
@@ -26,6 +29,9 @@ const KINDS: [(&str, &str); 7] = [
 const STATUSES: [(&str, &str); 4] =
     [("unverified", "未検証"), ("verified", "検証済み"), ("superseded", "置換済み"), ("retracted", "撤回")];
 const CONFIDENCES: [(&str, &str); 3] = [("high", "高"), ("medium", "中"), ("low", "低")];
+
+/// 種類の選択の末尾(kinds の並び)にある「常に有効な禁止リスト」の添字
+const PINNED_INDEX: i32 = 8;
 
 fn label_of(table: &[(&str, &str)], wire: &str) -> String {
     table.iter().find(|(w, _)| *w == wire).map(|(_, l)| l.to_string()).unwrap_or_else(|| wire.to_string())
@@ -77,6 +83,62 @@ fn parse_rows(result: &Value) -> Vec<RowData> {
             })
         })
         .collect()
+}
+
+/// 常に有効な禁止リスト -> (行, id -> 範囲, 再注入される文面)
+fn parse_pinned(result: &Value) -> (Vec<RowData>, Vec<(String, String)>, String) {
+    let p = payload(result);
+    let list = p.get("rules").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut rows = Vec::new();
+    let mut scopes = Vec::new();
+    for r in &list {
+        let s = |k: &str| r.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let id = s("id");
+        if id.is_empty() {
+            continue;
+        }
+        scopes.push((id.clone(), s("scope")));
+        rows.push(RowData {
+            id,
+            kind_label: label_of(&KINDS, "rule"),
+            title: s("title"),
+            summary: s("reason"),
+            status: s("status"),
+            status_label: label_of(&STATUSES, &s("status")),
+            confidence_label: "".into(),
+            updated: if s("scope") == "global" { "共通" } else { "プロジェクト" }.into(),
+        });
+    }
+    (rows, scopes, p.get("text").and_then(Value::as_str).unwrap_or("").to_string())
+}
+
+fn guard_key(e: &Value) -> String {
+    let s = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    format!("{}{}{}", e.get("tsMs").and_then(Value::as_i64).unwrap_or(0), s("toolUseId"), s("ruleId"))
+}
+
+/// ガードの発動 1 件 -> (見出し, 補足, 詳細, tone)。遮断は 2、警告は 1。
+fn guard_row(e: &Value, thread: &str) -> (String, String, String, i32) {
+    let s = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let block = s("severity") == "block";
+    let head = format!("{} {}", if block { "遮断" } else { "警告" }, s("ruleTitle"));
+    let meta = format!(
+        "{} · {} · {} {}",
+        super::team_log::time_label(e.get("tsMs").and_then(Value::as_i64).unwrap_or(0)),
+        thread,
+        s("tool"),
+        s("target")
+    );
+    let detail = format!(
+        "規則: [{}] {}\n理由: {}\n対象: {}\nツール: {}\n範囲: {}",
+        s("ruleId"),
+        s("ruleTitle"),
+        s("reason"),
+        s("target"),
+        s("tool"),
+        if s("scope") == "global" { "共通" } else { "プロジェクト" }
+    );
+    (head, meta, detail, if block { 2 } else { 1 })
 }
 
 /// 項目の種類: 1 行 / 複数行 / 1 行 1 要素の配列。
@@ -249,6 +311,9 @@ struct K {
     creating: bool,
     kind: String,
     fields: Vec<(String, String, FieldKind, String)>,
+    pinned_scopes: Vec<(String, String)>,
+    guard: Vec<Value>,
+    guard_open: HashSet<String>,
 }
 
 thread_local! {
@@ -302,6 +367,11 @@ fn request_list(app: &AppWindow, host: &Host) {
     let st = app.global::<KnowledgeState>();
     let query = st.get_query().to_string();
     let kind = st.get_kind_index();
+    if kind == PINNED_INDEX {
+        st.set_loading(true);
+        host.rpc("knowledge.pinned", "inocode/knowledge/pinned", json!({ "cwd": cwd(app) }));
+        return;
+    }
     let mut params = json!({ "scope": scope_wire(app), "cwd": cwd(app), "limit": 100 });
     if kind >= 1 {
         params["kind"] = json!(KINDS[(kind - 1) as usize].0);
@@ -348,10 +418,50 @@ fn refresh_rows(app: &AppWindow) {
     });
 }
 
+fn render_guard(app: &AppWindow) {
+    let rows: Vec<LogRow> = K.with(|k| {
+        let k = k.borrow();
+        k.guard
+            .iter()
+            .map(|e| {
+                let thread = super::team::thread_name(e.get("threadId").and_then(Value::as_str).unwrap_or(""));
+                let (head, meta, detail, tone) = guard_row(e, &thread);
+                LogRow {
+                    head: head.into(),
+                    meta: meta.into(),
+                    detail: detail.into(),
+                    tone,
+                    open: k.guard_open.contains(&guard_key(e)),
+                    action_label: "規則を開く".into(),
+                    action2_label: "誤検知として記録".into(),
+                }
+            })
+            .collect()
+    });
+    app.global::<KnowledgeState>().set_guard(ModelRc::from(Rc::new(VecModel::from(rows))));
+}
+
+fn request_guard(app: &AppWindow, host: &Host) {
+    host.rpc("knowledge.guard", "inocode/guard/list", json!({ "cwd": cwd(app), "limit": 100 }));
+}
+
+/// 発動の記録から規則を開く: 一覧の画面に戻して、その規則を選ぶ。
+fn open_rule(app: &AppWindow, host: &Host, id: &str, scope: &str) {
+    let st = app.global::<KnowledgeState>();
+    st.set_mode(0);
+    st.set_scope(if scope == "global" { 1 } else { 0 });
+    st.set_kind_index(0);
+    st.set_editing(false);
+    K.with(|k| k.borrow_mut().selected = Some(id.to_string()));
+    request_list(app, host);
+    request_read(app, host, id);
+}
+
 // ------------------------------------------------------------------ tab entry points
 
 /// 起動時に 1 回。コールバックの登録をここで行う。
 pub fn install(app: &AppWindow, host: &Host) {
+    install_extras(app, host);
     let st = app.global::<KnowledgeState>();
 
     let (weak, h) = (app.as_weak(), host.clone());
@@ -385,6 +495,11 @@ pub fn install(app: &AppWindow, host: &Host) {
     let (weak, h) = (app.as_weak(), host.clone());
     st.on_select(move |id| {
         let Some(app) = weak.upgrade() else { return };
+        // 常に有効な禁止リストの行は、規則の範囲で読む
+        let pinned_scope = K.with(|k| k.borrow().pinned_scopes.iter().find(|(i, _)| i == id.as_str()).map(|(_, s)| s.clone()));
+        if let (Some(scope), PINNED_INDEX) = (pinned_scope, app.global::<KnowledgeState>().get_kind_index()) {
+            app.global::<KnowledgeState>().set_scope(if scope == "global" { 1 } else { 0 });
+        }
         K.with(|k| k.borrow_mut().selected = Some(id.to_string()));
         refresh_rows(&app);
         app.global::<KnowledgeState>().set_editing(false);
@@ -509,15 +624,122 @@ pub fn install(app: &AppWindow, host: &Host) {
 
 /// このタブが開かれるたびに呼ばれる。一覧の再取得を始める。
 pub fn opened(app: &AppWindow, host: &Host) {
-    request_list(app, host);
+    match app.global::<KnowledgeState>().get_mode() {
+        1 => request_guard(app, host),
+        2 => {}
+        _ => request_list(app, host),
+    }
+}
+
+fn install_extras(app: &AppWindow, host: &Host) {
+    let st = app.global::<KnowledgeState>();
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_mode_changed(move |m| {
+        let Some(app) = weak.upgrade() else { return };
+        app.global::<KnowledgeState>().set_note("".into());
+        match m {
+            1 => request_guard(&app, &h),
+            2 => {}
+            _ => request_list(&app, &h),
+        }
+    });
+    let weak = app.as_weak();
+    st.on_guard_toggled(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        K.with(|k| {
+            let mut k = k.borrow_mut();
+            if let Some(key) = k.guard.get(i as usize).map(guard_key) {
+                if !k.guard_open.remove(&key) {
+                    k.guard_open.insert(key);
+                }
+            }
+        });
+        render_guard(&app);
+    });
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_guard_open_rule(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        let target = K.with(|k| {
+            k.borrow().guard.get(i as usize).map(|e| {
+                let s = |key: &str| e.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+                (s("ruleId"), s("scope"))
+            })
+        });
+        if let Some((id, scope)) = target {
+            open_rule(&app, &h, &id, &scope);
+        }
+    });
+    let h = host.clone();
+    st.on_guard_false_positive(move |i| {
+        let thread = K.with(|k| {
+            k.borrow().guard.get(i as usize).and_then(|e| e.get("threadId").and_then(Value::as_str).map(str::to_string))
+        });
+        if let Some(thread) = thread {
+            h.rpc("knowledge.falsePositive", "inocode/metrics/markFalsePositive", json!({ "threadId": thread, "source": "guard" }));
+        }
+    });
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_handoff_preview(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<KnowledgeState>();
+        let task = st.get_handoff_task().to_string();
+        st.set_handoff_text("".into());
+        h.rpc("knowledge.handoff", "inocode/knowledge/handoffPreview", json!({ "cwd": cwd(&app), "task": task }));
+    });
 }
 
 /// クライアントのイベント (Event::Rpc / Event::Notify) が届くたびに呼ばれる。
 pub fn event(app: &AppWindow, host: &Host, event: &Event) {
+    if let Event::Notify { method, params } = event {
+        match method.as_str() {
+            "inocode/guard/fired" => {
+                K.with(|k| k.borrow_mut().guard.insert(0, params.clone()));
+                render_guard(app);
+            }
+            // 失敗例が自動で記録された: 一覧を読み直す
+            "inocode/knowledge/recorded" => {
+                if app.global::<KnowledgeState>().get_mode() == 0 {
+                    request_list(app, host);
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
     let Event::Rpc { tag, result } = event else { return };
     let st = app.global::<KnowledgeState>();
     match (tag.as_str(), result) {
+        ("knowledge.pinned", Ok(v)) => {
+            let (rows, scopes, text) = parse_pinned(v);
+            st.set_loading(false);
+            st.set_note(if rows.is_empty() { "常に有効な禁止リストはありません".into() } else { format!("{} 件", rows.len()).into() });
+            st.set_aside(text.into());
+            K.with(|k| {
+                let mut k = k.borrow_mut();
+                k.rows = rows;
+                k.pinned_scopes = scopes;
+            });
+            refresh_rows(app);
+        }
+        ("knowledge.pinned", Err(e)) => {
+            st.set_loading(false);
+            st.set_note(e.as_str().into());
+        }
+        ("knowledge.guard", Ok(v)) => {
+            let mut list = payload(v).get("events").and_then(Value::as_array).cloned().unwrap_or_default();
+            list.sort_by_key(|e| std::cmp::Reverse(e.get("tsMs").and_then(Value::as_i64).unwrap_or(0)));
+            st.set_note(if list.is_empty() { "ガードの発動はまだありません".into() } else { SharedString::default() });
+            K.with(|k| k.borrow_mut().guard = list);
+            render_guard(app);
+        }
+        ("knowledge.guard", Err(e)) => st.set_note(e.as_str().into()),
+        ("knowledge.handoff", Ok(v)) => {
+            st.set_handoff_text(payload(v).get("text").and_then(Value::as_str).unwrap_or("").into());
+        }
+        ("knowledge.handoff", Err(e)) => st.set_handoff_text(e.as_str().into()),
+        ("knowledge.falsePositive", Err(e)) => st.set_note(e.as_str().into()),
         ("knowledge.list", Ok(v)) => {
+            st.set_aside("".into());
             let rows = parse_rows(v);
             st.set_loading(false);
             st.set_note(if rows.is_empty() { "該当するレコードはありません".into() } else { SharedString::default() });
@@ -618,5 +840,30 @@ mod tests {
         assert!(out.get("id").is_none());
         assert_eq!(out["scope"], "global");
         assert_eq!(out["createdBy"], "user");
+    }
+
+    #[test]
+    fn pinned_rules_become_rows_with_scopes_and_text() {
+        let (rows, scopes, text) = parse_pinned(&fixture("knowledge-pinned.json"));
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "rule-0001");
+        assert_eq!(rows[0].summary, "履歴が消える");
+        assert_eq!(scopes[0], ("rule-0001".to_string(), "project".to_string()));
+        assert!(text.starts_with("禁止事項"));
+    }
+
+    #[test]
+    fn guard_events_show_blocked_and_warned() {
+        let list = payload(&fixture("guard-list.json")).get("events").and_then(Value::as_array).cloned().unwrap();
+        let blocked = guard_row(&list[0], "T");
+        assert_eq!(blocked.0, "遮断 force push 禁止");
+        assert_eq!(blocked.3, 2);
+        assert!(blocked.2.contains("[rule-0001]") && blocked.2.contains("理由: 履歴が消える"));
+        let mut w = list[0].clone();
+        w["severity"] = json!("warn");
+        w["toolUseId"] = json!("call_other");
+        let warned = guard_row(&w, "T");
+        assert!(warned.0.starts_with("警告") && warned.3 == 1);
+        assert_ne!(guard_key(&list[0]), guard_key(&w));
     }
 }

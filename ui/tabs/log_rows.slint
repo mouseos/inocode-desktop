@@ -10,6 +10,7 @@ export struct LogRow {
     tone: int,
     open: bool,
     action-label: string,
+    action2-label: string,
 }
 
 export component LogList inherits VerticalLayout {
@@ -17,6 +18,7 @@ export component LogList inherits VerticalLayout {
     in property <bool> mono-detail: false;
     callback toggled(int);
     callback action(int);
+    callback action2(int);
     spacing: 3px;
     for r[i] in root.rows: Rectangle {
         height: col.preferred-height;
@@ -52,9 +54,11 @@ export component LogList inherits VerticalLayout {
                 font-family: root.mono-detail ? "Consolas" : "";
                 wrap: word-wrap;
             }
-            if r.open && r.action-label != "": HorizontalLayout {
+            if r.open && (r.action-label != "" || r.action2-label != ""): HorizontalLayout {
                 alignment: start;
-                Button { label: r.action-label; clicked => { root.action(i); } }
+                spacing: 6px;
+                if r.action-label != "": Button { label: r.action-label; clicked => { root.action(i); } }
+                if r.action2-label != "": Button { label: r.action2-label; clicked => { root.action2(i); } }
             }
         }
     }
