@@ -400,11 +400,22 @@ pub fn find_inocode(configured: &str) -> Result<std::path::PathBuf, String> {
     Err("inocode.exe が見つかりません。INOCODE_BIN を指定してください".to_string())
 }
 
+fn toml_string(s: &str) -> String {
+    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
+}
+
 fn open_stdio(program: &str) -> Result<Conn, String> {
     let program = find_inocode(program)?;
     let mut cmd = Proc::new(&program);
-    cmd.args(["app-server", "--listen", "stdio://"])
-        .stdin(Stdio::piped())
+    cmd.args(["app-server", "--listen", "stdio://"]);
+    // Optional model catalog file (for example OpenCodex's), passed as a config override.
+    if let Ok(path) = std::env::var("INOCODE_MODEL_CATALOG") {
+        if !path.is_empty() {
+            cmd.arg("-c").arg(format!("model_catalog_json={}", toml_string(&path)));
+        }
+    }
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     #[cfg(windows)]
