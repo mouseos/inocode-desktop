@@ -1,0 +1,79 @@
+import { Button, LineEdit, ScrollView } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    title: "InoCode";
+    preferred-width: 1100px;
+    preferred-height: 720px;
+    min-width: 480px;
+    min-height: 360px;
+
+    in-out property <string> prompt;
+    in-out property <bool> sidebar-open: true;
+    callback submit(string);
+
+    in property <[string]> pinned: ["サンプルのチャット"];
+    in property <[string]> chats: ["InoCode GUI", "app-server 接続の確認", "ビルド手順の整理"];
+
+    HorizontalLayout {
+        if root.sidebar-open: Rectangle {
+            width: 260px;
+            background: #101010;
+
+            VerticalLayout {
+                padding: 12px;
+                spacing: 8px;
+                alignment: start;
+
+                Text { text: "Codex"; font-size: 16px; font-weight: 600; }
+                Button { text: "新しいチャット"; }
+                Button { text: "検索"; }
+
+                Text { text: "ピン留め"; font-size: 12px; opacity: 0.6; }
+                for item in root.pinned: Text { text: item; overflow: elide; }
+
+                Text { text: "チャット"; font-size: 12px; opacity: 0.6; }
+                for item in root.chats: Text { text: item; overflow: elide; }
+            }
+        }
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 24px;
+
+            HorizontalLayout {
+                alignment: start;
+                Button {
+                    text: root.sidebar-open ? "一覧を隠す" : "一覧を表示";
+                    clicked => { root.sidebar-open = !root.sidebar-open; }
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            Text {
+                text: "何を作成しましょうか？";
+                font-size: 28px;
+                horizontal-alignment: center;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: center;
+                LineEdit {
+                    max-width: 720px;
+                    horizontal-stretch: 1;
+                    placeholder-text: "Codex に何でも質問。@ でプラグインを使用、またはファイルをメンション";
+                    text <=> root.prompt;
+                    accepted(t) => { root.submit(t); }
+                }
+                Button {
+                    text: "送信";
+                    enabled: root.prompt != "";
+                    clicked => { root.submit(root.prompt); }
+                }
+            }
+
+            Rectangle { vertical-stretch: 2; }
+        }
+    }
+}
