@@ -84,10 +84,22 @@ impl ModelInfo {
         }
     }
 
-    /// Whether the model can be used with the current Daybreak choice: a model that
-    /// advertises programs must offer the one the choice needs.
-    pub fn usable(&self, daybreak: bool) -> bool {
-        self.programs.is_empty() || self.cyber_program(daybreak).is_some()
+    /// The model has a "Daybreak" variant row: a standard mode plus a Daybreak program.
+    /// Daybreak-only models (no "standard") are listed as plain rows.
+    pub fn has_daybreak_variant(&self) -> bool {
+        self.programs.iter().any(|p| p == "standard") && self.daybreak()
+    }
+
+    /// Program for a turn: the Daybreak program when the choice is on, "standard" when it is
+    /// off, and for a model that only has a Daybreak program, that program.
+    pub fn program_for(&self, daybreak: bool) -> Option<&'static str> {
+        self.cyber_program(daybreak).or_else(|| {
+            if self.programs.iter().any(|p| p == "standard") {
+                None
+            } else {
+                self.cyber_program(true)
+            }
+        })
     }
 }
 
@@ -1329,7 +1341,7 @@ fn turn_overrides(s: &Settings, with_permissions: bool, params: &mut Value) {
     }
     if let Some(m) = &s.model {
         params["model"] = json!(m);
-        if let Some(program) = s.programs.iter().find(|x| &x.id == m).and_then(|x| x.cyber_program(s.daybreak)) {
+        if let Some(program) = s.programs.iter().find(|x| &x.id == m).and_then(|x| x.program_for(s.daybreak)) {
             params["cyberAccessProgram"] = json!(program);
         }
     }
@@ -1539,11 +1551,13 @@ mod tests {
         let sol = m(&["daybreakBlue"]);
         assert_eq!(sol.cyber_program(true), Some("daybreakBlue"));
         assert_eq!(sol.cyber_program(false), None);
-        assert!(!sol.usable(false) && sol.usable(true));
+        assert!(!sol.has_daybreak_variant());
+        assert_eq!(sol.program_for(false), Some("daybreakBlue"));
         let std = m(&["standard"]);
         assert_eq!(std.cyber_program(false), Some("standard"));
-        assert!(!std.usable(true));
-        assert!(m(&[]).usable(true) && m(&[]).usable(false));
+        assert!(!std.has_daybreak_variant());
+        assert!(m(&["standard", "daybreakBlue"]).has_daybreak_variant());
+        assert_eq!(m(&[]).program_for(true), None);
         let mut p = json!({});
         let mut s = Settings { model: Some("m".into()), programs: vec![sol], ..Settings::default() };
         s.daybreak = true;

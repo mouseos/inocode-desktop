@@ -72,7 +72,6 @@ export component AppWindow inherits Window {
     callback pick-speed(int);
     callback pick-model(int);
     callback pick-default;
-    callback toggle-daybreak;
     callback reset-model;
     callback pick-perm(int);
     callback pick-project(int);
@@ -189,7 +188,6 @@ export component AppWindow inherits Window {
                 pick-speed(i) => { root.pick-speed(i); }
                 pick-model(i) => { root.pick-model(i); }
                 pick-default => { root.pick-default(); }
-                toggle-daybreak => { root.toggle-daybreak(); }
                 reset-model => { root.reset-model(); }
                 pick-perm(i) => { root.pick-perm(i); }
                 pick-project(i) => { root.pick-project(i); }

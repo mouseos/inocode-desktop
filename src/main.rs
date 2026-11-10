@@ -74,25 +74,27 @@ fn effort_label(e: &str) -> String {
     .to_string()
 }
 
-/// Models offered in the picker, by the desktop client's rules: not hidden, and usable
-/// with the current Daybreak choice (a model that advertises access programs must offer
-/// "standard" when the choice is off, or a daybreak program when it is on).
+/// Models offered in the picker: the ones the server lists as visible (not hidden).
 fn visible_models(st: &State) -> Vec<&ModelInfo> {
     let extra = st.extra.iter().filter(|e| !st.models.iter().any(|m| m.id == e.id));
-    st.models
-        .iter()
-        .chain(extra)
-        .filter(|m| !m.hidden && m.usable(st.settings.daybreak))
-        .collect()
+    st.models.iter().chain(extra).filter(|m| !m.hidden).collect()
 }
 
-/// The picker's rows: visible models narrowed by the search box.
-fn shown_models(st: &State) -> Vec<&ModelInfo> {
+/// The picker's rows narrowed by the search box: (model, is the "Daybreak" variant row).
+/// A model that can run in Daybreak mode gets a "{name} Daybreak" row right under its own.
+fn shown_models(st: &State) -> Vec<(&ModelInfo, bool)> {
     let q = st.model_filter.trim().to_lowercase();
-    visible_models(st)
-        .into_iter()
-        .filter(|m| q.is_empty() || m.name.to_lowercase().contains(&q) || m.id.to_lowercase().contains(&q))
-        .collect()
+    let mut rows = Vec::new();
+    for m in visible_models(st) {
+        if !(q.is_empty() || m.name.to_lowercase().contains(&q) || m.id.to_lowercase().contains(&q)) {
+            continue;
+        }
+        rows.push((m, false));
+        if m.has_daybreak_variant() {
+            rows.push((m, true));
+        }
+    }
+    rows
 }
 
 /// Selected model: the user's choice, else what the server uses, else the catalog default,
@@ -149,14 +151,20 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
     let explicit = st.settings.model.is_some();
     let model_rows: Vec<MenuRow> = shown_models(st)
         .iter()
-        .map(|m| row(&m.name, "", explicit && sel.map(|s| s.id == m.id).unwrap_or(false), false))
+        .map(|(m, variant)| {
+            let label = if *variant { format!("{} Daybreak", m.name) } else { m.name.clone() };
+            // A model with a Daybreak row is checked on the row that matches the Daybreak choice.
+            let on = explicit
+                && sel.map(|s| s.id == m.id).unwrap_or(false)
+                && (!m.has_daybreak_variant() || *variant == st.settings.daybreak);
+            row(&label, "", on, false)
+        })
         .collect();
     let trigger = match sel {
         Some(m) if eff_text.is_empty() => m.name.clone(),
         Some(m) => format!("{} {}", m.name, eff_text),
         None => "モデルを選択".to_string(),
     };
-    let daybreak_available = st.models.iter().any(|m| !m.hidden && m.daybreak());
     // Fast mode: a model with exactly one faster service tier gets the toggle.
     let fast_available = sel.map(|m| m.service_tiers.len() == 1).unwrap_or(false);
     let fast_on = match (&tier_sel, sel) {
@@ -172,8 +180,6 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
         models: rows(model_rows),
         default_row: row("デフォルト", "おすすめのモデルセット", !explicit, false),
         loading: !st.models_loaded,
-        daybreak_available,
-        daybreak_on: st.settings.daybreak,
         fast_available,
         fast_on,
         ultra_warning: eff.as_deref() == Some("ultra"),
@@ -608,9 +614,12 @@ fn main() {
     let h = handle.clone();
     app.on_pick_model(move |i| {
         let Some(app) = weak.upgrade() else { return };
+        let before = STATE.with(|s| s.borrow().settings.daybreak);
         change(&app, &h, |st| {
-            let Some(m) = shown_models(st).get(i as usize).map(|m| (*m).clone()) else { return };
+            let Some((m, variant)) = shown_models(st).get(i as usize).map(|(m, v)| ((*m).clone(), *v)) else { return };
             st.settings.model = Some(m.id.clone());
+            // The "Daybreak" row turns Daybreak on for that model; any other row turns it off.
+            st.settings.daybreak = variant;
             if !st.settings.effort.as_ref().map(|e| m.efforts.contains(e)).unwrap_or(false) {
                 st.settings.effort = Some(m.default_effort.clone()).filter(|e| !e.is_empty());
             }
@@ -621,6 +630,10 @@ fn main() {
                 }
             }
         });
+        let after = STATE.with(|s| s.borrow().settings.daybreak);
+        if after != before {
+            h.send(Command::SetDaybreak(after));
+        }
     });
     let weak = app.as_weak();
     app.on_search_model(move |q| {
@@ -635,10 +648,15 @@ fn main() {
     let h = handle.clone();
     app.on_pick_default(move || {
         let Some(app) = weak.upgrade() else { return };
+        let before = STATE.with(|s| s.borrow().settings.daybreak);
         change(&app, &h, |st| {
             st.settings.model = None;
             st.settings.effort = None;
+            st.settings.daybreak = false;
         });
+        if before {
+            h.send(Command::SetDaybreak(false));
+        }
     });
     let weak = app.as_weak();
     let h = handle.clone();
@@ -670,29 +688,6 @@ fn main() {
             let visible = visible_models(st);
             let tiers = selected_model(st, &visible).map(|m| m.service_tiers.clone()).unwrap_or_default();
             st.settings.service_tier = if i <= 0 { Some(None) } else { tiers.get(i as usize - 1).map(|t| Some(t.0.clone())) };
-        });
-    });
-    let weak = app.as_weak();
-    let h = handle.clone();
-    app.on_toggle_daybreak(move || {
-        let Some(app) = weak.upgrade() else { return };
-        STATE.with(|s| {
-            let mut st = s.borrow_mut();
-            st.settings.daybreak = !st.settings.daybreak;
-            // A model that cannot be used with the new choice falls back to the default.
-            let usable = st
-                .settings
-                .model
-                .as_deref()
-                .and_then(|id| st.models.iter().find(|m| m.id == id))
-                .map(|m| m.usable(st.settings.daybreak))
-                .unwrap_or(true);
-            if !usable {
-                st.settings.model = None;
-            }
-            h.send(Command::SetSettings(st.settings.clone()));
-            h.send(Command::SetDaybreak(st.settings.daybreak));
-            refresh_pickers(&app, &st);
         });
     });
     let weak = app.as_weak();
