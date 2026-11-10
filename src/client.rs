@@ -264,6 +264,7 @@ pub struct Config {
 
 const FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 const POLL: Duration = Duration::from_millis(8);
+const MODELS_STALE: Duration = Duration::from_secs(300);
 
 pub fn spawn(cfg: Config, on_event: impl Fn(Event) + Send + 'static) -> Handle {
     let (tx, rx) = mpsc::channel();
@@ -536,6 +537,8 @@ struct Session<'a, F: Fn(Event)> {
     approvals: HashMap<String, (Value, String, Value)>,
     msg_streamed: bool,
     login_pending: bool,
+    /// When model/list was last requested (the desktop client treats it as stale after 5 minutes).
+    models_asked: Instant,
     ready: bool,
 }
 
@@ -561,6 +564,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             approvals: HashMap::new(),
             msg_streamed: false,
             login_pending: false,
+            models_asked: Instant::now(),
             ready: false,
         }
     }
@@ -623,6 +627,11 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
 
             if !self.delta.is_empty() && self.last_flush.elapsed() >= FLUSH_INTERVAL {
                 self.flush();
+            }
+
+            // Newly released models show up without a restart: ask again when stale.
+            if self.ready && self.models_asked.elapsed() >= MODELS_STALE {
+                self.refresh_models()?;
             }
         }
     }
@@ -746,6 +755,15 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
         Ok(())
     }
 
+    fn refresh_models(&mut self) -> Result<(), String> {
+        self.models_asked = Instant::now();
+        self.request(
+            "model/list",
+            json!({ "includeHidden": true, "cursor": null, "limit": 100 }),
+            Pending::Models,
+        )
+    }
+
     fn list_threads(&mut self) -> Result<(), String> {
         self.request("thread/list", json!({ "limit": 50 }), Pending::ThreadList)
     }
@@ -800,11 +818,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             Pending::Init => {
                 self.conn.send(json!({ "method": "initialized" }))?;
                 self.ready = true;
-                self.request(
-                    "model/list",
-                    json!({ "includeHidden": true, "cursor": null, "limit": 100 }),
-                    Pending::Models,
-                )?;
+                self.refresh_models()?;
                 self.request("account/read", json!({ "refreshToken": false }), Pending::Account)?;
                 self.request("account/rateLimits/read", Value::Null, Pending::RateLimits)?;
                 self.request("configRequirements/read", Value::Null, Pending::Requirements)?;
@@ -1006,6 +1020,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             }
             "account/updated" | "account/login/completed" => {
                 self.login_pending = false;
+                let _ = self.refresh_models();
                 let _ = self.request("account/read", json!({ "refreshToken": false }), Pending::Account);
                 let _ = self.request("account/rateLimits/read", Value::Null, Pending::RateLimits);
             }
