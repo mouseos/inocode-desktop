@@ -1,13 +1,387 @@
 import { Theme } from "../theme.slint";
+import { Tag, Button, StatusLabel, AreaEdit } from "g_widgets.slint";
 
 // 根拠タブ。このファイルと src/tabs/evidence.rs だけを編集して実装する。
-// Rust 側から触る状態とコールバックは、下の global にまとめる
+// Rust 側から触る状態とコールバックは EvidenceState にまとめる
 // (Rust では app.global::<EvidenceState>() で取得できる)。
 
+export struct ESource {
+    id: string,
+    title: string,
+    meta: string,
+    selected: bool,
+}
+
+export struct EClaim {
+    id: string,
+    text: string,
+    type-label: string,
+    status: string,
+    status-label: string,
+    confidence-label: string,
+    spans: int,
+    model: string,
+    selected: bool,
+}
+
+// マインドマップのノード。位置と大きさは Rust 側で決める。
+export struct GNode {
+    id: string,
+    kind-label: string,
+    label: string,
+    supported: bool,
+    selected: bool,
+    x: length,
+    y: length,
+    w: length,
+    h: length,
+}
+
+export struct GEdge {
+    commands: string,
+    // 0 = supports, 1 = premise, 2 = cites, 3 = 根拠のないノードへ
+    tone: int,
+}
+
+export struct VSource {
+    id: string,
+    title: string,
+    checked: bool,
+}
+
+export struct Finding {
+    kind-label: string,
+    text: string,
+    range: string,
+}
+
 export global EvidenceState {
-    // 例: in property <[Row]> rows;  callback refresh();
+    // 0 原資料、1 主張、2 マインドマップ、3 文書の検証
+    in-out property <int> tab: 0;
+    out property <[string]> tabs: ["原資料", "主張", "マインドマップ", "文書の検証"];
+    in property <string> note;
+
+    // 原資料
+    in property <[ESource]> sources;
+    in property <bool> has-source;
+    in property <string> source-title;
+    in property <string> source-meta;
+    in property <string> source-text;
+
+    // 主張
+    in property <[EClaim]> claims;
+
+    // マインドマップ
+    in property <[GNode]> nodes;
+    in property <[GEdge]> edges;
+    in property <length> canvas-w: 0px;
+    in property <length> canvas-h: 0px;
+    in property <bool> has-node;
+    in property <string> node-title;
+    in property <string> node-meta;
+    in property <string> node-links;
+
+    // 文書の検証
+    in-out property <string> verify-text;
+    in property <[VSource]> verify-sources;
+    in property <[Finding]> findings;
+    in property <bool> verifying;
+    in property <string> verify-note;
+
+    callback refresh();
+    callback tab-changed(int);
+    callback select-source(string);
+    callback select-claim(string);
+    callback select-node(string);
+    callback toggle-verify-source(int);
+    callback verify();
+}
+
+component SourceRow inherits Rectangle {
+    in property <ESource> item;
+    callback clicked;
+    height: 50px;
+    border-radius: Theme.radius-row;
+    background: root.item.selected ? Theme.selected : ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    VerticalLayout {
+        padding: 8px;
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 3px;
+        Text { text: root.item.title; color: Theme.fg; font-size: 13px; font-weight: 500; overflow: elide; }
+        Text { text: root.item.meta; color: Theme.fg-tertiary; font-size: 11px; overflow: elide; }
+    }
+}
+
+component ClaimRow inherits Rectangle {
+    in property <EClaim> item;
+    callback clicked;
+    height: c.preferred-height + 4px;
+    border-radius: Theme.radius-row;
+    background: root.item.selected ? Theme.selected : ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    c := VerticalLayout {
+        padding: 9px;
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 4px;
+        HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: root.item.text;
+                color: Theme.fg;
+                font-size: 13px;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+            }
+            StatusLabel { y: 0px; status: root.item.status; label: root.item.status-label; }
+        }
+        Text {
+            text: root.item.type-label + " · 確度 " + root.item.confidence-label + " · 引用 " + root.item.spans + " 件 · " + root.item.model;
+            color: Theme.fg-tertiary;
+            font-size: 11px;
+            overflow: elide;
+        }
+    }
+}
+
+component SourcesView inherits Rectangle {
+    HorizontalLayout {
+        Rectangle {
+            width: 340px;
+            Flickable {
+                content-height: list.preferred-height + 16px;
+                list := VerticalLayout {
+                    padding: 12px;
+                    spacing: 2px;
+                    alignment: start;
+                    for s in EvidenceState.sources: SourceRow {
+                        item: s;
+                        clicked => { EvidenceState.select-source(s.id); }
+                    }
+                }
+            }
+        }
+        Rectangle { width: 1px; background: Theme.border; }
+        Rectangle {
+            horizontal-stretch: 1;
+            if EvidenceState.has-source: Flickable {
+                content-height: col.preferred-height + 24px;
+                col := VerticalLayout {
+                    padding: 20px;
+                    spacing: 8px;
+                    alignment: start;
+                    Text { text: EvidenceState.source-title; color: Theme.fg; font-size: 16px; font-weight: 600; wrap: word-wrap; }
+                    Text { text: EvidenceState.source-meta; color: Theme.fg-tertiary; font-size: 11px; wrap: word-wrap; }
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: EvidenceState.source-text; color: Theme.fg; font-size: 14px; wrap: word-wrap; }
+                }
+            }
+            if !EvidenceState.has-source: Text {
+                text: "原資料を選んでください";
+                color: Theme.fg-tertiary;
+                font-size: 13px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+component ClaimsView inherits Rectangle {
+    Flickable {
+        content-height: list.preferred-height + 16px;
+        list := VerticalLayout {
+            padding: 12px;
+            spacing: 2px;
+            alignment: start;
+            for c in EvidenceState.claims: ClaimRow {
+                item: c;
+                clicked => { EvidenceState.select-claim(c.id); }
+            }
+        }
+    }
+}
+
+component NodeBox inherits Rectangle {
+    in property <GNode> item;
+    callback clicked;
+    x: root.item.x;
+    y: root.item.y;
+    width: root.item.w;
+    height: root.item.h;
+    border-radius: 8px;
+    // 根拠のないノード(supported: false)は赤
+    background: !root.item.supported ? #d9484826 : root.item.selected ? Theme.selected : Theme.composer;
+    border-width: root.item.selected ? 2px : 1px;
+    border-color: !root.item.supported ? Theme.danger : root.item.selected ? Theme.accent : Theme.border;
+    VerticalLayout {
+        padding: 6px;
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 2px;
+        alignment: center;
+        Text {
+            text: root.item.kind-label;
+            color: !root.item.supported ? Theme.danger : Theme.fg-tertiary;
+            font-size: 10px;
+        }
+        Text {
+            text: root.item.label;
+            color: !root.item.supported ? Theme.danger : Theme.fg;
+            font-size: 12px;
+            overflow: elide;
+            wrap: word-wrap;
+            max-height: root.item.h - 24px;
+        }
+    }
+    TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component MapView inherits Rectangle {
+    VerticalLayout {
+        Flickable {
+            content-width: max(EvidenceState.canvas-w, self.width);
+            content-height: max(EvidenceState.canvas-h, self.height);
+            // 先にエッジ、後にノード(ノードが線の上に出る)
+            for e in EvidenceState.edges: Path {
+                x: 0px;
+                y: 0px;
+                width: EvidenceState.canvas-w;
+                height: EvidenceState.canvas-h;
+                viewbox-width: EvidenceState.canvas-w / 1px;
+                viewbox-height: EvidenceState.canvas-h / 1px;
+                commands: e.commands;
+                fill: transparent;
+                stroke-width: 1.5px;
+                stroke: e.tone == 3 ? Theme.danger : e.tone == 1 ? Theme.accent : e.tone == 2 ? Theme.border : Theme.fg-tertiary;
+            }
+            for n in EvidenceState.nodes: NodeBox {
+                item: n;
+                clicked => { EvidenceState.select-node(n.id); }
+            }
+        }
+        if EvidenceState.has-node: Rectangle {
+            height: nd.preferred-height + 20px;
+            background: Theme.sidebar;
+            nd := VerticalLayout {
+                padding: 10px;
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 3px;
+                Text { text: EvidenceState.node-title; color: Theme.fg; font-size: 13px; font-weight: 500; wrap: word-wrap; }
+                Text { text: EvidenceState.node-meta; color: Theme.fg-tertiary; font-size: 11px; }
+                Text { text: EvidenceState.node-links; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
+            }
+        }
+    }
+}
+
+component VerifyView inherits Rectangle {
+    HorizontalLayout {
+        Rectangle {
+            width: 460px;
+            VerticalLayout {
+                padding: 16px;
+                spacing: 8px;
+                alignment: start;
+                Text { text: "検証する文書"; color: Theme.fg-tertiary; font-size: 11px; }
+                AreaEdit { height: 220px; text <=> EvidenceState.verify-text; lines-height: 220px; }
+                Text { text: "引用元の原資料"; color: Theme.fg-tertiary; font-size: 11px; }
+                for s[i] in EvidenceState.verify-sources: Rectangle {
+                    height: 26px;
+                    border-radius: 6px;
+                    background: sa.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        spacing: 8px;
+                        Rectangle {
+                            width: 14px;
+                            height: 14px;
+                            y: 6px;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: Theme.fg-tertiary;
+                            background: s.checked ? Theme.accent : transparent;
+                            Text { text: s.checked ? "✓" : ""; color: #ffffff; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                        Text { text: s.title; color: Theme.fg; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                    }
+                    sa := TouchArea { mouse-cursor: pointer; clicked => { EvidenceState.toggle-verify-source(i); } }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    Button {
+                        label: EvidenceState.verifying ? "検証中…" : "検証";
+                        primary: true;
+                        clicked => { EvidenceState.verify(); }
+                    }
+                }
+            }
+        }
+        Rectangle { width: 1px; background: Theme.border; }
+        Rectangle {
+            horizontal-stretch: 1;
+            Flickable {
+                content-height: res.preferred-height + 24px;
+                res := VerticalLayout {
+                    padding: 16px;
+                    spacing: 6px;
+                    alignment: start;
+                    if EvidenceState.verify-note != "": Text {
+                        text: EvidenceState.verify-note;
+                        color: Theme.fg-secondary;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                    for f in EvidenceState.findings: Rectangle {
+                        height: fc.preferred-height + 4px;
+                        border-radius: Theme.radius-row;
+                        background: Theme.hover;
+                        fc := VerticalLayout {
+                            padding: 8px;
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 3px;
+                            Text { text: f.kind-label + " · " + f.range; color: Theme.warning; font-size: 11px; }
+                            Text { text: f.text; color: Theme.fg; font-size: 13px; wrap: word-wrap; }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 export component EvidenceTab inherits Rectangle {
     background: Theme.surface;
+    VerticalLayout {
+        HorizontalLayout {
+            height: 44px;
+            padding: 10px;
+            padding-left: 16px;
+            spacing: 6px;
+            for t[i] in EvidenceState.tabs: Tag {
+                label: t;
+                selected: EvidenceState.tab == i;
+                clicked => { EvidenceState.tab = i; EvidenceState.tab-changed(i); }
+            }
+            if EvidenceState.note != "": Text {
+                text: "  " + EvidenceState.note;
+                color: Theme.fg-tertiary;
+                font-size: 12px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        Rectangle {
+            vertical-stretch: 1;
+            if EvidenceState.tab == 0: SourcesView { }
+            if EvidenceState.tab == 1: ClaimsView { }
+            if EvidenceState.tab == 2: MapView { }
+            if EvidenceState.tab == 3: VerifyView { }
+        }
+    }
 }
