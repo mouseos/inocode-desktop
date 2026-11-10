@@ -154,7 +154,10 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             }
         }
         // Rpc / Notify are delivered to the screen tabs (src/tabs) before apply().
-        Event::Rpc { tag, result } => crate::sidebar::on_rpc(app, &tag, &result),
+        Event::Rpc { tag, result } => {
+            crate::sidebar::on_rpc(app, &tag, &result);
+            crate::chat_actions::on_rpc(app, &tag, &result);
+        }
         Event::Notify { method, .. } => crate::sidebar::on_notify(&method),
         Event::Error(e) => {
             // A model found only through version discovery is not verified with InoCode:

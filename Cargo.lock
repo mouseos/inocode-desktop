@@ -2091,6 +2091,7 @@ dependencies = [
 name = "inocode-desktop"
 version = "0.1.0"
 dependencies = [
+ "arboard",
  "serde_json",
  "slint",
  "slint-build",

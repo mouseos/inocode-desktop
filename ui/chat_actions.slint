@@ -1,0 +1,5 @@
+// Hover actions under a chat message (copy, edit, rewind, fork). Rust: src/chat_actions.rs.
+export global MessageActions {
+    // kind: "copy", "edit", "rewind" or "fork"; the index is the row in AppState.messages.
+    callback act(string, int);
+}

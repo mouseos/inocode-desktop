@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod chat_actions;
 mod client;
 mod callbacks;
 mod discovery;

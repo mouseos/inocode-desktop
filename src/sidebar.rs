@@ -179,6 +179,7 @@ fn title_of(st: &State, id: &str) -> String {
 pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     HANDLE.with(|c| *c.borrow_mut() = Some(handle.clone()));
     crate::palette::register(app, handle);
+    crate::chat_actions::register(app, handle);
     let weak = app.as_weak();
     app.global::<SidebarState>().on_open_menu(move |kind, id, x, y| {
         let Some(app) = weak.upgrade() else { return };

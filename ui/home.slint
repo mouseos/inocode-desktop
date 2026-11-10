@@ -3,6 +3,7 @@ import { Icon, Glyph } from "icons.slint";
 import { IconButton, Chip, SelectChip } from "widgets.slint";
 import { IntelligenceMenu, PermMenu, LocationRow, IntelligenceState, PermState, ProjectState } from "pickers.slint";
 import { AppState, Message, Approval } from "state.slint";
+import { MessageActions } from "chat_actions.slint";
 
 // InoCode mark: a ring with a dot, drawn as vector paths.
 component Logo inherits Rectangle {
@@ -235,12 +236,30 @@ component Composer inherits VerticalLayout {
 
 component ActionRow inherits HorizontalLayout {
     in property <bool> user;
+    in property <int> index;
+    // Copy shows a check mark for 1.2 s, as in Claude Desktop.
+    property <bool> copied: false;
     spacing: 2px;
     alignment: user ? LayoutAlignment.end : LayoutAlignment.start;
     height: 24px;
+    Timer {
+        interval: 1200ms;
+        running: root.copied;
+        triggered => { root.copied = false; }
+    }
     if root.user: Icon { width: 18px; text: Glyph.done-all; font-size: 14px; color: Theme.fg-tertiary; }
-    IconButton { glyph: Glyph.copy; box-size: 24px; icon-size: 14px; }
-    if root.user: IconButton { glyph: Glyph.replay; box-size: 24px; icon-size: 14px; }
+    IconButton {
+        glyph: root.copied ? "\u{e5ca}" : Glyph.copy;
+        box-size: 24px;
+        icon-size: 14px;
+        clicked => {
+            root.copied = true;
+            MessageActions.act("copy", root.index);
+        }
+    }
+    if root.user: IconButton { glyph: Glyph.edit-note; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("edit", root.index); } }
+    if root.user: IconButton { glyph: Glyph.replay; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("rewind", root.index); } }
+    if !root.user: IconButton { glyph: Glyph.branch; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("fork", root.index); } }
     IconButton { glyph: Glyph.share; box-size: 24px; icon-size: 14px; }
     if !root.user: IconButton { glyph: Glyph.volume; box-size: 24px; icon-size: 14px; }
 }
@@ -259,7 +278,7 @@ component ChatView inherits Rectangle {
             padding-top: 8px;
             spacing: 16px;
             alignment: start;
-            for m in root.messages: HorizontalLayout {
+            for m[mi] in root.messages: HorizontalLayout {
                 Rectangle { horizontal-stretch: 1; }
                 VerticalLayout {
                     max-width: Theme.composer-max-width;
@@ -297,7 +316,7 @@ component ChatView inherits Rectangle {
                         Icon { width: 14px; text: Glyph.chevron-right; font-size: 14px; color: Theme.fg-secondary; }
                         Rectangle { horizontal-stretch: 1; }
                     }
-                    if m.role != "tool": ActionRow { user: m.role == "user"; }
+                    if m.role != "tool": ActionRow { user: m.role == "user"; index: mi; }
                 }
                 Rectangle { horizontal-stretch: 1; }
             }
