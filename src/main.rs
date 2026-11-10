@@ -1,8 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod client;
+mod discovery;
 
 use client::{Command, Config, Decision, Event, Level, ModelInfo, Msg, Perm, Settings, ThreadInfo};
+use discovery::{Outcome, Prefs};
 use slint::{Model, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -29,6 +31,12 @@ struct State {
     allowed_sandboxes: Option<Vec<String>>,
     /// Project folders offered by the project picker, in row order.
     project_cwds: Vec<String>,
+    /// Models found only by probing newer client versions ("unverified").
+    extra: Vec<ModelInfo>,
+    prefs: Prefs,
+    outcome: Option<Outcome>,
+    discovery_running: bool,
+    discovery_started: bool,
 }
 
 /// Order of the permission dropdown rows ("Managed" is appended when requirements restrict).
@@ -68,7 +76,12 @@ fn effort_label(e: &str) -> String {
 /// with the current Daybreak choice (a model that advertises access programs must offer
 /// "standard" when the choice is off, or a daybreak program when it is on).
 fn visible_models(st: &State) -> Vec<&ModelInfo> {
-    st.models.iter().filter(|m| !m.hidden && m.usable(st.settings.daybreak)).collect()
+    let extra = st.extra.iter().filter(|e| !st.models.iter().any(|m| m.id == e.id));
+    st.models
+        .iter()
+        .chain(extra)
+        .filter(|m| !m.hidden && m.usable(st.settings.daybreak))
+        .collect()
 }
 
 /// Selected model: the user's choice, else what the server uses, else the catalog default,
@@ -80,7 +93,9 @@ fn selected_model<'a>(st: &'a State, visible: &[&'a ModelInfo]) -> Option<&'a Mo
         .as_deref()
         .and_then(by_id)
         .or_else(|| by_id(&st.applied_model))
-        .or_else(|| visible.iter().copied().find(|m| m.is_default))
+        // Unverified models are never the automatic choice.
+        .or_else(|| visible.iter().copied().find(|m| m.is_default && m.min_version.is_none()))
+        .or_else(|| visible.iter().copied().find(|m| m.min_version.is_none()))
         .or_else(|| visible.first().copied())
 }
 
@@ -136,7 +151,13 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
     let explicit = st.settings.model.is_some();
     let model_rows: Vec<MenuRow> = visible
         .iter()
-        .map(|m| row(&m.name, "", explicit && sel.map(|s| s.id == m.id).unwrap_or(false), false))
+        .map(|m| {
+            let desc = match &m.min_version {
+                Some(v) => format!("未検証（新しい公式モデル）· 必要バージョン {v}"),
+                None => String::new(),
+            };
+            row(&m.name, &desc, explicit && sel.map(|s| s.id == m.id).unwrap_or(false), false)
+        })
         .collect();
     let trigger = match sel {
         Some(m) if eff_text.is_empty() => m.name.clone(),
@@ -270,6 +291,77 @@ fn sandbox_label(t: &str) -> &'static str {
     }
 }
 
+/// Settings dialog contents for the model discovery.
+fn refresh_discovery(app: &AppWindow, st: &State) {
+    let base = client::base_client_version().unwrap_or_default();
+    let limit = discovery::limit_version(&base, st.prefs.headroom);
+    let (last, summary) = match &st.outcome {
+        Some(o) => (discovery::format_time(o.at), o.summary()),
+        None => (String::new(), String::new()),
+    };
+    app.set_discovery(DiscoveryState {
+        base: base.into(),
+        limit: limit.into(),
+        headroom: st.prefs.headroom as i32,
+        last: last.into(),
+        summary: summary.into(),
+        enabled: st.prefs.enabled,
+        running: st.discovery_running,
+    });
+}
+
+/// Run (or reuse the 24-hour cache of) the version discovery.
+fn start_discovery(app: &AppWindow, force: bool) {
+    STATE.with(|s| {
+        let mut st = s.borrow_mut();
+        if st.discovery_running {
+            return;
+        }
+        if !st.prefs.enabled {
+            st.extra.clear();
+            refresh_pickers(app, &st);
+            refresh_discovery(app, &st);
+            return;
+        }
+        let Some(base) = client::base_client_version() else {
+            refresh_discovery(app, &st);
+            return;
+        };
+        let Ok(program) = client::find_inocode(&std::env::var("INOCODE_BIN").unwrap_or_default()) else {
+            refresh_discovery(app, &st);
+            return;
+        };
+        if !force {
+            let cached = st.outcome.clone().or_else(discovery::load_cache);
+            if let Some(o) = cached.filter(|o| discovery::is_fresh(o, &base, st.prefs.headroom)) {
+                st.extra = o.extra_models();
+                st.outcome = Some(o);
+                refresh_pickers(app, &st);
+                refresh_discovery(app, &st);
+                return;
+            }
+        }
+        st.discovery_running = true;
+        refresh_discovery(app, &st);
+        let weak = app.as_weak();
+        discovery::start(program.to_string_lossy().to_string(), base, st.prefs.headroom, move |res| {
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(app) = weak.upgrade() else { return };
+                STATE.with(|s| {
+                    let mut st = s.borrow_mut();
+                    st.discovery_running = false;
+                    if let Ok(o) = res {
+                        st.extra = o.extra_models();
+                        st.outcome = Some(o);
+                    }
+                    refresh_pickers(&app, &st);
+                    refresh_discovery(&app, &st);
+                });
+            });
+        });
+    });
+}
+
 fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
     match event {
         Event::Status(text, level) => {
@@ -288,6 +380,13 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             st.models = list;
             st.models_loaded = true;
             refresh_pickers(app, &st);
+            // Discovery runs once the main app-server has its own list.
+            let first = !st.discovery_started;
+            st.discovery_started = true;
+            drop(st);
+            if first {
+                start_discovery(app, false);
+            }
         }
         Event::Requirements { policies, sandboxes } => {
             let mut st = state.borrow_mut();
@@ -438,7 +537,11 @@ fn main() {
     app.set_messages(ModelRc::from(Rc::new(VecModel::<Message>::default())));
     app.set_approvals(ModelRc::from(Rc::new(VecModel::<Approval>::default())));
     app.set_projects(ModelRc::from(Rc::new(VecModel::<ProjectItem>::default())));
-    STATE.with(|s| refresh_pickers(&app, &s.borrow()));
+    STATE.with(|s| {
+        s.borrow_mut().prefs = discovery::load_prefs();
+        refresh_pickers(&app, &s.borrow());
+        refresh_discovery(&app, &s.borrow());
+    });
 
     // Default: start `inocode app-server --listen stdio://` as a child process.
     // INOCODE_WS_URL connects to an already running app-server over WebSocket instead;
@@ -490,6 +593,18 @@ fn main() {
     let h = handle.clone();
     app.on_pick_model(move |i| {
         let Some(app) = weak.upgrade() else { return };
+        let notice = STATE.with(|s| {
+            let st = s.borrow();
+            visible_models(&st).get(i as usize).and_then(|m| {
+                m.min_version.as_ref().map(|v| {
+                    format!("「{}」は InoCode で動作が確認されていません（必要な公式バージョン {v}）。", m.name)
+                })
+            })
+        });
+        if let Some(text) = notice {
+            messages_with(&app, |m| push(m, "", "tool", &text));
+            app.invoke_scroll_bottom();
+        }
         change(&app, &h, |st| {
             let Some(m) = visible_models(st).get(i as usize).map(|m| (*m).clone()) else { return };
             st.settings.model = Some(m.id.clone());
@@ -601,6 +716,41 @@ fn main() {
         if let Some(cwd) = cwd {
             change(&app, &h, |st| st.settings.cwd = Some(cwd.clone()));
             h.send(Command::NewThreadIn(cwd));
+        }
+    });
+
+    let weak = app.as_weak();
+    app.on_toggle_discovery(move || {
+        let Some(app) = weak.upgrade() else { return };
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            st.prefs.enabled = !st.prefs.enabled;
+            let _ = discovery::save_prefs(&st.prefs);
+        });
+        start_discovery(&app, false);
+    });
+    for up in [true, false] {
+        let weak = app.as_weak();
+        let handler = move || {
+            let Some(app) = weak.upgrade() else { return };
+            STATE.with(|s| {
+                let mut st = s.borrow_mut();
+                let h = st.prefs.headroom;
+                st.prefs.headroom = if up { (h + 1).min(discovery::MAX_HEADROOM) } else { h.saturating_sub(1) };
+                let _ = discovery::save_prefs(&st.prefs);
+            });
+            start_discovery(&app, false);
+        };
+        if up {
+            app.on_headroom_up(handler);
+        } else {
+            app.on_headroom_down(handler);
+        }
+    }
+    let weak = app.as_weak();
+    app.on_run_discovery(move || {
+        if let Some(app) = weak.upgrade() {
+            start_discovery(&app, true);
         }
     });
 

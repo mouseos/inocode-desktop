@@ -1,0 +1,128 @@
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+import { IconButton, Switch } from "widgets.slint";
+
+// Simple settings dialog: model discovery across client versions.
+
+export struct DiscoveryState {
+    base: string,
+    limit: string,
+    headroom: int,
+    last: string,
+    summary: string,
+    enabled: bool,
+    running: bool,
+}
+
+component Line inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 12px;
+    height: 26px;
+    Text { text: root.label; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; width: 120px; }
+    Text { text: root.value; color: Theme.fg; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+}
+
+export component SettingsDialog inherits Rectangle {
+    in property <DiscoveryState> discovery;
+    callback close;
+    callback toggle-enabled;
+    callback headroom-up;
+    callback headroom-down;
+    callback run-now;
+
+    background: #00000066;
+    TouchArea { }
+    Rectangle {
+        width: 460px;
+        height: col.preferred-height + 8px;
+        border-radius: 14px;
+        background: Theme.composer;
+        border-width: 1px;
+        border-color: Theme.border;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: #00000066;
+        col := VerticalLayout {
+            padding: 20px;
+            spacing: 10px;
+
+            HorizontalLayout {
+                Text { text: "設定"; color: Theme.fg; font-size: 16px; font-weight: 600; horizontal-stretch: 1; vertical-alignment: center; }
+                IconButton { glyph: Glyph.close; clicked => { root.close(); } }
+            }
+            Text { text: "モデルの探索"; color: Theme.fg; font-size: 13px; font-weight: 600; }
+            Text {
+                text: "インストール済みの公式 Codex より新しいバージョンで一覧を取り、新しい公式モデルを「未検証」として選択肢に加えます。";
+                color: Theme.fg-secondary;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+
+            Line { label: "基準のバージョン"; value: root.discovery.base == "" ? "—（公式 Codex が見つかりません）" : root.discovery.base; }
+
+            HorizontalLayout {
+                spacing: 12px;
+                height: 28px;
+                Text { text: "探索の上限"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; width: 120px; }
+                IconButton { glyph: "\u{e15b}"; enabled: root.discovery.headroom > 0; clicked => { root.headroom-down(); } }
+                Text {
+                    text: root.discovery.limit + "（最新の公式 + " + root.discovery.headroom + "）";
+                    color: Theme.fg;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                IconButton { glyph: Glyph.add; enabled: root.discovery.headroom < 10; clicked => { root.headroom-up(); } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                height: 28px;
+                Text { text: "探索"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; width: 120px; }
+                Rectangle {
+                    width: 28px;
+                    height: 16px;
+                    y: 6px;
+                    Switch {
+                        on: root.discovery.enabled;
+                    }
+                    TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.toggle-enabled(); } }
+                }
+                Text { text: root.discovery.enabled ? "オン" : "オフ"; color: Theme.fg; font-size: 12px; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+            }
+
+            Line { label: "最後の探索"; value: root.discovery.last == "" ? "まだ探索していません" : root.discovery.last; }
+            if root.discovery.summary != "": Text {
+                text: root.discovery.summary;
+                color: Theme.fg-tertiary;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                Rectangle {
+                    width: rt.preferred-width + 28px;
+                    height: 30px;
+                    border-radius: Theme.radius-row;
+                    opacity: root.discovery.running ? 0.5 : 1.0;
+                    background: ra.has-hover ? Theme.pressed : Theme.selected;
+                    rt := Text {
+                        text: root.discovery.running ? "探索中…" : "今すぐ探索";
+                        color: Theme.fg;
+                        font-size: 13px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    ra := TouchArea {
+                        enabled: !root.discovery.running;
+                        mouse-cursor: pointer;
+                        clicked => { root.run-now(); }
+                    }
+                }
+            }
+        }
+    }
+}

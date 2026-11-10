@@ -83,6 +83,7 @@ export component Sidebar inherits Rectangle {
     callback new-chat-in(string);
     callback open-thread(string);
     callback login;
+    callback open-settings;
 
     background: Theme.sidebar;
     preferred-width: Theme.sidebar-width;
@@ -161,7 +162,7 @@ export component Sidebar inherits Rectangle {
                 lt := Text { text: "ログイン"; color: Theme.fg; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
                 la := TouchArea { mouse-cursor: pointer; clicked => { root.login(); } }
             }
-            IconButton { glyph: Glyph.settings; icon-size: 18px; }
+            IconButton { glyph: Glyph.settings; icon-size: 18px; clicked => { root.open-settings(); } }
         }
     }
 }

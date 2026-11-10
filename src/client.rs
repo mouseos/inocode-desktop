@@ -54,6 +54,9 @@ pub struct ModelInfo {
     /// Service tiers (id, name, description); the first speed option is always "standard".
     pub service_tiers: Vec<(String, String, String)>,
     pub default_service_tier: Option<String>,
+    /// Set for models only found by probing a newer client version: the lowest version
+    /// that listed them. Such models are "unverified" in InoCode.
+    pub min_version: Option<String>,
 }
 
 impl ModelInfo {
@@ -295,7 +298,7 @@ impl Drop for Conn {
 impl Conn {
     fn open(cfg: &Config) -> Result<Conn, String> {
         if cfg.use_stdio {
-            open_stdio(&cfg.stdio_program)
+            open_stdio(&cfg.stdio_program, None)
         } else {
             open_ws(&cfg.ws_url)
         }
@@ -401,7 +404,7 @@ pub fn find_inocode(configured: &str) -> Result<std::path::PathBuf, String> {
 }
 
 /// Version (x.y.z) reported by the installed official Codex CLI (`codex --version`), if any.
-fn official_codex_version() -> Option<String> {
+pub fn official_codex_version() -> Option<String> {
     let mut cmd;
     #[cfg(windows)]
     {
@@ -429,12 +432,57 @@ pub fn parse_codex_version(text: &str) -> Option<String> {
     })
 }
 
+/// The version the main app-server presents: INOCODE_CLIENT_VERSION if set, else the
+/// installed official Codex's.
+pub fn base_client_version() -> Option<String> {
+    std::env::var("INOCODE_CLIENT_VERSION").ok().and_then(|v| parse_codex_version(&v)).or_else(official_codex_version)
+}
+
+/// Start a short-lived app-server that presents `version`, read model/list
+/// (`includeHidden: true`) and stop it. Returns the raw model objects.
+/// The program writes `~/.inocode/models_cache.json` with this version in it; the main
+/// app-server ignores a cache stamped with another version and fetches its own list.
+pub fn probe_models(program: &str, version: &str) -> Result<Vec<Value>, String> {
+    let mut conn = open_stdio(program, Some(version))?;
+    let deadline = Instant::now() + Duration::from_secs(40);
+    conn.send(json!({ "id": 1, "method": "initialize", "params": {
+        "clientInfo": { "name": "inocode_desktop", "title": "InoCode Desktop", "version": env!("CARGO_PKG_VERSION") },
+        "capabilities": { "experimentalApi": true } } }))?;
+    let mut sent_list = false;
+    loop {
+        if Instant::now() > deadline {
+            return Err("モデル一覧の取得がタイムアウトしました".into());
+        }
+        let Some(line) = conn.recv()? else { continue };
+        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        match v.get("id").and_then(Value::as_u64) {
+            Some(1) if !sent_list => {
+                if v.get("error").is_some() {
+                    return Err("initialize が失敗しました".into());
+                }
+                conn.send(json!({ "method": "initialized" }))?;
+                conn.send(json!({ "id": 2, "method": "model/list",
+                    "params": { "includeHidden": true, "cursor": null, "limit": 100 } }))?;
+                sent_list = true;
+            }
+            Some(2) => {
+                if let Some(e) = v.get("error") {
+                    return Err(e.get("message").and_then(Value::as_str).unwrap_or("model/list failed").to_string());
+                }
+                let list = v.pointer("/result/data").and_then(Value::as_array).cloned().unwrap_or_default();
+                return Ok(list);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn toml_string(s: &str) -> String {
     let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{escaped}\"")
 }
 
-fn open_stdio(program: &str) -> Result<Conn, String> {
+fn open_stdio(program: &str, version: Option<&str>) -> Result<Conn, String> {
     let program = find_inocode(program)?;
     let mut cmd = Proc::new(&program);
     cmd.args(["app-server", "--listen", "stdio://"]);
@@ -446,7 +494,9 @@ fn open_stdio(program: &str) -> Result<Conn, String> {
     }
     // Present the version of the official Codex that is installed, so the backend offers the
     // same models; INOCODE_CLIENT_VERSION in our own environment wins.
-    if std::env::var_os("INOCODE_CLIENT_VERSION").is_none() {
+    if let Some(v) = version {
+        cmd.env("INOCODE_CLIENT_VERSION", v);
+    } else if std::env::var_os("INOCODE_CLIENT_VERSION").is_none() {
         if let Some(v) = official_codex_version() {
             cmd.env("INOCODE_CLIENT_VERSION", v);
         }
@@ -1362,6 +1412,7 @@ pub fn parse_models(result: &Value) -> Vec<ModelInfo> {
                         programs,
                         service_tiers,
                         default_service_tier,
+                        min_version: None,
                     })
                 })
                 .collect()
@@ -1483,6 +1534,7 @@ mod tests {
             programs: programs.iter().map(|s| s.to_string()).collect(),
             service_tiers: vec![],
             default_service_tier: None,
+            min_version: None,
         };
         let sol = m(&["daybreakBlue"]);
         assert_eq!(sol.cyber_program(true), Some("daybreakBlue"));

@@ -5,6 +5,7 @@ import { Sidebar, ChatItem, ProjectItem } from "sidebar.slint";
 import { Home, Message, Approval } from "home.slint";
 import { TaskPanel } from "panel.slint";
 import { IntelligenceState, PermState, ProjectState, FullAccessDialog } from "pickers.slint";
+import { DiscoveryState, SettingsDialog } from "settings.slint";
 
 // Segmented Chat / Code switch at the top of the sidebar.
 component ModeSwitch inherits Rectangle {
@@ -54,6 +55,12 @@ export component AppWindow inherits Window {
     in property <PermState> perm;
     in property <ProjectState> project;
     in property <bool> full-confirm-open: false;
+    in-out property <bool> settings-open: false;
+    in property <DiscoveryState> discovery;
+    callback toggle-discovery;
+    callback headroom-up;
+    callback headroom-down;
+    callback run-discovery;
     in property <int> context-percent: 0;
     in property <string> usage-text;
     in property <string> rate-text;
@@ -161,6 +168,7 @@ export component AppWindow inherits Window {
                 user-name: root.account-label;
                 logged-in: root.logged-in;
                 login => { root.login(); }
+                open-settings => { root.settings-open = true; }
                 new-chat-in(cwd) => { root.new-chat-in(cwd); }
                 new-chat => { root.new-chat(); }
                 open-thread(id) => { root.open-thread(id); }
@@ -195,6 +203,19 @@ export component AppWindow inherits Window {
                 rate-text: root.rate-text;
             }
         }
+    }
+
+    if root.settings-open: SettingsDialog {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        discovery: root.discovery;
+        close => { root.settings-open = false; }
+        toggle-enabled => { root.toggle-discovery(); }
+        headroom-up => { root.headroom-up(); }
+        headroom-down => { root.headroom-down(); }
+        run-now => { root.run-discovery(); }
     }
 
     if root.full-confirm-open: FullAccessDialog {
