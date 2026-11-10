@@ -1,0 +1,96 @@
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+import { IconButton, Switch } from "widgets.slint";
+
+component SectionTitle inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> trailing;
+    in property <bool> open: true;
+    height: 26px;
+    spacing: 2px;
+    Text { text: root.label; color: Theme.fg; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+    Icon {
+        width: 14px;
+        text: root.open ? Glyph.expand-more : Glyph.chevron-right;
+        font-size: 14px;
+        color: Theme.fg-tertiary;
+    }
+    Rectangle { horizontal-stretch: 1; }
+    if root.trailing != "": Text { text: root.trailing; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+}
+
+component PanelRow inherits HorizontalLayout {
+    in property <string> glyph;
+    in property <string> label;
+    in property <string> detail;
+    in property <string> trailing;
+    height: 26px;
+    spacing: 8px;
+    Icon { width: 16px; text: root.glyph; font-size: 15px; color: Theme.fg-secondary; }
+    Text { text: root.label; color: Theme.fg; font-size: 12px; vertical-alignment: center; }
+    if root.detail != "": Text {
+        text: root.detail;
+        color: Theme.fg-secondary;
+        font-size: 12px;
+        vertical-alignment: center;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+    if root.detail == "": Rectangle { horizontal-stretch: 1; }
+    if root.trailing != "": Text { text: root.trailing; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+}
+
+// Right-hand session panel: environment, context, connectors and background tasks.
+export component TaskPanel inherits Rectangle {
+    in property <string> folder: "ino-code";
+    in property <string> context-used: "19%";
+    background: Theme.surface;
+    preferred-width: Theme.panel-width;
+    min-width: 240px;
+    max-width: 360px;
+    horizontal-stretch: 0;
+
+    Rectangle { x: 0px; width: 1px; background: Theme.border; }
+
+    VerticalLayout {
+        padding: 12px;
+        padding-top: 8px;
+        spacing: 2px;
+        alignment: start;
+
+        SectionTitle { label: "環境"; }
+        PanelRow { glyph: Glyph.computer; label: "このコンピューター"; trailing: "保存"; }
+        PanelRow { glyph: Glyph.folder; label: root.folder; detail: "· D:\\work\\software\\OSS"; }
+        HorizontalLayout {
+            height: 26px;
+            spacing: 8px;
+            Icon { width: 16px; text: Glyph.computer; font-size: 15px; color: Theme.fg-secondary; }
+            Text { text: "Remote Control"; color: Theme.fg; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+            Icon { width: 16px; text: Glyph.more-horiz; font-size: 15px; color: Theme.fg-secondary; }
+            Switch { y: 5px; }
+        }
+
+        Rectangle { height: 10px; }
+        HorizontalLayout {
+            height: 24px;
+            spacing: 6px;
+            Text { text: "コンテキスト"; color: Theme.fg; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+            Icon { width: 14px; text: Glyph.chevron-right; font-size: 14px; color: Theme.fg-tertiary; }
+            Rectangle { horizontal-stretch: 1; }
+            Text { text: root.context-used; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+            Rectangle {
+                width: 26px;
+                height: 6px;
+                y: 9px;
+                border-radius: 3px;
+                background: Theme.pressed;
+                Rectangle { width: parent.width * 0.19; border-radius: 3px; background: Theme.accent; x: 0px; }
+            }
+        }
+        SectionTitle { label: "コネクタ"; open: false; trailing: "2 件が再接続"; }
+
+        Rectangle { height: 10px; }
+        SectionTitle { label: "バックグラウンドタスク"; }
+        PanelRow { glyph: Glyph.terminal; label: "起動中のコマンドはありません"; }
+    }
+}

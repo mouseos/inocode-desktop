@@ -4,7 +4,11 @@ import { IconButton, NavRow } from "widgets.slint";
 
 export struct ChatItem {
     title: string,
-    busy: bool,
+    // 0 none, 1 working, 2 unread, 3 error
+    status: int,
+    selected: bool,
+    // 0 = session, 1 = child session (tree line)
+    depth: int,
 }
 
 export struct ProjectItem {
@@ -12,137 +16,119 @@ export struct ProjectItem {
     chats: [ChatItem],
 }
 
-component SectionHeader inherits HorizontalLayout {
+component GroupHeader inherits Rectangle {
     in property <string> label;
-    in property <string> action-glyph;
-    callback action;
-    height: 26px;
-    padding-left: 8px;
-    padding-right: 2px;
-    padding-top: 8px;
-    padding-bottom: 0px;
-    Text {
-        text: root.label;
-        color: Theme.fg-tertiary;
-        font-size: 12px;
-        vertical-alignment: center;
-        horizontal-stretch: 1;
+    in-out property <bool> open: true;
+    callback add;
+    height: 28px;
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.open = !root.open; }
     }
-    if root.action-glyph != "": IconButton {
-        glyph: root.action-glyph;
-        box-size: 24px;
-        icon-size: 16px;
-        clicked => { root.action(); }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 4px;
+        spacing: 2px;
+        Text {
+            text: root.label;
+            color: Theme.fg-secondary;
+            font-size: Theme.group-font;
+            font-weight: 600;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Icon {
+            width: 14px;
+            text: root.open ? Glyph.expand-more : Glyph.chevron-right;
+            font-size: 14px;
+            color: Theme.fg-tertiary;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        IconButton { glyph: Glyph.swap-vert; icon-size: 15px; y: 2px; }
+        IconButton { glyph: Glyph.add; icon-size: 17px; y: 2px; clicked => { root.add(); } }
     }
 }
 
 component ProjectGroup inherits VerticalLayout {
     in property <ProjectItem> project;
     property <bool> open: true;
-    NavRow {
-        glyph: root.open ? Glyph.folder-open : Glyph.folder;
+    spacing: Theme.stack-gap;
+    GroupHeader {
         label: root.project.name;
-        clicked => { root.open = !root.open; }
-    }
-    if root.open && root.project.chats.length == 0: Text {
-        text: "チャットはありません";
-        color: Theme.fg-tertiary;
-        height: Theme.row-height;
-        vertical-alignment: center;
-        x: 32px;
+        open <=> root.open;
     }
     if root.open: VerticalLayout {
+        spacing: Theme.stack-gap;
         for chat in root.project.chats: NavRow {
             label: chat.title;
-            indent: 20px;
-            busy: chat.busy;
+            status: chat.status;
+            selected: chat.selected;
+            tree: chat.depth > 0;
+            indent: chat.depth > 0 ? 8px : 0px;
         }
     }
 }
 
 export component Sidebar inherits Rectangle {
-    in property <[ChatItem]> pinned;
     in property <[ProjectItem]> projects;
-    in property <[ChatItem]> recent;
+    in property <string> user-name: "ローカル";
     callback new-chat;
-    callback toggle;
 
     background: Theme.sidebar;
     preferred-width: Theme.sidebar-width;
-    min-width: 200px;
-    max-width: 340px;
+    min-width: 220px;
+    max-width: 380px;
     horizontal-stretch: 0;
 
     VerticalLayout {
-        padding: 6px;
-        spacing: 1px;
+        padding: 8px;
+        padding-top: 4px;
+        padding-bottom: 0px;
+        spacing: Theme.stack-gap;
 
-        HorizontalLayout {
-            height: 36px;
-            padding-left: 4px;
-            spacing: 2px;
-            IconButton { glyph: Glyph.sidebar; clicked => { root.toggle(); } }
-            Text {
-                text: "InoCode";
-                color: Theme.fg;
-                font-family: Theme.font-serif;
-                font-size: 17px;
-                vertical-alignment: center;
-                horizontal-stretch: 1;
-            }
-            IconButton { glyph: Glyph.search; }
-        }
+        NavRow { glyph: Glyph.add; label: "新規作成"; clicked => { root.new-chat(); } }
+        NavRow { glyph: Glyph.search; label: "検索"; }
+        NavRow { glyph: Glyph.category; label: "Artifacts"; action-glyph: Glyph.add; }
+        NavRow { glyph: Glyph.work; label: "カスタマイズ"; }
+        NavRow { glyph: Glyph.more-horiz; label: "その他"; }
 
-        NavRow {
-            glyph: Glyph.edit-note;
-            label: "新しいチャット";
-            accent: true;
-            clicked => { root.new-chat(); }
-        }
+        Rectangle { height: 8px; }
 
         Flickable {
             content-height: content.preferred-height;
             content := VerticalLayout {
                 width: parent.width;
-                spacing: 1px;
+                spacing: 10px;
                 alignment: start;
-
-                if root.pinned.length > 0: SectionHeader { label: "ピン留め"; }
-                for chat in root.pinned: NavRow {
-                    glyph: Glyph.push-pin;
-                    label: chat.title;
-                }
-
-                SectionHeader { label: "プロジェクト"; action-glyph: Glyph.add; }
                 for project in root.projects: ProjectGroup { project: project; }
-
-                SectionHeader { label: "最近"; }
-                for chat in root.recent: NavRow {
-                    label: chat.title;
-                    busy: chat.busy;
-                }
             }
         }
 
-        // Footer: account row.
+        // Footer: account menu and settings.
         HorizontalLayout {
             height: 44px;
-            padding: 4px;
-            spacing: 8px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            padding-left: 6px;
+            spacing: 6px;
             Rectangle {
-                width: 28px;
-                height: 28px;
-                border-radius: 14px;
-                background: Theme.bubble;
-                Text { text: "I"; color: Theme.fg-secondary; font-size: 13px; }
+                width: 22px;
+                height: 22px;
+                y: 1px;
+                border-radius: 11px;
+                background: Theme.pressed;
+                Text { text: "I"; color: Theme.fg-secondary; font-size: 11px; }
             }
             Text {
-                text: "ローカル";
-                color: Theme.fg-secondary;
-                font-size: 13px;
+                text: root.user-name;
+                color: Theme.fg;
+                font-size: Theme.row-font;
+                font-weight: 500;
                 vertical-alignment: center;
-                horizontal-stretch: 1;
             }
+            Icon { width: 14px; text: Glyph.expand-more; font-size: 14px; color: Theme.fg-tertiary; }
+            Rectangle { horizontal-stretch: 1; }
+            IconButton { glyph: Glyph.settings; icon-size: 18px; }
         }
     }
 }

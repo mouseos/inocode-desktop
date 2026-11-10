@@ -3,57 +3,137 @@ import { Icon, Glyph } from "icons.slint";
 import { IconButton } from "widgets.slint";
 import { Sidebar, ChatItem, ProjectItem } from "sidebar.slint";
 import { Home, Message } from "home.slint";
+import { TaskPanel } from "panel.slint";
+
+// Segmented Chat / Code switch at the top of the sidebar.
+component ModeSwitch inherits Rectangle {
+    width: 64px;
+    height: 24px;
+    border-radius: 7px;
+    background: Theme.hover;
+    HorizontalLayout {
+        padding: 2px;
+        spacing: 2px;
+        IconButton { glyph: Glyph.chat; box-size: 28px; icon-size: 15px; }
+        Rectangle {
+            width: 28px;
+            border-radius: 5px;
+            background: Theme.pressed;
+            Icon { text: Glyph.code; font-size: 15px; color: Theme.fg; }
+        }
+    }
+}
 
 export component AppWindow inherits Window {
     title: "InoCode";
-    preferred-width: 1100px;
-    preferred-height: 720px;
-    min-width: 520px;
+    preferred-width: 1280px;
+    preferred-height: 760px;
+    min-width: 560px;
     min-height: 360px;
     background: Theme.surface;
     default-font-size: 14px;
     default-font-family: Theme.font-sans;
 
     in-out property <bool> sidebar-open: true;
+    in-out property <bool> panel-open: true;
     in-out property <string> prompt;
     in-out property <[Message]> messages;
     in property <string> status: "接続中…";
+    in property <string> session-title: "新しいセッション";
     callback submit(string);
     public function scroll-bottom() { home.scroll-bottom(); }
 
-    in property <[ChatItem]> pinned: [{ title: "サンプルの固定チャット", busy: false }];
     in property <[ProjectItem]> projects: [
         { name: "ino-code", chats: [
-            { title: "InoCode GUI", busy: true },
-            { title: "app-server 接続の確認", busy: false },
+            { title: "InoCode GUI", status: 1, selected: true, depth: 0 },
+            { title: "app-server 接続の確認", status: 2, selected: false, depth: 1 },
+            { title: "ビルド手順の整理", status: 0, selected: false, depth: 0 },
         ] },
-        { name: "sample-app", chats: [{ title: "ビルド手順の整理", busy: false }] },
+        { name: "sample-app", chats: [
+            { title: "設計メモ", status: 0, selected: false, depth: 0 },
+            { title: "テスト失敗の調査", status: 3, selected: false, depth: 0 },
+        ] },
         { name: "docs", chats: [] },
     ];
-    in property <[ChatItem]> recent: [
-        { title: "InoCode GUI", busy: true },
-        { title: "app-server 接続の確認", busy: false },
-        { title: "ビルド手順の整理", busy: false },
-    ];
 
-    HorizontalLayout {
-        if root.sidebar-open: Sidebar {
-            pinned: root.pinned;
-            projects: root.projects;
-            recent: root.recent;
-            toggle => { root.sidebar-open = false; }
+    VerticalLayout {
+        // Chrome bar: menu, sidebar toggle, history and mode switch on the left,
+        // session title and panel toggles on the right.
+        HorizontalLayout {
+            height: Theme.chrome-height;
+            Rectangle {
+                width: root.sidebar-open ? Theme.sidebar-width : 160px;
+                background: root.sidebar-open ? Theme.sidebar : Theme.chrome;
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 8px;
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    spacing: 2px;
+                    IconButton { glyph: Glyph.menu; }
+                    IconButton {
+                        glyph: Glyph.sidebar;
+                        selected: root.sidebar-open;
+                        clicked => { root.sidebar-open = !root.sidebar-open; }
+                    }
+                    IconButton { glyph: Glyph.arrow-back; }
+                    IconButton { glyph: Glyph.arrow-forward; enabled: false; }
+                    Rectangle { horizontal-stretch: 1; }
+                    if root.sidebar-open: ModeSwitch { }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.surface;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 8px;
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    spacing: 2px;
+                    Text {
+                        text: root.session-title;
+                        color: Theme.fg;
+                        font-size: 13px;
+                        font-weight: 500;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    Icon { width: 16px; text: Glyph.expand-more; font-size: 16px; color: Theme.fg-secondary; }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        text: root.status;
+                        color: Theme.fg-tertiary;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { width: 6px; }
+                    IconButton {
+                        glyph: Glyph.list;
+                        selected: root.panel-open;
+                        clicked => { root.panel-open = !root.panel-open; }
+                    }
+                    IconButton { glyph: Glyph.terminal; }
+                    IconButton { glyph: Glyph.language; }
+                    IconButton { glyph: Glyph.folder; }
+                    IconButton { glyph: Glyph.more-horiz; }
+                }
+            }
         }
 
-        home := Home {
-            horizontal-stretch: 1;
-            project-name: "ino-code";
-            messages: root.messages;
-            chat-active: root.messages.length > 0;
-            status: root.status;
-            sidebar-open: root.sidebar-open;
-            toggle-sidebar => { root.sidebar-open = true; }
-            prompt <=> root.prompt;
-            submit(t) => { root.submit(t); }
+        HorizontalLayout {
+            if root.sidebar-open: Sidebar {
+                projects: root.projects;
+            }
+            home := Home {
+                horizontal-stretch: 1;
+                project-name: "ino-code";
+                messages: root.messages;
+                chat-active: root.messages.length > 0;
+                prompt <=> root.prompt;
+                submit(t) => { root.submit(t); }
+            }
+            if root.panel-open: TaskPanel { }
         }
     }
 }

@@ -1,10 +1,10 @@
 import { Theme } from "theme.slint";
-import { Icon } from "icons.slint";
+import { Icon, Glyph } from "icons.slint";
 
 export component IconButton inherits Rectangle {
     in property <string> glyph;
-    in property <length> icon-size: 18px;
-    in property <length> box-size: 28px;
+    in property <length> icon-size: Theme.icon-size;
+    in property <length> box-size: 24px;
     in property <bool> selected: false;
     in property <bool> enabled: true;
     in property <color> tint: Theme.fg-secondary;
@@ -15,12 +15,12 @@ export component IconButton inherits Rectangle {
     border-radius: Theme.radius-row;
     background: !root.enabled ? transparent
         : ta.pressed ? Theme.pressed
-        : (ta.has-hover || root.selected) ? Theme.hover : transparent;
+        : (ta.has-hover || root.selected) ? Theme.selected : transparent;
 
     Icon {
         text: root.glyph;
         font-size: root.icon-size;
-        color: root.enabled ? root.tint : Theme.fg-tertiary;
+        color: !root.enabled ? Theme.fg-tertiary : root.selected ? Theme.fg : root.tint;
     }
     ta := TouchArea {
         enabled: root.enabled;
@@ -29,49 +29,87 @@ export component IconButton inherits Rectangle {
     }
 }
 
+// Status marker at the end of a session row.
+// kind: 0 none, 1 working, 2 unread (blue dot), 3 error
+export component StatusMark inherits Rectangle {
+    in property <int> kind;
+    width: root.kind == 0 ? 0px : 16px;
+    height: 16px;
+    if root.kind == 1: Icon { text: Glyph.sync; font-size: 13px; color: Theme.fg-tertiary; }
+    if root.kind == 2: Rectangle {
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: Theme.accent;
+    }
+    if root.kind == 3: Icon { text: Glyph.error; font-size: 14px; color: Theme.danger; }
+}
+
 export component NavRow inherits Rectangle {
     in property <string> glyph;
     in property <string> label;
+    in property <string> action-glyph;
     in property <bool> selected: false;
     in property <length> indent: 0px;
-    in property <bool> busy: false;
-    in property <bool> accent: false;
+    in property <int> status: 0;
+    in property <bool> tree: false;
     callback clicked;
+    callback action;
 
     height: Theme.row-height;
     border-radius: Theme.radius-row;
     background: ta.pressed ? Theme.pressed
-        : (ta.has-hover || root.selected) ? Theme.hover : transparent;
+        : root.selected ? Theme.selected
+        : ta.has-hover ? Theme.hover : transparent;
 
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
     HorizontalLayout {
-        padding-left: 8px + root.indent;
-        padding-right: 8px;
-        spacing: 8px;
-        if root.glyph != "": Icon {
-            width: 20px;
-            text: root.glyph;
-            font-size: 18px;
-            color: root.accent ? Theme.brand : Theme.fg-secondary;
+        padding-left: 4px + root.indent;
+        padding-right: 4px;
+        spacing: Theme.row-gap;
+        if root.tree: Rectangle {
+            width: 12px;
+            Path {
+                x: 2px;
+                y: 0px;
+                width: 10px;
+                height: parent.height / 2 + 1px;
+                viewbox-width: 10;
+                viewbox-height: 14;
+                commands: "M0 0 L0 9 Q0 13 4 13 L10 13";
+                stroke: Theme.fg-tertiary;
+                stroke-width: 1px;
+                fill: transparent;
+            }
         }
+        if root.glyph != "": Icon {
+            width: Theme.leading-slot;
+            text: root.glyph;
+            font-size: Theme.icon-size;
+            color: Theme.fg;
+        }
+        if root.glyph == "" && !root.tree: Rectangle { width: 4px; }
         Text {
             text: root.label;
             color: Theme.fg;
-            font-size: 14px;
+            font-size: Theme.row-font;
             vertical-alignment: center;
             overflow: elide;
             min-width: 0px;
             horizontal-stretch: 1;
         }
-        if root.busy: Icon {
-            width: 16px;
-            text: "\u{e627}";
-            font-size: 14px;
-            color: Theme.fg-tertiary;
+        StatusMark { kind: root.status; }
+        if root.selected || (ta.has-hover && root.action-glyph != ""): IconButton {
+            glyph: root.action-glyph != "" ? root.action-glyph : Glyph.more-horiz;
+            box-size: 20px;
+            icon-size: 14px;
+            y: (parent.height - self.height) / 2;
+            clicked => { root.action(); }
         }
-    }
-    ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+        if !root.selected && !ta.has-hover && root.action-glyph != "": Rectangle { width: 20px; }
     }
 }
 
@@ -82,36 +120,57 @@ export component Chip inherits Rectangle {
     in property <bool> expandable: false;
     callback clicked;
 
-    height: 28px;
+    height: 24px;
     border-radius: Theme.radius-row;
     background: ta.pressed ? Theme.pressed : ta.has-hover ? Theme.hover : transparent;
 
     HorizontalLayout {
-        padding-left: 8px;
-        padding-right: root.expandable ? 4px : 8px;
-        spacing: 4px;
+        padding-left: 6px;
+        padding-right: root.expandable ? 2px : 6px;
+        spacing: 3px;
         alignment: center;
         if root.glyph != "": Icon {
-            width: 18px;
+            width: 16px;
             text: root.glyph;
-            font-size: 16px;
+            font-size: 14px;
             color: root.tint;
         }
         Text {
             text: root.label;
             color: root.tint;
-            font-size: 13px;
+            font-size: 12px;
             vertical-alignment: center;
         }
         if root.expandable: Icon {
-            width: 16px;
-            text: "\u{e5cf}";
-            font-size: 16px;
+            width: 14px;
+            text: Glyph.expand-more;
+            font-size: 14px;
             color: root.tint;
         }
     }
     ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
+    }
+}
+
+export component Switch inherits Rectangle {
+    in-out property <bool> on: true;
+    width: 28px;
+    height: 16px;
+    border-radius: 8px;
+    background: root.on ? Theme.accent : Theme.pressed;
+    Rectangle {
+        x: root.on ? parent.width - self.width - 2px : 2px;
+        y: 2px;
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: #ffffff;
+        animate x { duration: 120ms; easing: ease-out; }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.on = !root.on; }
     }
 }

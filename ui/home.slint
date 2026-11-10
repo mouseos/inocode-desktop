@@ -3,6 +3,7 @@ import { Icon, Glyph } from "icons.slint";
 import { IconButton, Chip } from "widgets.slint";
 
 export struct Message {
+    // "user", "assistant" or "tool" (collapsed command summary row)
     role: string,
     text: string,
 }
@@ -29,97 +30,122 @@ component Logo inherits Rectangle {
     }
 }
 
+// Round send button shown while the prompt is non-empty.
 component SendButton inherits Rectangle {
-    in property <bool> active;
     callback clicked;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    background: root.active ? (ta.has-hover ? Theme.brand-strong : Theme.brand) : Theme.hover;
+    width: 28px;
+    height: 28px;
+    border-radius: 14px;
+    background: Theme.fg;
     Icon {
         text: Glyph.arrow-upward;
-        font-size: 20px;
-        color: root.active ? Theme.on-primary : Theme.fg-tertiary;
+        font-size: 18px;
+        color: Theme.surface;
     }
-    ta := TouchArea {
-        enabled: root.active;
-        mouse-cursor: root.active ? MouseCursor.pointer : MouseCursor.default;
+    TouchArea {
+        mouse-cursor: MouseCursor.pointer;
         clicked => { root.clicked(); }
     }
 }
 
-component Composer inherits Rectangle {
+// Single-row composer pill: attach, input, voice/send. Model line sits below it.
+component Composer inherits VerticalLayout {
     in-out property <string> text;
     in property <string> placeholder;
+    in property <string> model: "InoCode";
     callback submit(string);
+    spacing: 6px;
 
-    border-radius: Theme.radius-composer;
-    background: Theme.composer;
-    border-width: 1px;
-    border-color: Theme.border;
-    min-height: 76px;
-    drop-shadow-blur: 12px;
-    drop-shadow-color: #0000000d;
-    drop-shadow-offset-y: 2px;
+    Rectangle {
+        border-radius: Theme.radius-composer;
+        background: Theme.composer;
+        border-width: 1px;
+        border-color: Theme.border;
+        min-height: 44px;
+        drop-shadow-blur: 20px;
+        drop-shadow-color: #00000012;
+        drop-shadow-offset-y: 4px;
 
-    TouchArea {
-        mouse-cursor: MouseCursor.text;
-        clicked => { input.focus(); }
-    }
-
-    scope := FocusScope {
-        capture-key-pressed(event) => {
-            if (event.text == Key.Return && !event.modifiers.shift && root.text != "") {
-                root.submit(root.text);
-                return accept;
-            }
-            reject
+        TouchArea {
+            mouse-cursor: MouseCursor.text;
+            clicked => { input.focus(); }
         }
 
-        VerticalLayout {
-            padding: 10px;
-            padding-left: 14px;
-            spacing: 2px;
-
-            Rectangle {
-                min-height: max(28px, input.preferred-height);
-                max-height: 200px;
-                input := TextInput {
-                    width: parent.width;
-                    text <=> root.text;
-                    wrap: word-wrap;
-                    single-line: false;
-                    color: Theme.fg;
-                    font-size: 15px;
-                    selection-background-color: #d9775766;
+        FocusScope {
+            capture-key-pressed(event) => {
+                if (event.text == Key.Return && !event.modifiers.shift && root.text != "") {
+                    root.submit(root.text);
+                    return accept;
                 }
-                if root.text == "": Text {
-                    width: parent.width;
-                    text: root.placeholder;
-                    color: Theme.fg-tertiary;
-                    font-size: 15px;
-                    overflow: elide;
-                    wrap: no-wrap;
-                }
+                reject
             }
 
             HorizontalLayout {
-                height: 32px;
-                spacing: 2px;
-                IconButton { glyph: Glyph.add; box-size: 32px; icon-size: 20px; }
-                Rectangle { horizontal-stretch: 1; }
-                Chip {
-                    label: "モデル 中";
-                    expandable: true;
-                    height: 32px;
+                padding: 8px;
+                padding-top: 7px;
+                padding-bottom: 7px;
+                spacing: 6px;
+                IconButton { glyph: Glyph.add; box-size: 28px; icon-size: 20px; y: 0px; }
+                Rectangle {
+                    min-height: max(28px, input.preferred-height);
+                    max-height: 240px;
+                    horizontal-stretch: 1;
+                    input := TextInput {
+                        y: (parent.height - self.height) / 2;
+                        width: parent.width;
+                        text <=> root.text;
+                        wrap: word-wrap;
+                        single-line: false;
+                        color: Theme.fg;
+                        font-size: Theme.body-font;
+                        selection-background-color: #4d8ff566;
+                    }
+                    if root.text == "": Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: root.placeholder;
+                        color: Theme.fg-tertiary;
+                        font-size: Theme.body-font;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        wrap: no-wrap;
+                    }
                 }
-                SendButton {
-                    active: root.text != "";
-                    clicked => { root.submit(root.text); }
-                }
+                if root.text == "": IconButton { glyph: Glyph.mic; box-size: 28px; icon-size: 18px; }
+                if root.text != "": SendButton { clicked => { root.submit(root.text); } }
             }
         }
     }
+
+    // Model, effort, mode and context ring.
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        padding-right: 8px;
+        Text { text: root.model; color: Theme.fg; font-size: 12px; vertical-alignment: center; }
+        Text { text: "中"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+        Text { text: "自動"; color: Theme.fg; font-size: 12px; vertical-alignment: center; }
+        Rectangle {
+            width: 14px;
+            height: 14px;
+            y: 2px;
+            border-radius: 7px;
+            border-width: 2px;
+            border-color: Theme.accent;
+        }
+    }
+}
+
+component ActionRow inherits HorizontalLayout {
+    in property <bool> user;
+    spacing: 2px;
+    alignment: user ? LayoutAlignment.end : LayoutAlignment.start;
+    height: 24px;
+    if root.user: Icon { width: 18px; text: Glyph.done-all; font-size: 14px; color: Theme.fg-tertiary; }
+    IconButton { glyph: Glyph.copy; box-size: 24px; icon-size: 14px; }
+    if root.user: IconButton { glyph: Glyph.replay; box-size: 24px; icon-size: 14px; }
+    IconButton { glyph: Glyph.share; box-size: 24px; icon-size: 14px; }
+    if !root.user: IconButton { glyph: Glyph.volume; box-size: 24px; icon-size: 14px; }
 }
 
 component ChatView inherits Rectangle {
@@ -132,34 +158,49 @@ component ChatView inherits Rectangle {
         content-height: content.preferred-height;
         content := VerticalLayout {
             width: parent.width;
-            padding: 12px;
-            spacing: 14px;
+            padding: 16px;
+            padding-top: 8px;
+            spacing: 16px;
             alignment: start;
             for m in root.messages: HorizontalLayout {
                 Rectangle { horizontal-stretch: 1; }
-                Rectangle {
+                VerticalLayout {
                     max-width: Theme.composer-max-width;
                     horizontal-stretch: 1000;
-                    HorizontalLayout {
-                        if m.role == "user": Rectangle { horizontal-stretch: 1; }
+                    spacing: 4px;
+
+                    if m.role == "user": HorizontalLayout {
+                        Rectangle { horizontal-stretch: 1; }
                         Rectangle {
-                            max-width: m.role == "user" ? 520px : Theme.composer-max-width;
-                            horizontal-stretch: m.role == "user" ? 0 : 1;
+                            max-width: 520px;
                             border-radius: Theme.radius-bubble;
-                            background: m.role == "user" ? Theme.bubble : transparent;
+                            background: Theme.bubble;
                             VerticalLayout {
-                                padding: m.role == "user" ? 10px : 0px;
-                                padding-left: m.role == "user" ? 14px : 0px;
-                                padding-right: m.role == "user" ? 14px : 0px;
+                                padding: 8px;
+                                padding-left: 12px;
+                                padding-right: 12px;
                                 Text {
                                     text: m.text;
                                     wrap: word-wrap;
                                     color: Theme.fg;
-                                    font-size: 15px;
+                                    font-size: Theme.body-font;
                                 }
                             }
                         }
                     }
+                    if m.role == "assistant": Text {
+                        text: m.text;
+                        wrap: word-wrap;
+                        color: Theme.fg;
+                        font-size: Theme.body-font;
+                    }
+                    if m.role == "tool": HorizontalLayout {
+                        spacing: 2px;
+                        Text { text: m.text; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+                        Icon { width: 14px; text: Glyph.chevron-right; font-size: 14px; color: Theme.fg-secondary; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    if m.role != "tool": ActionRow { user: m.role == "user"; }
                 }
                 Rectangle { horizontal-stretch: 1; }
             }
@@ -172,82 +213,52 @@ export component Home inherits Rectangle {
     in property <string> project-name;
     in property <[Message]> messages;
     in property <bool> chat-active: false;
-    in property <string> status;
-    in property <bool> sidebar-open: true;
     callback submit(string);
-    callback toggle-sidebar;
     public function scroll-bottom() { chat.scroll-bottom(); }
 
     background: Theme.surface;
 
     VerticalLayout {
-        // Top bar: sidebar toggle (when collapsed), title and connection status.
-        HorizontalLayout {
-            height: Theme.titlebar-height;
-            padding: 6px;
-            padding-left: 8px;
-            padding-right: 12px;
-            spacing: 4px;
-            if !root.sidebar-open: IconButton {
-                glyph: Glyph.sidebar;
-                clicked => { root.toggle-sidebar(); }
-            }
-            Text {
-                text: root.chat-active ? "InoCode GUI" : "";
-                color: Theme.fg;
-                font-size: 14px;
-                vertical-alignment: center;
-                horizontal-stretch: 1;
-            }
-            Text {
-                text: root.status;
-                color: Theme.fg-tertiary;
-                font-size: 12px;
-                vertical-alignment: center;
-            }
+        padding-bottom: root.chat-active ? 12px : 120px;
+        alignment: root.chat-active ? LayoutAlignment.stretch : LayoutAlignment.center;
+
+        chat := ChatView {
+            visible: root.chat-active;
+            vertical-stretch: root.chat-active ? 1 : 0;
+            messages: root.messages;
         }
 
-        VerticalLayout {
-            padding-bottom: root.chat-active ? 12px : 96px;
-            alignment: root.chat-active ? LayoutAlignment.stretch : LayoutAlignment.center;
+        Rectangle {
+            height: col.preferred-height;
+            col := VerticalLayout {
+                spacing: 28px;
+                padding-left: 16px;
+                padding-right: 16px;
 
-            chat := ChatView {
-                visible: root.chat-active;
-                vertical-stretch: root.chat-active ? 1 : 0;
-                messages: root.messages;
-            }
-
-            Rectangle {
-                height: col.preferred-height;
-                col := VerticalLayout {
-                    spacing: 20px;
-                    padding-left: 16px;
-                    padding-right: 16px;
-
-                    if !root.chat-active: HorizontalLayout {
-                        alignment: center;
-                        spacing: 12px;
-                        Logo { width: 32px; height: 32px; }
-                        Text {
-                            text: "こんにちは、何を作りましょうか？";
-                            font-size: 30px;
-                            font-family: Theme.font-serif;
-                            color: Theme.fg;
-                            vertical-alignment: center;
-                        }
+                if !root.chat-active: HorizontalLayout {
+                    alignment: center;
+                    spacing: 10px;
+                    Logo { width: 28px; height: 28px; }
+                    Text {
+                        text: "こんにちは、何を作りましょうか？";
+                        font-size: 30px;
+                        font-weight: 400;
+                        font-family: Theme.font-serif;
+                        color: Theme.fg;
+                        vertical-alignment: center;
                     }
+                }
 
-                    HorizontalLayout {
-                        Rectangle { horizontal-stretch: 1; }
-                        composer := Composer {
-                            max-width: Theme.composer-max-width;
-                            horizontal-stretch: 1000;
-                            text <=> root.prompt;
-                            placeholder: "InoCode にご用件をどうぞ";
-                            submit(t) => { root.submit(t); }
-                        }
-                        Rectangle { horizontal-stretch: 1; }
+                HorizontalLayout {
+                    Rectangle { horizontal-stretch: 1; }
+                    composer := Composer {
+                        max-width: Theme.composer-max-width;
+                        horizontal-stretch: 1000;
+                        text <=> root.prompt;
+                        placeholder: "Enter で送信、Shift+Enter で改行";
+                        submit(t) => { root.submit(t); }
                     }
+                    Rectangle { horizontal-stretch: 1; }
                 }
             }
         }

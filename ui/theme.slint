@@ -1,32 +1,42 @@
 import { Palette } from "std-widgets.slint";
 
-// Design tokens following the Claude Desktop "claude" theme (ref/docs/05-claude-desktop-design.md).
-// Surfaces are the warm-gray bg-000..300 scale, text uses the text-000/200/400 steps and the
-// accent is the brand terracotta. The scheme follows the operating system.
+// Tokens sampled from the Claude Desktop frame (ion-dist --cds-* / --df-*) and from a
+// capture of the running app (dark: page #191919, sidebar #1f1f1f, composer #303030,
+// user bubble #252525). The scheme follows the operating system.
 export global Theme {
     out property <bool> dark: Palette.color-scheme != ColorScheme.light;
-    out property <color> surface: dark ? #262624 : #faf9f5;
-    out property <color> sidebar: dark ? #1f1e1d : #f5f4ed;
-    out property <color> fg: dark ? #faf9f5 : #141413;
-    out property <color> fg-secondary: dark ? #c2c0b6 : #3d3d3a;
-    out property <color> fg-tertiary: dark ? #9c9a92 : #73726c;
-    out property <color> border: dark ? #dedcd126 : #1f1e1d26;
-    out property <color> hover: dark ? #faf9f50f : #1f1e1d0f;
-    out property <color> pressed: dark ? #faf9f51a : #1f1e1d1a;
-    out property <color> composer: dark ? #30302e : #ffffff;
-    out property <color> bubble: dark ? #141413 : #f0eee6;
+    out property <color> surface: dark ? #191919 : #ffffff;
+    out property <color> sidebar: dark ? #1f1f1f : #f6f6f5;
+    out property <color> chrome: dark ? #202020 : #f6f6f5;
+    out property <color> fg: dark ? #ffffffed : #000000e6;
+    out property <color> fg-secondary: dark ? #ffffff91 : #00000099;
+    out property <color> fg-tertiary: dark ? #ffffff66 : #00000077;
+    out property <color> border: dark ? #ffffff14 : #00000014;
+    out property <color> hover: dark ? #ffffff13 : #0000000d;
+    out property <color> pressed: dark ? #ffffff26 : #0000001a;
+    out property <color> selected: dark ? #ffffff1a : #00000012;
+    out property <color> composer: dark ? #303030 : #ffffff;
+    out property <color> bubble: dark ? #252525 : #f0efed;
     out property <color> warning: dark ? #e0a41a : #8f5a0e;
+    out property <color> danger: dark ? #ff5a5f : #cd2054;
     out property <color> brand: #d97757;
-    out property <color> brand-strong: #c6613f;
-    out property <color> accent: dark ? #6fa8e0 : #2c84db;
+    out property <color> accent: dark ? #4d8ff5 : #2c84db;
     out property <color> on-primary: #ffffff;
-    out property <length> radius-row: 8px;
-    out property <length> radius-composer: 20px;
-    out property <length> radius-bubble: 14px;
-    out property <length> row-height: 30px;
-    out property <length> titlebar-height: 40px;
-    out property <length> composer-max-width: 704px;
-    out property <length> sidebar-width: 256px;
+    out property <length> radius-row: 6px;
+    out property <length> radius-composer: 14px;
+    out property <length> radius-bubble: 12px;
+    out property <length> row-height: 26px;
+    out property <length> row-font: 13px;
+    out property <length> group-font: 12px;
+    out property <length> icon-size: 16px;
+    out property <length> leading-slot: 24px;
+    out property <length> row-gap: 4px;
+    out property <length> stack-gap: 2px;
+    out property <length> chrome-height: 36px;
+    out property <length> sidebar-width: 288px;
+    out property <length> panel-width: 288px;
+    out property <length> composer-max-width: 672px;
+    out property <length> body-font: 14px;
     out property <string> font-sans: "Segoe UI";
     out property <string> font-serif: "Georgia";
 }
