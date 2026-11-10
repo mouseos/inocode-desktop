@@ -1,0 +1,129 @@
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+import { IconButton, NavRow } from "widgets.slint";
+
+export struct ChatItem {
+    title: string,
+    busy: bool,
+}
+
+export struct ProjectItem {
+    name: string,
+    chats: [ChatItem],
+}
+
+component SectionHeader inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> action-glyph;
+    callback action;
+    height: 28px;
+    padding-left: 8px;
+    padding-right: 2px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    Text {
+        text: root.label;
+        color: Theme.fg-tertiary;
+        font-size: 13px;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+    if root.action-glyph != "": IconButton {
+        glyph: root.action-glyph;
+        box-size: 24px;
+        icon-size: 16px;
+        clicked => { root.action(); }
+    }
+}
+
+component ProjectGroup inherits VerticalLayout {
+    in property <ProjectItem> project;
+    property <bool> open: true;
+    NavRow {
+        glyph: root.open ? Glyph.folder-open : Glyph.folder;
+        label: root.project.name;
+        clicked => { root.open = !root.open; }
+    }
+    if root.open && root.project.chats.length == 0: Text {
+        text: "チャットはありません";
+        color: Theme.fg-tertiary;
+        height: Theme.row-height;
+        vertical-alignment: center;
+        x: 36px;
+    }
+    if root.open: VerticalLayout {
+        for chat in root.project.chats: NavRow {
+            label: chat.title;
+            indent: 28px;
+            busy: chat.busy;
+        }
+    }
+}
+
+export component Sidebar inherits Rectangle {
+    in property <[ChatItem]> pinned;
+    in property <[ProjectItem]> projects;
+    in property <[ChatItem]> recent;
+    callback new-chat;
+
+    background: Theme.sidebar;
+    preferred-width: 275px;
+    min-width: 220px;
+    max-width: 360px;
+    horizontal-stretch: 0;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 2px;
+
+        HorizontalLayout {
+            height: 40px;
+            padding-left: 8px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            Text {
+                text: "Codex";
+                color: Theme.fg;
+                font-size: 15px;
+                font-weight: 500;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            IconButton { glyph: Glyph.notifications; }
+            IconButton { glyph: Glyph.search; }
+        }
+
+        NavRow {
+            glyph: Glyph.edit-note;
+            label: "新しいチャット";
+            clicked => { root.new-chat(); }
+        }
+
+        Flickable {
+            content-height: content.preferred-height;
+            content := VerticalLayout {
+                width: parent.width;
+                spacing: 2px;
+                alignment: start;
+
+                Rectangle { height: 8px; }
+                if root.pinned.length > 0: SectionHeader { label: "ピン留め"; }
+                for chat in root.pinned: NavRow {
+                    glyph: Glyph.push-pin;
+                    label: chat.title;
+                }
+
+                Rectangle { height: 8px; }
+                SectionHeader { label: "プロジェクト"; action-glyph: Glyph.add; }
+                for project in root.projects: ProjectGroup { project: project; }
+
+                Rectangle { height: 8px; }
+                SectionHeader { label: "チャット"; }
+                for chat in root.recent: NavRow {
+                    label: chat.title;
+                    busy: chat.busy;
+                }
+            }
+        }
+    }
+}

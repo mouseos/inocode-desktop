@@ -1,79 +1,119 @@
-import { Button, LineEdit, ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+import { IconButton } from "widgets.slint";
+import { Sidebar, ChatItem, ProjectItem } from "sidebar.slint";
+import { Home } from "home.slint";
+
+component RailButton inherits IconButton {
+    box-size: 36px;
+    icon-size: 20px;
+}
+
+component MenuLabel inherits Rectangle {
+    in property <string> label;
+    height: 26px;
+    width: t.preferred-width + 16px;
+    border-radius: 6px;
+    background: ta.has-hover ? Theme.hover : transparent;
+    t := Text {
+        text: root.label;
+        color: Theme.fg-secondary;
+        font-size: 13px;
+        x: 8px;
+        vertical-alignment: center;
+    }
+    ta := TouchArea { }
+}
 
 export component AppWindow inherits Window {
     title: "InoCode";
     preferred-width: 1100px;
     preferred-height: 720px;
-    min-width: 480px;
+    min-width: 520px;
     min-height: 360px;
+    background: Theme.surface;
+    default-font-size: 14px;
 
-    in-out property <string> prompt;
     in-out property <bool> sidebar-open: true;
+    in-out property <string> prompt;
     callback submit(string);
 
-    in property <[string]> pinned: ["サンプルのチャット"];
-    in property <[string]> chats: ["InoCode GUI", "app-server 接続の確認", "ビルド手順の整理"];
+    in property <[ChatItem]> pinned: [{ title: "サンプルの固定チャット", busy: false }];
+    in property <[ProjectItem]> projects: [
+        { name: "ino-code", chats: [
+            { title: "InoCode GUI", busy: true },
+            { title: "app-server 接続の確認", busy: false },
+        ] },
+        { name: "sample-app", chats: [{ title: "ビルド手順の整理", busy: false }] },
+        { name: "docs", chats: [] },
+    ];
+    in property <[ChatItem]> recent: [
+        { title: "InoCode GUI", busy: true },
+        { title: "app-server 接続の確認", busy: false },
+        { title: "ビルド手順の整理", busy: false },
+    ];
 
-    HorizontalLayout {
-        if root.sidebar-open: Rectangle {
-            width: 260px;
-            background: #101010;
-
-            VerticalLayout {
-                padding: 12px;
-                spacing: 8px;
-                alignment: start;
-
-                Text { text: "Codex"; font-size: 16px; font-weight: 600; }
-                Button { text: "新しいチャット"; }
-                Button { text: "検索"; }
-
-                Text { text: "ピン留め"; font-size: 12px; opacity: 0.6; }
-                for item in root.pinned: Text { text: item; overflow: elide; }
-
-                Text { text: "チャット"; font-size: 12px; opacity: 0.6; }
-                for item in root.chats: Text { text: item; overflow: elide; }
+    VerticalLayout {
+        // Title strip: sidebar toggle, history navigation and the application menu.
+        Rectangle {
+            height: Theme.titlebar-height;
+            background: Theme.sidebar;
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                padding-top: 4px;
+                padding-bottom: 4px;
+                spacing: 2px;
+                IconButton {
+                    glyph: Glyph.sidebar;
+                    clicked => { root.sidebar-open = !root.sidebar-open; }
+                }
+                IconButton { glyph: Glyph.arrow-back; enabled: false; }
+                IconButton { glyph: Glyph.arrow-forward; enabled: false; }
+                Rectangle { width: 8px; }
+                MenuLabel { label: "ファイル"; height: 28px; }
+                MenuLabel { label: "編集"; height: 28px; }
+                MenuLabel { label: "表示"; height: 28px; }
+                MenuLabel { label: "ヘルプ"; height: 28px; }
+                Rectangle { horizontal-stretch: 1; }
             }
         }
 
-        VerticalLayout {
-            padding: 16px;
-            spacing: 24px;
-
-            HorizontalLayout {
-                alignment: start;
-                Button {
-                    text: root.sidebar-open ? "一覧を隠す" : "一覧を表示";
-                    clicked => { root.sidebar-open = !root.sidebar-open; }
+        HorizontalLayout {
+            // Navigation rail.
+            Rectangle {
+                width: 52px;
+                background: Theme.sidebar;
+                VerticalLayout {
+                    padding: 8px;
+                    spacing: 4px;
+                    alignment: start;
+                    RailButton { glyph: Glyph.home; selected: true; }
+                    RailButton { glyph: Glyph.schedule; }
+                    RailButton { glyph: Glyph.extension; }
+                    RailButton { glyph: Glyph.difference; }
+                }
+                VerticalLayout {
+                    padding: 8px;
+                    spacing: 4px;
+                    alignment: end;
+                    RailButton { glyph: Glyph.bar-chart; }
+                    RailButton { glyph: Glyph.account; }
                 }
             }
 
-            Rectangle { vertical-stretch: 1; }
-
-            Text {
-                text: "何を作成しましょうか？";
-                font-size: 28px;
-                horizontal-alignment: center;
+            if root.sidebar-open: Sidebar {
+                pinned: root.pinned;
+                projects: root.projects;
+                recent: root.recent;
             }
 
-            HorizontalLayout {
-                spacing: 8px;
-                alignment: center;
-                LineEdit {
-                    max-width: 720px;
-                    horizontal-stretch: 1;
-                    placeholder-text: "Codex に何でも質問。@ でプラグインを使用、またはファイルをメンション";
-                    text <=> root.prompt;
-                    accepted(t) => { root.submit(t); }
-                }
-                Button {
-                    text: "送信";
-                    enabled: root.prompt != "";
-                    clicked => { root.submit(root.prompt); }
-                }
+            Home {
+                horizontal-stretch: 1;
+                project-name: "ino-code";
+                prompt <=> root.prompt;
+                submit(t) => { root.submit(t); }
             }
-
-            Rectangle { vertical-stretch: 2; }
         }
     }
 }

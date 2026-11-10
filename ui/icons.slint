@@ -1,0 +1,36 @@
+import "../assets/MaterialIconsOutlined-Regular.otf";
+import { Theme } from "theme.slint";
+
+// Material Icons (Outlined) code points.
+export global Glyph {
+    out property <string> home: "\u{e88a}";
+    out property <string> schedule: "\u{e8b5}";
+    out property <string> extension: "\u{e87b}";
+    out property <string> difference: "\u{eb7d}";
+    out property <string> notifications: "\u{e7f5}";
+    out property <string> search: "\u{e8b6}";
+    out property <string> edit-note: "\u{e745}";
+    out property <string> folder: "\u{e2c7}";
+    out property <string> folder-open: "\u{e2c8}";
+    out property <string> push-pin: "\u{f10d}";
+    out property <string> add: "\u{e145}";
+    out property <string> arrow-back: "\u{e5c4}";
+    out property <string> arrow-forward: "\u{e5c8}";
+    out property <string> mic: "\u{e029}";
+    out property <string> arrow-upward: "\u{e5d8}";
+    out property <string> expand-more: "\u{e5cf}";
+    out property <string> shield: "\u{f014}";
+    out property <string> more-horiz: "\u{eae1}";
+    out property <string> bar-chart: "\u{e26b}";
+    out property <string> account: "\u{e853}";
+    out property <string> sidebar: "\u{f114}";
+    out property <string> sync: "\u{e627}";
+}
+
+export component Icon inherits Text {
+    font-family: "Material Icons Outlined";
+    font-size: 18px;
+    color: Theme.fg-secondary;
+    horizontal-alignment: center;
+    vertical-alignment: center;
+}

@@ -1,0 +1,151 @@
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+import { IconButton, Chip } from "widgets.slint";
+
+component SendButton inherits Rectangle {
+    in property <bool> active;
+    callback clicked;
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    background: root.active ? Theme.fg : Theme.hover;
+    Icon {
+        text: Glyph.arrow-upward;
+        font-size: 20px;
+        color: root.active ? Theme.on-primary : Theme.fg-tertiary;
+    }
+    TouchArea {
+        enabled: root.active;
+        mouse-cursor: root.active ? MouseCursor.pointer : MouseCursor.default;
+        clicked => { root.clicked(); }
+    }
+}
+
+component Composer inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    callback submit(string);
+
+    border-radius: Theme.radius-composer;
+    background: Theme.composer;
+    border-width: 1px;
+    border-color: Theme.border;
+    min-height: 98px;
+
+    TouchArea {
+        mouse-cursor: MouseCursor.text;
+        clicked => { input.focus(); }
+    }
+
+    scope := FocusScope {
+        capture-key-pressed(event) => {
+            if (event.text == Key.Return && !event.modifiers.shift && root.text != "") {
+                root.submit(root.text);
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: 12px;
+            spacing: 4px;
+
+            Rectangle {
+                min-height: max(44px, input.preferred-height);
+                max-height: 240px;
+                vertical-stretch: 1;
+                input := TextInput {
+                    x: 4px;
+                    width: parent.width - 8px;
+                    text <=> root.text;
+                    wrap: word-wrap;
+                    single-line: false;
+                    color: Theme.fg;
+                    font-size: 14px;
+                    selection-background-color: #339cff66;
+                }
+                if root.text == "": Text {
+                    x: 4px;
+                    width: parent.width - 8px;
+                    text: root.placeholder;
+                    color: Theme.fg-tertiary;
+                    overflow: elide;
+                    wrap: no-wrap;
+                }
+            }
+
+            HorizontalLayout {
+                height: 32px;
+                spacing: 2px;
+                IconButton { glyph: Glyph.add; box-size: 32px; icon-size: 20px; }
+                Chip {
+                    glyph: Glyph.shield;
+                    label: "フルアクセス";
+                    tint: Theme.warning;
+                    height: 32px;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Chip {
+                    label: "モデル 中";
+                    expandable: true;
+                    height: 32px;
+                }
+                IconButton { glyph: Glyph.mic; box-size: 32px; icon-size: 20px; }
+                SendButton {
+                    active: root.text != "";
+                    clicked => { root.submit(root.text); }
+                }
+            }
+        }
+    }
+}
+
+export component Home inherits Rectangle {
+    in-out property <string> prompt;
+    in property <string> project-name;
+    callback submit(string);
+
+    background: Theme.surface;
+
+    VerticalLayout {
+        padding-top: 46px;
+        padding-bottom: 112px;
+        alignment: center;
+
+        VerticalLayout {
+            spacing: 24px;
+            padding-left: 16px;
+            padding-right: 16px;
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 0px;
+                if root.project-name != "": VerticalLayout {
+                    Text {
+                        text: root.project-name;
+                        font-size: 28px;
+                        color: Theme.fg;
+                    }
+                    Rectangle { height: 1px; background: Theme.fg-tertiary; }
+                }
+                Text {
+                    text: root.project-name != "" ? " で何を作りますか？" : "何を作成しましょうか？";
+                    font-size: 28px;
+                    color: Theme.fg;
+                }
+            }
+
+            HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+                composer := Composer {
+                    max-width: Theme.composer-max-width;
+                    horizontal-stretch: 1000;
+                    text <=> root.prompt;
+                    placeholder: "Codex に何でも質問。@ でプラグインを使用、またはファイルをメンション";
+                    submit(t) => { root.submit(t); }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+    }
+}
