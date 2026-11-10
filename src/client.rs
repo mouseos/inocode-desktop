@@ -1441,8 +1441,9 @@ pub fn parse_models(result: &Value) -> Vec<ModelInfo> {
         .unwrap_or_default()
 }
 
-/// Account state for the screen: logged in or not, and a label that never carries personal
-/// data. The `account/read` reply may contain an e-mail address and a name; neither is read.
+/// Account state for the screen: logged in or not, and a label (the plan). The e-mail
+/// address in the `account/read` reply is never read. The reply has no display-name field
+/// (only the workspace name), so, as before, no name is shown.
 pub fn parse_account(result: &Value) -> (bool, String) {
     match result.pointer("/account/type").and_then(Value::as_str) {
         Some("chatgpt") => {
@@ -1455,18 +1456,6 @@ pub fn parse_account(result: &Value) -> (bool, String) {
             let need = result.get("requiresOpenaiAuth").and_then(Value::as_bool).unwrap_or(true);
             (!need, if need { "未ログイン".to_string() } else { "ローカル".to_string() })
         }
-    }
-}
-
-/// `mask_emails` plus the user's home directory shown as `~` (it carries the account name).
-pub fn scrub(text: &str) -> String {
-    let masked = mask_emails(text);
-    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_default();
-    if home.len() > 3 {
-        let slashed = home.replace('\\', "/");
-        masked.replace(&home, "~").replace(&slashed, "~")
-    } else {
-        masked
     }
 }
 
@@ -1648,15 +1637,6 @@ mod tests {
         assert_eq!(mask_emails("no address @ here, user@host"), "no address @ here, user@host");
         let m = mask_emails("unexpected status 401: account abc@def.gh not allowed");
         assert!(!m.contains('@'));
-    }
-
-    #[test]
-    fn scrub_hides_home_directory() {
-        let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_default();
-        if home.len() > 3 {
-            let s = scrub(&format!("{home}/bin/inocode.exe を起動できません"));
-            assert!(!s.contains(&home) && s.starts_with('~'));
-        }
     }
 
     #[test]
