@@ -24,8 +24,6 @@ export struct IntelligenceState {
     models: [MenuRow],
     default-row: MenuRow,
     loading: bool,
-    fast-available: bool,
-    fast-on: bool,
     ultra-warning: bool,
     can-reset: bool,
 }
@@ -198,7 +196,6 @@ export component IntelligenceMenu inherits Rectangle {
     in property <IntelligenceState> state;
     callback search(string);
     callback pick-effort(int);
-    callback pick-speed(int);
     callback pick-model(int);
     callback pick-default;
     callback reset;
@@ -296,42 +293,6 @@ export component IntelligenceMenu inherits Rectangle {
                         font-weight: 600;
                         horizontal-alignment: center;
                         vertical-alignment: center;
-                    }
-                    // Fast: only for models that offer a faster service tier.
-                    if root.state.fast-available: Rectangle {
-                        x: 2px;
-                        y: 1px;
-                        width: 26px;
-                        height: 26px;
-                        border-radius: 6px;
-                        background: root.state.fast-on ? Theme.selected : fa.has-hover ? Theme.hover : transparent;
-                        Icon {
-                            text: "\u{ea0b}";
-                            font-size: 16px;
-                            color: root.state.fast-on ? Theme.accent : Theme.fg-secondary;
-                        }
-                        fa := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.pick-speed(root.state.fast-on ? 0 : 1); }
-                        }
-                        // Tooltip (composer.intelligencePicker.fastMode.*).
-                        if fa.has-hover: Rectangle {
-                            x: 0px;
-                            y: 30px;
-                            width: tip.preferred-width + 20px;
-                            height: tip.preferred-height + 12px;
-                            border-radius: 6px;
-                            background: Theme.composer;
-                            border-width: 1px;
-                            border-color: Theme.border;
-                            tip := VerticalLayout {
-                                padding: 6px;
-                                padding-left: 10px;
-                                padding-right: 10px;
-                                Text { text: "速度 1.5倍"; color: Theme.fg; font-size: 12px; }
-                                Text { text: "使用量が増えます"; color: Theme.fg-tertiary; font-size: 11px; }
-                            }
-                        }
                     }
                     if root.state.can-reset: IconButton {
                         x: parent.width - self.width - 2px;

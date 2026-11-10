@@ -80,18 +80,28 @@ fn visible_models(st: &State) -> Vec<&ModelInfo> {
     st.models.iter().chain(extra).filter(|m| !m.hidden).collect()
 }
 
-/// The picker's rows narrowed by the search box: (model, is the "Daybreak" variant row).
-/// A model that can run in Daybreak mode gets a "{name} Daybreak" row right under its own.
-fn shown_models(st: &State) -> Vec<(&ModelInfo, bool)> {
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Normal,
+    Fast,
+    Daybreak,
+}
+
+/// The picker's rows narrowed by the search box. A model that offers Fast and/or Daybreak
+/// gets "{name} Fast" and "{name} Daybreak" rows right under its own; each row picks one mode.
+fn shown_models(st: &State) -> Vec<(&ModelInfo, Kind)> {
     let q = st.model_filter.trim().to_lowercase();
     let mut rows = Vec::new();
     for m in visible_models(st) {
         if !(q.is_empty() || m.name.to_lowercase().contains(&q) || m.id.to_lowercase().contains(&q)) {
             continue;
         }
-        rows.push((m, false));
+        rows.push((m, Kind::Normal));
+        if m.fast_tier().is_some() {
+            rows.push((m, Kind::Fast));
+        }
         if m.has_daybreak_variant() {
-            rows.push((m, true));
+            rows.push((m, Kind::Daybreak));
         }
     }
     rows
@@ -151,12 +161,22 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
     let explicit = st.settings.model.is_some();
     let model_rows: Vec<MenuRow> = shown_models(st)
         .iter()
-        .map(|(m, variant)| {
-            let label = if *variant { format!("{} Daybreak", m.name) } else { m.name.clone() };
-            // A model with a Daybreak row is checked on the row that matches the Daybreak choice.
-            let on = explicit
-                && sel.map(|s| s.id == m.id).unwrap_or(false)
-                && (!m.has_daybreak_variant() || *variant == st.settings.daybreak);
+        .map(|(m, kind)| {
+            let label = match kind {
+                Kind::Normal => m.name.clone(),
+                Kind::Fast => format!("{} Fast", m.name),
+                Kind::Daybreak => format!("{} Daybreak", m.name),
+            };
+            // The checked row is the one that matches the model and its mode.
+            let fast_on = m.fast_tier().map(|t| tier_sel.as_deref() == Some(t)).unwrap_or(false);
+            let mode = if st.settings.daybreak && m.has_daybreak_variant() {
+                Kind::Daybreak
+            } else if fast_on {
+                Kind::Fast
+            } else {
+                Kind::Normal
+            };
+            let on = explicit && sel.map(|s| s.id == m.id).unwrap_or(false) && mode == *kind;
             row(&label, "", on, false)
         })
         .collect();
@@ -164,12 +184,6 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
         Some(m) if eff_text.is_empty() => m.name.clone(),
         Some(m) => format!("{} {}", m.name, eff_text),
         None => "モデルを選択".to_string(),
-    };
-    // Fast mode: a model with exactly one faster service tier gets the toggle.
-    let fast_available = sel.map(|m| m.service_tiers.len() == 1).unwrap_or(false);
-    let fast_on = match (&tier_sel, sel) {
-        (Some(t), Some(m)) => m.service_tiers.iter().any(|(id, _, _)| id == t),
-        _ => false,
     };
     app.set_intelligence(IntelligenceState {
         trigger: trigger.into(),
@@ -180,8 +194,6 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
         models: rows(model_rows),
         default_row: row("デフォルト", "おすすめのモデルセット", !explicit, false),
         loading: !st.models_loaded,
-        fast_available,
-        fast_on,
         ultra_warning: eff.as_deref() == Some("ultra"),
         can_reset: explicit || st.settings.effort.is_some() || st.settings.service_tier.is_some(),
     });
@@ -616,18 +628,18 @@ fn main() {
         let Some(app) = weak.upgrade() else { return };
         let before = STATE.with(|s| s.borrow().settings.daybreak);
         change(&app, &h, |st| {
-            let Some((m, variant)) = shown_models(st).get(i as usize).map(|(m, v)| ((*m).clone(), *v)) else { return };
+            let Some((m, kind)) = shown_models(st).get(i as usize).map(|(m, k)| ((*m).clone(), *k)) else { return };
             st.settings.model = Some(m.id.clone());
-            // The "Daybreak" row turns Daybreak on for that model; any other row turns it off.
-            st.settings.daybreak = variant;
+            // Each row picks one mode: Daybreak on for the Daybreak row, Fast for the Fast row,
+            // and the normal row turns both off.
+            st.settings.daybreak = kind == Kind::Daybreak;
+            st.settings.service_tier = match (kind, m.fast_tier()) {
+                (Kind::Fast, Some(t)) => Some(Some(t.to_string())),
+                _ if matches!(st.settings.service_tier, Some(Some(_))) => Some(None),
+                _ => st.settings.service_tier.clone(),
+            };
             if !st.settings.effort.as_ref().map(|e| m.efforts.contains(e)).unwrap_or(false) {
                 st.settings.effort = Some(m.default_effort.clone()).filter(|e| !e.is_empty());
-            }
-            // A speed tier belongs to a model.
-            if let Some(Some(t)) = &st.settings.service_tier {
-                if !m.service_tiers.iter().any(|(id, _, _)| id == t) {
-                    st.settings.service_tier = Some(None);
-                }
             }
         });
         let after = STATE.with(|s| s.borrow().settings.daybreak);
@@ -653,6 +665,9 @@ fn main() {
             st.settings.model = None;
             st.settings.effort = None;
             st.settings.daybreak = false;
+            if matches!(st.settings.service_tier, Some(Some(_))) {
+                st.settings.service_tier = Some(None);
+            }
         });
         if before {
             h.send(Command::SetDaybreak(false));
@@ -678,16 +693,6 @@ fn main() {
             if let Some(e) = efforts.get(i as usize) {
                 st.settings.effort = Some(e.clone());
             }
-        });
-    });
-    let weak = app.as_weak();
-    let h = handle.clone();
-    app.on_pick_speed(move |i| {
-        let Some(app) = weak.upgrade() else { return };
-        change(&app, &h, |st| {
-            let visible = visible_models(st);
-            let tiers = selected_model(st, &visible).map(|m| m.service_tiers.clone()).unwrap_or_default();
-            st.settings.service_tier = if i <= 0 { Some(None) } else { tiers.get(i as usize - 1).map(|t| Some(t.0.clone())) };
         });
     });
     let weak = app.as_weak();

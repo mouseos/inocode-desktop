@@ -69,7 +69,6 @@ export component AppWindow inherits Window {
     in property <bool> logged-in: true;
     callback search-model(string);
     callback pick-effort(int);
-    callback pick-speed(int);
     callback pick-model(int);
     callback pick-default;
     callback reset-model;
@@ -185,7 +184,6 @@ export component AppWindow inherits Window {
                 project: root.project;
                 search-model(q) => { root.search-model(q); }
                 pick-effort(i) => { root.pick-effort(i); }
-                pick-speed(i) => { root.pick-speed(i); }
                 pick-model(i) => { root.pick-model(i); }
                 pick-default => { root.pick-default(); }
                 reset-model => { root.reset-model(); }

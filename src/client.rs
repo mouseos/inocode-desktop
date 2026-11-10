@@ -84,6 +84,14 @@ impl ModelInfo {
         }
     }
 
+    /// The service tier that the "Fast" row selects (the model's single faster tier).
+    pub fn fast_tier(&self) -> Option<&str> {
+        match self.service_tiers.as_slice() {
+            [(id, _, _)] => Some(id.as_str()),
+            _ => None,
+        }
+    }
+
     /// The model has a "Daybreak" variant row: a standard mode plus a Daybreak program.
     /// Daybreak-only models (no "standard") are listed as plain rows.
     pub fn has_daybreak_variant(&self) -> bool {
