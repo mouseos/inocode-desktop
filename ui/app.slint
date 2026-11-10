@@ -2,7 +2,7 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton } from "widgets.slint";
 import { Sidebar, ChatItem, ProjectItem } from "sidebar.slint";
-import { Home, Message } from "home.slint";
+import { Home, Message, Approval } from "home.slint";
 import { TaskPanel } from "panel.slint";
 
 // Segmented Chat / Code switch at the top of the sidebar.
@@ -43,18 +43,17 @@ export component AppWindow inherits Window {
     callback submit(string);
     public function scroll-bottom() { home.scroll-bottom(); }
 
-    in property <[ProjectItem]> projects: [
-        { name: "ino-code", chats: [
-            { title: "InoCode GUI", status: 1, selected: true, depth: 0 },
-            { title: "app-server 接続の確認", status: 2, selected: false, depth: 1 },
-            { title: "ビルド手順の整理", status: 0, selected: false, depth: 0 },
-        ] },
-        { name: "sample-app", chats: [
-            { title: "設計メモ", status: 0, selected: false, depth: 0 },
-            { title: "テスト失敗の調査", status: 3, selected: false, depth: 0 },
-        ] },
-        { name: "docs", chats: [] },
-    ];
+    in property <[ProjectItem]> projects;
+    in property <[Approval]> approvals;
+    in property <bool> busy: false;
+    // 0 info, 1 ok, 2 warning, 3 error
+    in property <int> status-level: 0;
+    in property <string> transport: "WS";
+    callback new-chat;
+    callback open-thread(string);
+    callback interrupt;
+    callback decide(string, string);
+    callback switch-transport;
 
     VerticalLayout {
         // Chrome bar: menu, sidebar toggle, history and mode switch on the left,
@@ -101,11 +100,23 @@ export component AppWindow inherits Window {
                     }
                     Icon { width: 16px; text: Glyph.expand-more; font-size: 16px; color: Theme.fg-secondary; }
                     Rectangle { horizontal-stretch: 1; }
-                    Text {
-                        text: root.status;
-                        color: Theme.fg-tertiary;
-                        font-size: 12px;
-                        vertical-alignment: center;
+                    Rectangle {
+                        width: st.preferred-width + 12px;
+                        border-radius: Theme.radius-row;
+                        background: sta.has-hover ? Theme.hover : transparent;
+                        st := Text {
+                            text: root.status + " · " + root.transport;
+                            color: root.status-level == 3 ? Theme.danger
+                                : root.status-level == 2 ? Theme.warning
+                                : Theme.fg-tertiary;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                        sta := TouchArea {
+                            mouse-cursor: MouseCursor.pointer;
+                            clicked => { root.switch-transport(); }
+                        }
                     }
                     Rectangle { width: 6px; }
                     IconButton {
@@ -124,12 +135,18 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             if root.sidebar-open: Sidebar {
                 projects: root.projects;
+                new-chat => { root.new-chat(); }
+                open-thread(id) => { root.open-thread(id); }
             }
             home := Home {
                 horizontal-stretch: 1;
                 project-name: "ino-code";
                 messages: root.messages;
                 chat-active: root.messages.length > 0;
+                busy: root.busy;
+                approvals: root.approvals;
+                interrupt => { root.interrupt(); }
+                decide(k, d) => { root.decide(k, d); }
                 prompt <=> root.prompt;
                 submit(t) => { root.submit(t); }
             }

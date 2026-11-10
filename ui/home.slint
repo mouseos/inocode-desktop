@@ -2,7 +2,14 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Chip } from "widgets.slint";
 
+export struct Approval {
+    key: string,
+    title: string,
+    detail: string,
+}
+
 export struct Message {
+    id: string,
     // "user", "assistant" or "tool" (collapsed command summary row)
     role: string,
     text: string,
@@ -30,6 +37,73 @@ component Logo inherits Rectangle {
     }
 }
 
+component ApprovalButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    callback clicked;
+    height: 28px;
+    width: t.preferred-width + 24px;
+    border-radius: Theme.radius-row;
+    background: root.primary ? (ta.has-hover ? Theme.fg-secondary : Theme.fg)
+        : ta.pressed ? Theme.pressed : ta.has-hover ? Theme.selected : Theme.hover;
+    t := Text {
+        text: root.label;
+        font-size: 13px;
+        color: root.primary ? Theme.surface : Theme.fg;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Approval request card shown above the composer.
+component ApprovalCard inherits Rectangle {
+    in property <Approval> item;
+    callback decide(string, string);
+    border-radius: Theme.radius-composer;
+    background: Theme.composer;
+    border-width: 1px;
+    border-color: Theme.border;
+    height: col.preferred-height;
+    col := VerticalLayout {
+        padding: 12px;
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 6px;
+            Icon { width: 18px; text: Glyph.shield; font-size: 16px; color: Theme.warning; }
+            Text { text: root.item.title; color: Theme.fg; font-size: 13px; font-weight: 600; vertical-alignment: center; }
+        }
+        if root.item.detail != "": Rectangle {
+            border-radius: 8px;
+            background: Theme.hover;
+            VerticalLayout {
+                padding: 8px;
+                Text {
+                    text: root.item.detail;
+                    font-family: "Consolas";
+                    font-size: 12px;
+                    color: Theme.fg-secondary;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    max-height: 96px;
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: end;
+            ApprovalButton { label: "拒否"; clicked => { root.decide(root.item.key, "decline"); } }
+            ApprovalButton { label: "このセッションで許可"; clicked => { root.decide(root.item.key, "session"); } }
+            ApprovalButton { label: "許可"; primary: true; clicked => { root.decide(root.item.key, "accept"); } }
+        }
+    }
+}
+
 // Round send button shown while the prompt is non-empty.
 component SendButton inherits Rectangle {
     callback clicked;
@@ -53,7 +127,9 @@ component Composer inherits VerticalLayout {
     in-out property <string> text;
     in property <string> placeholder;
     in property <string> model: "InoCode";
+    in property <bool> busy: false;
     callback submit(string);
+    callback interrupt;
     spacing: 6px;
 
     Rectangle {
@@ -111,7 +187,15 @@ component Composer inherits VerticalLayout {
                         wrap: no-wrap;
                     }
                 }
-                if root.text == "": IconButton { glyph: Glyph.mic; box-size: 28px; icon-size: 18px; }
+                if root.text == "" && !root.busy: IconButton { glyph: Glyph.mic; box-size: 28px; icon-size: 18px; }
+                if root.text == "" && root.busy: Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: Theme.fg;
+                    Rectangle { width: 10px; height: 10px; border-radius: 2px; background: Theme.surface; }
+                    TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.interrupt(); } }
+                }
                 if root.text != "": SendButton { clicked => { root.submit(root.text); } }
             }
         }
@@ -213,7 +297,11 @@ export component Home inherits Rectangle {
     in property <string> project-name;
     in property <[Message]> messages;
     in property <bool> chat-active: false;
+    in property <bool> busy: false;
+    in property <[Approval]> approvals;
     callback submit(string);
+    callback interrupt;
+    callback decide(string, string);
     public function scroll-bottom() { chat.scroll-bottom(); }
 
     background: Theme.surface;
@@ -235,6 +323,12 @@ export component Home inherits Rectangle {
                 padding-left: 16px;
                 padding-right: 16px;
 
+                for a in root.approvals: ApprovalCard {
+                    item: a;
+                    max-width: Theme.composer-max-width;
+                    decide(k, d) => { root.decide(k, d); }
+                }
+
                 if !root.chat-active: HorizontalLayout {
                     alignment: center;
                     spacing: 10px;
@@ -255,6 +349,8 @@ export component Home inherits Rectangle {
                         max-width: Theme.composer-max-width;
                         horizontal-stretch: 1000;
                         text <=> root.prompt;
+                        busy: root.busy;
+                        interrupt => { root.interrupt(); }
                         placeholder: "Enter で送信、Shift+Enter で改行";
                         submit(t) => { root.submit(t); }
                     }

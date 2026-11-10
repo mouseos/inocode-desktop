@@ -3,6 +3,7 @@ import { Icon, Glyph } from "icons.slint";
 import { IconButton, NavRow } from "widgets.slint";
 
 export struct ChatItem {
+    id: string,
     title: string,
     // 0 none, 1 working, 2 unread, 3 error
     status: int,
@@ -51,6 +52,7 @@ component GroupHeader inherits Rectangle {
 
 component ProjectGroup inherits VerticalLayout {
     in property <ProjectItem> project;
+    callback open-thread(string);
     property <bool> open: true;
     spacing: Theme.stack-gap;
     GroupHeader {
@@ -65,6 +67,7 @@ component ProjectGroup inherits VerticalLayout {
             selected: chat.selected;
             tree: chat.depth > 0;
             indent: chat.depth > 0 ? 8px : 0px;
+            clicked => { root.open-thread(chat.id); }
         }
     }
 }
@@ -73,6 +76,7 @@ export component Sidebar inherits Rectangle {
     in property <[ProjectItem]> projects;
     in property <string> user-name: "ローカル";
     callback new-chat;
+    callback open-thread(string);
 
     background: Theme.sidebar;
     preferred-width: Theme.sidebar-width;
@@ -100,7 +104,17 @@ export component Sidebar inherits Rectangle {
                 width: parent.width;
                 spacing: 10px;
                 alignment: start;
-                for project in root.projects: ProjectGroup { project: project; }
+                if root.projects.length == 0: Text {
+                    text: "セッションはありません";
+                    color: Theme.fg-tertiary;
+                    font-size: Theme.row-font;
+                    horizontal-alignment: center;
+                    height: 40px;
+                }
+                for project in root.projects: ProjectGroup {
+                    project: project;
+                    open-thread(id) => { root.open-thread(id); }
+                }
             }
         }
 
