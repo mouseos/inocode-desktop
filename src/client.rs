@@ -93,15 +93,25 @@ pub enum Command {
     Interrupt,
     Approve { key: String, decision: Decision },
     SwitchTransport,
+    Quit,
 }
 
 pub struct Handle {
     tx: Sender<Command>,
+    thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl Handle {
     pub fn send(&self, cmd: Command) {
         let _ = self.tx.send(cmd);
+    }
+
+    /// Stop the client and wait until the app-server child it started is gone.
+    pub fn shutdown(&self) {
+        let _ = self.tx.send(Command::Quit);
+        if let Some(t) = self.thread.lock().ok().and_then(|mut g| g.take()) {
+            let _ = t.join();
+        }
     }
 }
 
@@ -117,8 +127,8 @@ const POLL: Duration = Duration::from_millis(8);
 
 pub fn spawn(cfg: Config, on_event: impl Fn(Event) + Send + 'static) -> Handle {
     let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || supervise(cfg, rx, on_event));
-    Handle { tx }
+    let thread = std::thread::spawn(move || supervise(cfg, rx, on_event));
+    Handle { tx, thread: std::sync::Mutex::new(Some(thread)) }
 }
 
 // ---------------------------------------------------------------- transport
@@ -202,8 +212,56 @@ fn open_ws(url: &str) -> Result<Conn, String> {
     Ok(Conn::Ws(Box::new(ws)))
 }
 
+/// Where `inocode.exe` is looked up, in order: `INOCODE_BIN`, PATH, next to this
+/// executable, then development build output (`cli/inocode/codex-rs/target-win/dev-small`)
+/// relative to the executable and to the working directory.
+pub fn find_inocode(configured: &str) -> Result<std::path::PathBuf, String> {
+    use std::path::{Path, PathBuf};
+    let name = if cfg!(windows) { "inocode.exe" } else { "inocode" };
+    let explicit = !configured.is_empty() && configured != "inocode";
+    if explicit {
+        let p = PathBuf::from(configured);
+        return if p.is_file() {
+            Ok(p)
+        } else {
+            Err(format!("INOCODE_BIN が指すファイルが見つかりません: {configured}"))
+        };
+    }
+    if let Some(paths) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&paths) {
+            let p = dir.join(name);
+            if p.is_file() {
+                return Ok(p);
+            }
+        }
+    }
+    let exe_dir = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf));
+    if let Some(dir) = &exe_dir {
+        let p = dir.join(name);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    let dev = Path::new("cli").join("inocode").join("codex-rs").join("target-win").join("dev-small").join(name);
+    let mut bases: Vec<PathBuf> = Vec::new();
+    if let Some(dir) = &exe_dir {
+        bases.extend(dir.ancestors().map(Path::to_path_buf));
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        bases.extend(cwd.ancestors().map(Path::to_path_buf));
+    }
+    for base in bases {
+        let p = base.join(&dev);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    Err("inocode.exe が見つかりません。INOCODE_BIN を指定してください".to_string())
+}
+
 fn open_stdio(program: &str) -> Result<Conn, String> {
-    let mut cmd = Proc::new(program);
+    let program = find_inocode(program)?;
+    let mut cmd = Proc::new(&program);
     cmd.args(["app-server", "--listen", "stdio://"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -213,7 +271,7 @@ fn open_stdio(program: &str) -> Result<Conn, String> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    let mut child = cmd.spawn().map_err(|e| format!("{program} を起動できません: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| format!("{} を起動できません: {e}", program.display()))?;
     let stdin = child.stdin.take().ok_or("stdin を取得できません")?;
     let stdout = child.stdout.take().ok_or("stdout を取得できません")?;
     let (tx, rx) = mpsc::channel();
@@ -290,6 +348,7 @@ fn supervise(mut cfg: Config, rx: Receiver<Command>, on_event: impl Fn(Event)) {
                             attempt = 0;
                             break;
                         }
+                        Ok(Command::Quit) => return,
                         Ok(Command::Prompt(_)) => on_event(Event::Error("未接続のため送信できません".into())),
                         Ok(_) => {}
                         Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -407,6 +466,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 cfg.use_stdio = !cfg.use_stdio;
                 return Ok(Some(End::Switch));
             }
+            Command::Quit => return Ok(Some(End::Quit)),
             Command::Prompt(text) => {
                 let Some(tid) = self.active_thread.clone() else {
                     (self.on_event)(Event::Error("スレッドがまだ開始されていません".into()));
@@ -799,6 +859,12 @@ mod tests {
     }
 
     #[test]
+    fn missing_binary_message() {
+        let e = find_inocode("no-such-dir/inocode-missing.exe").unwrap_err();
+        assert!(e.contains("INOCODE_BIN"));
+    }
+
+    #[test]
     fn approval_wire() {
         let r = approval_result("item/commandExecution/requestApproval", &Value::Null, Decision::AcceptForSession);
         assert_eq!(r["decision"], "acceptForSession");
@@ -812,8 +878,8 @@ mod tests {
     fn live() {
         let cfg = Config {
             ws_url: std::env::var("INOCODE_WS_URL").unwrap_or_else(|_| "ws://127.0.0.1:18802".into()),
-            stdio_program: std::env::var("INOCODE_BIN").unwrap_or_else(|_| "inocode".into()),
-            use_stdio: std::env::var("INOCODE_STDIO").map(|v| v == "1").unwrap_or(false),
+            stdio_program: std::env::var("INOCODE_BIN").unwrap_or_default(),
+            use_stdio: std::env::var("INOCODE_WS_URL").is_err(),
         };
         let (tx, rx) = mpsc::channel();
         let tx = std::sync::Mutex::new(tx);

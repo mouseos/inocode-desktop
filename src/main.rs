@@ -166,12 +166,14 @@ fn main() {
     app.set_approvals(ModelRc::from(Rc::new(VecModel::<Approval>::default())));
     app.set_projects(ModelRc::from(Rc::new(VecModel::<ProjectItem>::default())));
 
-    // INOCODE_STDIO=1 starts in stdio mode; clicking the connection status in the
-    // top bar switches between WebSocket and stdio at runtime.
+    // Default: start `inocode app-server --listen stdio://` as a child process.
+    // INOCODE_WS_URL connects to an already running app-server over WebSocket instead;
+    // clicking the connection status in the top bar switches between the two.
+    let ws_url = std::env::var("INOCODE_WS_URL").ok();
     let cfg = Config {
-        ws_url: std::env::var("INOCODE_WS_URL").unwrap_or_else(|_| "ws://127.0.0.1:8765".into()),
-        stdio_program: std::env::var("INOCODE_BIN").unwrap_or_else(|_| "inocode".into()),
-        use_stdio: std::env::var("INOCODE_STDIO").map(|v| v == "1").unwrap_or(false),
+        use_stdio: ws_url.is_none() && std::env::var("INOCODE_STDIO").map(|v| v != "0").unwrap_or(true),
+        ws_url: ws_url.unwrap_or_else(|| "ws://127.0.0.1:8765".into()),
+        stdio_program: std::env::var("INOCODE_BIN").unwrap_or_default(),
     };
 
     // The state is only touched on the UI thread; events cross over via invoke_from_event_loop.
@@ -208,9 +210,11 @@ fn main() {
     app.on_decide(move |key, decision| {
         h.send(Command::Approve { key: key.to_string(), decision: Decision::parse(&decision) })
     });
-    let h = handle;
+    let h = handle.clone();
     app.on_switch_transport(move || h.send(Command::SwitchTransport));
     app.run().unwrap();
+    // Closing the window: stop the client so the app-server child it started exits too.
+    handle.shutdown();
 }
 
 thread_local! {
