@@ -2,6 +2,7 @@ import { Theme } from "../theme.slint";
 import { Icon, Glyph } from "../icons.slint";
 import { IconButton, Switch } from "../widgets.slint";
 import { AppState } from "../state.slint";
+import { Tag, Button, LineEdit } from "g_widgets.slint";
 
 export struct FlagRow {
     key: string,
@@ -9,7 +10,28 @@ export struct FlagRow {
     on: bool,
 }
 
+// パラメータ(inocode/params/read, write)の 1 行。kind: 0 = 整数、1 = 小数、2 = 文字列、3 = 選択肢
+export struct ParamRow {
+    key: string,
+    label: string,
+    kind: int,
+    text: string,
+    dirty: bool,
+    at-default: bool,
+    options: [string],
+    option-labels: [string],
+    current: string,
+}
+
 export global SettingsTabState {
+    in property <[ParamRow]> params-advisor;
+    in property <[ParamRow]> params-compaction;
+    in property <[ParamRow]> params-team;
+    in property <[ParamRow]> params-other;
+    callback param-edited(string, string);
+    callback param-save(string);
+    callback param-reset(string);
+    callback param-choose(string, string);
     in property <[FlagRow]> flags;
     in property <string> error;
     callback set-flag(string, bool);
@@ -65,6 +87,45 @@ component Card inherits Rectangle {
     }
 }
 
+component ParamLines inherits VerticalLayout {
+    in property <[ParamRow]> rows;
+    for p in root.rows: HorizontalLayout {
+        spacing: 8px;
+        height: 34px;
+        Text { text: p.label; color: Theme.fg; font-size: 13px; vertical-alignment: center; width: 240px; overflow: elide; }
+        if p.kind != 3: Rectangle {
+            width: 200px;
+            LineEdit {
+                y: 3px;
+                text: p.text;
+                edited(t) => { SettingsTabState.param-edited(p.key, t); }
+            }
+        }
+        if p.kind == 3: HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            for o[i] in p.options: Rectangle {
+                width: tag.width;
+                tag := Tag {
+                    y: 5px;
+                    label: p.option-labels[i];
+                    selected: p.current == o;
+                    clicked => { SettingsTabState.param-choose(p.key, o); }
+                }
+            }
+        }
+        if p.dirty: Rectangle {
+            width: save.width;
+            save := Button { y: 3px; label: "保存"; primary: true; clicked => { SettingsTabState.param-save(p.key); } }
+        }
+        if !p.at-default: Rectangle {
+            width: reset.width;
+            reset := Button { y: 3px; label: "既定に戻す"; clicked => { SettingsTabState.param-reset(p.key); } }
+        }
+        Rectangle { horizontal-stretch: 1; }
+    }
+}
+
 export component SettingsTab inherits Rectangle {
     background: Theme.surface;
     Flickable {
@@ -90,6 +151,27 @@ export component SettingsTab inherits Rectangle {
                     on: flag.on;
                     toggled(v) => { SettingsTabState.set-flag(flag.key, v); }
                 }
+            }
+
+            if SettingsTabState.params-advisor.length > 0: Rectangle { height: 8px; }
+            if SettingsTabState.params-advisor.length > 0: Heading { text: "停滞の検出と相談役"; }
+            if SettingsTabState.params-advisor.length > 0: Card {
+                ParamLines { rows: SettingsTabState.params-advisor; }
+            }
+            if SettingsTabState.params-compaction.length > 0: Rectangle { height: 8px; }
+            if SettingsTabState.params-compaction.length > 0: Heading { text: "圧縮と退避"; }
+            if SettingsTabState.params-compaction.length > 0: Card {
+                ParamLines { rows: SettingsTabState.params-compaction; }
+            }
+            if SettingsTabState.params-team.length > 0: Rectangle { height: 8px; }
+            if SettingsTabState.params-team.length > 0: Heading { text: "チーム"; }
+            if SettingsTabState.params-team.length > 0: Card {
+                ParamLines { rows: SettingsTabState.params-team; }
+            }
+            if SettingsTabState.params-other.length > 0: Rectangle { height: 8px; }
+            if SettingsTabState.params-other.length > 0: Heading { text: "その他"; }
+            if SettingsTabState.params-other.length > 0: Card {
+                ParamLines { rows: SettingsTabState.params-other; }
             }
 
             Rectangle { height: 8px; }
