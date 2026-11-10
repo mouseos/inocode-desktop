@@ -40,7 +40,51 @@ pub struct ThreadInfo {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ModelInfo {
+    pub id: String,
+    pub name: String,
+    pub efforts: Vec<String>,
+    pub default_effort: String,
+    /// The model advertises a Daybreak access program for this caller.
+    pub daybreak: bool,
+}
+
+/// Per-thread choices made in the UI. They are sent with `thread/start` and as
+/// overrides on every `turn/start`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Settings {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    /// "on-request", "untrusted", "never"
+    pub approval: String,
+    /// "read-only", "workspace-write", "danger-full-access"
+    pub sandbox: String,
+    pub daybreak: bool,
+    pub cwd: Option<String>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            model: None,
+            effort: None,
+            approval: "on-request".into(),
+            sandbox: "workspace-write".into(),
+            daybreak: false,
+            cwd: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Event {
+    Models(Vec<ModelInfo>),
+    Account { logged_in: bool, label: String },
+    /// Context usage of the active thread (percent of the window) and a text summary.
+    Usage { percent: i32, text: String },
+    RateLimits(String),
+    /// What the server reports for the thread that was just started or resumed.
+    Applied { model: String, effort: String, approval: String, sandbox: String, cwd: String },
     Status(String, Level),
     Threads(Vec<ThreadInfo>),
     ThreadActive { id: String, title: String },
@@ -89,6 +133,9 @@ impl Decision {
 pub enum Command {
     Prompt(String),
     NewThread,
+    NewThreadIn(String),
+    SetSettings(Settings),
+    Login,
     OpenThread(String),
     Interrupt,
     Approve { key: String, decision: Decision },
@@ -309,6 +356,7 @@ fn transport_name(cfg: &Config) -> String {
 
 fn supervise(mut cfg: Config, rx: Receiver<Command>, on_event: impl Fn(Event)) {
     let mut active_thread: Option<String> = None;
+    let mut settings = Settings::default();
     let mut attempt: u32 = 0;
     loop {
         on_event(Event::Transport(transport_name(&cfg)));
@@ -317,7 +365,7 @@ fn supervise(mut cfg: Config, rx: Receiver<Command>, on_event: impl Fn(Event)) {
 
         let end = match Conn::open(&cfg) {
             Ok(conn) => {
-                let mut session = Session::new(conn, &mut active_thread, &on_event);
+                let mut session = Session::new(conn, &mut active_thread, &mut settings, &on_event);
                 let end = session.run(&rx, &mut cfg);
                 if session.ready {
                     attempt = 0;
@@ -369,6 +417,10 @@ enum Pending {
     ThreadStart,
     ThreadResume,
     TurnStart,
+    Models,
+    Account,
+    RateLimits,
+    Login,
     Other,
 }
 
@@ -376,6 +428,7 @@ struct Session<'a, F: Fn(Event)> {
     conn: Conn,
     on_event: &'a F,
     active_thread: &'a mut Option<String>,
+    settings: &'a mut Settings,
     next_id: u64,
     pending: HashMap<u64, Pending>,
     turn_id: Option<String>,
@@ -387,11 +440,17 @@ struct Session<'a, F: Fn(Event)> {
 }
 
 impl<'a, F: Fn(Event)> Session<'a, F> {
-    fn new(conn: Conn, active_thread: &'a mut Option<String>, on_event: &'a F) -> Self {
+    fn new(
+        conn: Conn,
+        active_thread: &'a mut Option<String>,
+        settings: &'a mut Settings,
+        on_event: &'a F,
+    ) -> Self {
         Session {
             conn,
             on_event,
             active_thread,
+            settings,
             next_id: 1,
             pending: HashMap::new(),
             turn_id: None,
@@ -431,7 +490,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 "name": "inocode_desktop",
                 "title": "InoCode Desktop",
                 "version": env!("CARGO_PKG_VERSION"),
-            } }),
+            }, "capabilities": { "experimentalApi": true } }),
             Pending::Init,
         )?;
 
@@ -472,14 +531,24 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                     (self.on_event)(Event::Error("スレッドがまだ開始されていません".into()));
                     return Ok(None);
                 };
-                self.request(
-                    "turn/start",
-                    json!({ "threadId": tid, "input": [{ "type": "text", "text": text }] }),
-                    Pending::TurnStart,
-                )?;
+                let mut params = json!({ "threadId": tid, "input": [{ "type": "text", "text": text }] });
+                turn_overrides(self.settings, &mut params);
+                self.request("turn/start", params, Pending::TurnStart)?;
             }
             Command::NewThread => {
-                self.request("thread/start", json!({}), Pending::ThreadStart)?;
+                let params = thread_start_params(self.settings);
+                self.request("thread/start", params, Pending::ThreadStart)?;
+            }
+            Command::NewThreadIn(cwd) => {
+                self.settings.cwd = Some(cwd);
+                let params = thread_start_params(self.settings);
+                self.request("thread/start", params, Pending::ThreadStart)?;
+            }
+            Command::SetSettings(s) => {
+                *self.settings = s;
+            }
+            Command::Login => {
+                self.request("account/login/start", json!({ "type": "chatgpt" }), Pending::Login)?;
             }
             Command::OpenThread(id) => {
                 self.request("thread/resume", json!({ "threadId": id }), Pending::ThreadResume)?;
@@ -528,7 +597,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             let message = err.get("message").and_then(Value::as_str).unwrap_or("error").to_string();
             match kind {
                 // Listing is optional; an older server may not know the method.
-                Pending::ThreadList | Pending::Other => {}
+                Pending::ThreadList | Pending::Other | Pending::Models | Pending::RateLimits | Pending::Account => {}
                 Pending::Init => return Err(format!("initialize が失敗しました: {message}")),
                 _ => self.report_error(&message),
             }
@@ -539,12 +608,18 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             Pending::Init => {
                 self.conn.send(json!({ "method": "initialized" }))?;
                 self.ready = true;
+                self.request("model/list", json!({}), Pending::Models)?;
+                self.request("account/read", json!({}), Pending::Account)?;
+                self.request("account/rateLimits/read", Value::Null, Pending::RateLimits)?;
                 self.list_threads()?;
                 match self.active_thread.clone() {
                     Some(tid) => {
                         self.request("thread/resume", json!({ "threadId": tid }), Pending::ThreadResume)?
                     }
-                    None => self.request("thread/start", json!({}), Pending::ThreadStart)?,
+                    None => {
+                        let params = thread_start_params(self.settings);
+                        self.request("thread/start", params, Pending::ThreadStart)?
+                    }
                 }
             }
             Pending::ThreadList => (self.on_event)(Event::Threads(parse_threads(result))),
@@ -556,6 +631,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 *self.active_thread = Some(tid.to_string());
                 self.turn_id = None;
                 (self.on_event)(Event::ThreadActive { id: tid.to_string(), title: String::new() });
+                (self.on_event)(applied(result));
                 (self.on_event)(Event::History(Vec::new()));
                 (self.on_event)(Event::Status("接続済み".into(), Level::Ok));
                 self.list_threads()?;
@@ -567,8 +643,25 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                     self.turn_id = None;
                     (self.on_event)(Event::ThreadActive { id: tid.to_string(), title: thread_title(thread) });
                 }
+                (self.on_event)(applied(result));
                 (self.on_event)(Event::History(history_from_thread(thread)));
                 (self.on_event)(Event::Status("接続済み".into(), Level::Ok));
+            }
+            Pending::Models => (self.on_event)(Event::Models(parse_models(result))),
+            Pending::Account => {
+                let (logged_in, label) = parse_account(result);
+                (self.on_event)(Event::Account { logged_in, label });
+            }
+            Pending::RateLimits => {
+                if let Some(text) = rate_limit_text(result.get("rateLimits").unwrap_or(&Value::Null)) {
+                    (self.on_event)(Event::RateLimits(text));
+                }
+            }
+            Pending::Login => {
+                if let Some(url) = result.get("authUrl").and_then(Value::as_str) {
+                    open_url(url);
+                    (self.on_event)(Event::Status("ブラウザでログインしてください".into(), Level::Warn));
+                }
             }
             Pending::TurnStart | Pending::Other => {}
         }
@@ -673,6 +766,27 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 (self.on_event)(Event::TurnDone { interrupted });
                 (self.on_event)(Event::Status("接続済み".into(), Level::Ok));
                 let _ = self.list_threads();
+            }
+            "thread/tokenUsage/updated" => {
+                let total = params.pointer("/tokenUsage/total/totalTokens").and_then(Value::as_i64).unwrap_or(0);
+                let last = params.pointer("/tokenUsage/last/totalTokens").and_then(Value::as_i64).unwrap_or(0);
+                let window = params.pointer("/tokenUsage/modelContextWindow").and_then(Value::as_i64).unwrap_or(0);
+                let percent = if window > 0 { ((last * 100) / window).clamp(0, 100) as i32 } else { 0 };
+                let text = if window > 0 {
+                    format!("{last} / {window} トークン (累計 {total})")
+                } else {
+                    format!("累計 {total} トークン")
+                };
+                (self.on_event)(Event::Usage { percent, text });
+            }
+            "account/rateLimits/updated" => {
+                if let Some(text) = rate_limit_text(params.get("rateLimits").unwrap_or(&Value::Null)) {
+                    (self.on_event)(Event::RateLimits(text));
+                }
+            }
+            "account/updated" | "account/login/completed" => {
+                let _ = self.request("account/read", json!({}), Pending::Account);
+                let _ = self.request("account/rateLimits/read", Value::Null, Pending::RateLimits);
             }
             "serverRequest/resolved" => {
                 if let Some(rid) = params.get("requestId") {
@@ -819,6 +933,145 @@ pub fn history_from_thread(thread: &Value) -> Vec<Msg> {
     out
 }
 
+fn thread_start_params(s: &Settings) -> Value {
+    let mut p = json!({ "approvalPolicy": s.approval, "sandbox": s.sandbox });
+    if let Some(m) = &s.model {
+        p["model"] = json!(m);
+    }
+    if let Some(c) = &s.cwd {
+        p["cwd"] = json!(c);
+    }
+    if s.daybreak {
+        p["daybreakEnabled"] = json!(true);
+    }
+    p
+}
+
+fn sandbox_policy(mode: &str) -> Value {
+    match mode {
+        "read-only" => json!({ "type": "readOnly" }),
+        "danger-full-access" => json!({ "type": "dangerFullAccess" }),
+        _ => json!({ "type": "workspaceWrite" }),
+    }
+}
+
+fn turn_overrides(s: &Settings, params: &mut Value) {
+    params["approvalPolicy"] = json!(s.approval);
+    params["sandboxPolicy"] = sandbox_policy(&s.sandbox);
+    if let Some(m) = &s.model {
+        params["model"] = json!(m);
+    }
+    if let Some(e) = &s.effort {
+        params["effort"] = json!(e);
+    }
+}
+
+fn applied(result: &Value) -> Event {
+    let text = |p: &str| result.pointer(p).and_then(Value::as_str).unwrap_or("").to_string();
+    let approval = match result.get("approvalPolicy") {
+        Some(Value::String(s)) => s.clone(),
+        Some(v) if !v.is_null() => "granular".to_string(),
+        _ => String::new(),
+    };
+    Event::Applied {
+        model: text("/model"),
+        effort: text("/reasoningEffort"),
+        approval,
+        sandbox: text("/sandbox/type"),
+        cwd: text("/cwd"),
+    }
+}
+
+pub fn parse_models(result: &Value) -> Vec<ModelInfo> {
+    result
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter(|m| !m.get("hidden").and_then(Value::as_bool).unwrap_or(false))
+                .filter_map(|m| {
+                    let id = m.get("model").or_else(|| m.get("id"))?.as_str()?.to_string();
+                    let name = m.get("displayName").and_then(Value::as_str).unwrap_or(&id).to_string();
+                    let efforts = m
+                        .get("supportedReasoningEfforts")
+                        .and_then(Value::as_array)
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|e| e.get("reasoningEffort").and_then(Value::as_str))
+                                .map(str::to_string)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let default_effort =
+                        m.get("defaultReasoningEffort").and_then(Value::as_str).unwrap_or("").to_string();
+                    let daybreak = m
+                        .pointer("/availableAccessPrograms/cyber")
+                        .and_then(Value::as_array)
+                        .map(|a| a.iter().filter_map(Value::as_str).any(|p| p.starts_with("daybreak")))
+                        .unwrap_or(false);
+                    Some(ModelInfo { id, name, efforts, default_effort, daybreak })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub fn parse_account(result: &Value) -> (bool, String) {
+    match result.pointer("/account/type").and_then(Value::as_str) {
+        Some("chatgpt") => {
+            let email = result.pointer("/account/email").and_then(Value::as_str).unwrap_or("ChatGPT");
+            let plan = result.pointer("/account/planType").and_then(Value::as_str).unwrap_or("");
+            (true, if plan.is_empty() { email.to_string() } else { format!("{email} · {plan}") })
+        }
+        Some("apiKey") => (true, "API キー".to_string()),
+        Some(other) => (true, other.to_string()),
+        None => {
+            let need = result.get("requiresOpenaiAuth").and_then(Value::as_bool).unwrap_or(true);
+            (!need, if need { "未ログイン".to_string() } else { "ローカル".to_string() })
+        }
+    }
+}
+
+fn window_label(mins: Option<i64>) -> String {
+    match mins {
+        Some(m) if m >= 10_000 => "週".to_string(),
+        Some(m) if m >= 60 => format!("{}時間", m / 60),
+        Some(m) => format!("{m}分"),
+        None => "枠".to_string(),
+    }
+}
+
+pub fn rate_limit_text(snapshot: &Value) -> Option<String> {
+    let mut parts = Vec::new();
+    for key in ["primary", "secondary"] {
+        if let Some(w) = snapshot.get(key).filter(|w| !w.is_null()) {
+            let used = w.get("usedPercent").and_then(Value::as_i64).unwrap_or(0);
+            let label = window_label(w.get("windowDurationMins").and_then(Value::as_i64));
+            parts.push(format!("{label} {used}%"));
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" · "))
+    }
+}
+
+fn open_url(url: &str) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = Proc::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url])
+            .creation_flags(0x0800_0000)
+            .spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = Proc::new("xdg-open").arg(url).spawn();
+    }
+}
+
 fn approval_result(method: &str, params: &Value, decision: Decision) -> Value {
     if method == "item/permissions/requestApproval" {
         return match decision {
@@ -895,7 +1148,16 @@ mod tests {
             match e {
                 Event::Status(s, Level::Ok) if !sent && s == "接続済み" => {
                     sent = true;
-                    h.send(Command::Prompt("hello".into()));
+                    if std::env::var("LIVE_PROMPT").is_ok() {
+                        h.send(Command::Prompt("hello".into()));
+                    } else {
+                        // Give the model / account replies time to arrive, then stop.
+                        std::thread::sleep(Duration::from_secs(4));
+                        while let Ok(e) = rx.try_recv() {
+                            println!("{e:?}");
+                        }
+                        break;
+                    }
                 }
                 Event::Delta(d) => text.push_str(&d),
                 Event::TurnDone { .. } => break,

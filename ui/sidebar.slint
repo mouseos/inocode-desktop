@@ -14,6 +14,7 @@ export struct ChatItem {
 
 export struct ProjectItem {
     name: string,
+    cwd: string,
     chats: [ChatItem],
 }
 
@@ -53,11 +54,13 @@ component GroupHeader inherits Rectangle {
 component ProjectGroup inherits VerticalLayout {
     in property <ProjectItem> project;
     callback open-thread(string);
+    callback new-in(string);
     property <bool> open: true;
     spacing: Theme.stack-gap;
     GroupHeader {
         label: root.project.name;
         open <=> root.open;
+        add => { root.new-in(root.project.cwd); }
     }
     if root.open: VerticalLayout {
         spacing: Theme.stack-gap;
@@ -75,8 +78,11 @@ component ProjectGroup inherits VerticalLayout {
 export component Sidebar inherits Rectangle {
     in property <[ProjectItem]> projects;
     in property <string> user-name: "ローカル";
+    in property <bool> logged-in: true;
     callback new-chat;
+    callback new-chat-in(string);
     callback open-thread(string);
+    callback login;
 
     background: Theme.sidebar;
     preferred-width: Theme.sidebar-width;
@@ -114,6 +120,7 @@ export component Sidebar inherits Rectangle {
                 for project in root.projects: ProjectGroup {
                     project: project;
                     open-thread(id) => { root.open-thread(id); }
+                    new-in(cwd) => { root.new-chat-in(cwd); }
                 }
             }
         }
@@ -135,13 +142,25 @@ export component Sidebar inherits Rectangle {
             }
             Text {
                 text: root.user-name;
-                color: Theme.fg;
+                color: root.logged-in ? Theme.fg : Theme.warning;
                 font-size: Theme.row-font;
                 font-weight: 500;
                 vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+                max-width: 150px;
             }
             Icon { width: 14px; text: Glyph.expand-more; font-size: 14px; color: Theme.fg-tertiary; }
             Rectangle { horizontal-stretch: 1; }
+            if !root.logged-in: Rectangle {
+                width: lt.preferred-width + 20px;
+                height: 24px;
+                y: 1px;
+                border-radius: Theme.radius-row;
+                background: la.has-hover ? Theme.pressed : Theme.selected;
+                lt := Text { text: "ログイン"; color: Theme.fg; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                la := TouchArea { mouse-cursor: pointer; clicked => { root.login(); } }
+            }
             IconButton { glyph: Glyph.settings; icon-size: 18px; }
         }
     }

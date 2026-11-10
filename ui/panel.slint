@@ -43,7 +43,10 @@ component PanelRow inherits HorizontalLayout {
 // Right-hand session panel: environment, context, connectors and background tasks.
 export component TaskPanel inherits Rectangle {
     in property <string> folder: "ino-code";
-    in property <string> context-used: "19%";
+    in property <string> cwd;
+    in property <int> context-percent: 0;
+    in property <string> usage-text;
+    in property <string> rate-text;
     background: Theme.surface;
     preferred-width: Theme.panel-width;
     min-width: 240px;
@@ -60,7 +63,7 @@ export component TaskPanel inherits Rectangle {
 
         SectionTitle { label: "環境"; }
         PanelRow { glyph: Glyph.computer; label: "このコンピューター"; trailing: "保存"; }
-        PanelRow { glyph: Glyph.folder; label: root.folder; detail: "· D:\\work\\software\\OSS"; }
+        PanelRow { glyph: Glyph.folder; label: root.folder; detail: root.cwd; }
         HorizontalLayout {
             height: 26px;
             spacing: 8px;
@@ -77,17 +80,20 @@ export component TaskPanel inherits Rectangle {
             Text { text: "コンテキスト"; color: Theme.fg; font-size: 12px; font-weight: 600; vertical-alignment: center; }
             Icon { width: 14px; text: Glyph.chevron-right; font-size: 14px; color: Theme.fg-tertiary; }
             Rectangle { horizontal-stretch: 1; }
-            Text { text: root.context-used; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+            Text { text: root.context-percent + "%"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
             Rectangle {
                 width: 26px;
                 height: 6px;
                 y: 9px;
                 border-radius: 3px;
                 background: Theme.pressed;
-                Rectangle { width: parent.width * 0.19; border-radius: 3px; background: Theme.accent; x: 0px; }
+                Rectangle { width: parent.width * root.context-percent / 100; border-radius: 3px; background: Theme.accent; x: 0px; }
             }
         }
-        SectionTitle { label: "コネクタ"; open: false; trailing: "2 件が再接続"; }
+        if root.usage-text != "": Text { text: root.usage-text; color: Theme.fg-secondary; font-size: 11px; wrap: word-wrap; }
+        Rectangle { height: 6px; }
+        SectionTitle { label: "使用量"; trailing: root.rate-text == "" ? "—" : root.rate-text; }
+        SectionTitle { label: "コネクタ"; open: false; }
 
         Rectangle { height: 10px; }
         SectionTitle { label: "バックグラウンドタスク"; }

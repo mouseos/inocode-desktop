@@ -2,7 +2,7 @@
 
 mod client;
 
-use client::{Command, Config, Decision, Event, Level, Msg, ThreadInfo};
+use client::{Command, Config, Decision, Event, Level, ModelInfo, Msg, Settings, ThreadInfo};
 use slint::{Model, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -16,6 +16,74 @@ struct State {
     threads: Vec<ThreadInfo>,
     active: String,
     busy: bool,
+    models: Vec<ModelInfo>,
+    settings: Settings,
+    /// What the server reported for the active thread.
+    applied_model: String,
+    applied_effort: String,
+}
+
+/// Permission presets: (label, approval policy, sandbox mode).
+const PERMS: [(&str, &str, &str); 4] = [
+    ("確認して実行", "on-request", "workspace-write"),
+    ("信頼済みのみ自動", "untrusted", "workspace-write"),
+    ("読み取り専用", "on-request", "read-only"),
+    ("フルアクセス", "never", "danger-full-access"),
+];
+
+fn strings(items: impl IntoIterator<Item = String>) -> ModelRc<SharedString> {
+    let v: Vec<SharedString> = items.into_iter().map(SharedString::from).collect();
+    ModelRc::from(Rc::new(VecModel::from(v)))
+}
+
+fn effort_label(e: &str) -> String {
+    match e {
+        "none" => "なし",
+        "minimal" => "最小",
+        "low" => "低",
+        "medium" => "中",
+        "high" => "高",
+        "xhigh" => "超高",
+        "max" => "最大",
+        "ultra" => "ウルトラ",
+        "persistent" => "持続",
+        other => other,
+    }
+    .to_string()
+}
+
+/// Push the model / effort / permission choices into the window.
+fn refresh_selectors(app: &AppWindow, st: &State) {
+    let wanted = st.settings.model.clone().unwrap_or_else(|| st.applied_model.clone());
+    let mi = st.models.iter().position(|m| m.id == wanted).unwrap_or(0);
+    app.set_model_names(strings(st.models.iter().map(|m| m.name.clone())));
+    app.set_model_index(if st.models.is_empty() { -1 } else { mi as i32 });
+    let efforts: Vec<String> = st.models.get(mi).map(|m| m.efforts.clone()).unwrap_or_default();
+    let eff = st
+        .settings
+        .effort
+        .clone()
+        .filter(|e| efforts.contains(e))
+        .or_else(|| Some(st.applied_effort.clone()).filter(|e| efforts.contains(e)))
+        .or_else(|| st.models.get(mi).map(|m| m.default_effort.clone()));
+    let ei = eff.and_then(|e| efforts.iter().position(|x| *x == e)).unwrap_or(0);
+    app.set_effort_names(strings(efforts.iter().map(|e| format!("推論 {}", effort_label(e)))));
+    app.set_effort_index(if efforts.is_empty() { -1 } else { ei as i32 });
+    let pi = PERMS
+        .iter()
+        .position(|(_, a, sb)| *a == st.settings.approval && *sb == st.settings.sandbox)
+        .unwrap_or(0);
+    app.set_perm_index(pi as i32);
+    app.set_daybreak_available(st.models.iter().any(|m| m.daybreak));
+    app.set_daybreak_on(st.settings.daybreak);
+}
+
+fn sandbox_mode(policy_type: &str) -> &'static str {
+    match policy_type {
+        "readOnly" => "read-only",
+        "dangerFullAccess" => "danger-full-access",
+        _ => "workspace-write",
+    }
 }
 
 fn with_messages<R>(app: &AppWindow, f: impl FnOnce(&VecModel<Message>) -> R) -> Option<R> {
@@ -30,7 +98,7 @@ fn push(model: &VecModel<Message>, id: &str, role: &str, text: &str) {
 
 fn rebuild_projects(app: &AppWindow, state: &State) {
     // Group threads by the last component of their working directory.
-    let mut groups: BTreeMap<String, Vec<ChatItem>> = BTreeMap::new();
+    let mut groups: BTreeMap<String, (String, Vec<ChatItem>)> = BTreeMap::new();
     for t in &state.threads {
         let name = std::path::Path::new(&t.cwd)
             .file_name()
@@ -38,7 +106,7 @@ fn rebuild_projects(app: &AppWindow, state: &State) {
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| "(フォルダなし)".to_string());
         let selected = t.id == state.active;
-        groups.entry(name).or_default().push(ChatItem {
+        groups.entry(name).or_insert_with(|| (t.cwd.clone(), Vec::new())).1.push(ChatItem {
             id: t.id.as_str().into(),
             title: t.title.as_str().into(),
             status: if selected && state.busy { 1 } else { 0 },
@@ -48,8 +116,9 @@ fn rebuild_projects(app: &AppWindow, state: &State) {
     }
     let projects: Vec<ProjectItem> = groups
         .into_iter()
-        .map(|(name, chats)| ProjectItem {
+        .map(|(name, (cwd, chats))| ProjectItem {
             name: name.into(),
+            cwd: cwd.into(),
             chats: ModelRc::from(Rc::new(VecModel::from(chats))),
         })
         .collect();
@@ -68,6 +137,38 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             });
         }
         Event::Transport(name) => app.set_transport(name.into()),
+        Event::Models(list) => {
+            let mut st = state.borrow_mut();
+            // gpt-6-astra is never offered.
+            st.models = list.into_iter().filter(|m| !m.id.contains("gpt-6-astra")).collect();
+            refresh_selectors(app, &st);
+        }
+        Event::Applied { model, effort, approval, sandbox, cwd } => {
+            let mut st = state.borrow_mut();
+            st.applied_model = model;
+            st.applied_effort = effort;
+            if !approval.is_empty() && approval != "granular" {
+                st.settings.approval = approval;
+            }
+            if !sandbox.is_empty() {
+                st.settings.sandbox = sandbox_mode(&sandbox).to_string();
+            }
+            app.set_cwd_text(cwd.into());
+            refresh_selectors(app, &st);
+        }
+        Event::Account { logged_in, label } => {
+            app.set_logged_in(logged_in);
+            app.set_account_label(label.into());
+            if !logged_in {
+                app.set_status("未ログイン".into());
+                app.set_status_level(2);
+            }
+        }
+        Event::Usage { percent, text } => {
+            app.set_context_percent(percent);
+            app.set_usage_text(text.into());
+        }
+        Event::RateLimits(text) => app.set_rate_text(text.into()),
         Event::Threads(list) => {
             let mut st = state.borrow_mut();
             st.threads = list;
@@ -165,6 +266,8 @@ fn main() {
     app.set_messages(ModelRc::from(Rc::new(VecModel::<Message>::default())));
     app.set_approvals(ModelRc::from(Rc::new(VecModel::<Approval>::default())));
     app.set_projects(ModelRc::from(Rc::new(VecModel::<ProjectItem>::default())));
+    app.set_perm_names(strings(PERMS.iter().map(|p| p.0.to_string())));
+    app.set_perm_index(0);
 
     // Default: start `inocode app-server --listen stdio://` as a child process.
     // INOCODE_WS_URL connects to an already running app-server over WebSocket instead;
@@ -210,6 +313,68 @@ fn main() {
     app.on_decide(move |key, decision| {
         h.send(Command::Approve { key: key.to_string(), decision: Decision::parse(&decision) })
     });
+    // Model / effort / permission choices are kept in STATE and sent as thread settings;
+    // the client applies them to thread/start and as overrides on every turn/start.
+    let weak = app.as_weak();
+    let h = handle.clone();
+    app.on_pick_model(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            let Some(m) = st.models.get(i as usize).cloned() else { return };
+            st.settings.model = Some(m.id.clone());
+            if !st.settings.effort.as_ref().map(|e| m.efforts.contains(e)).unwrap_or(false) {
+                st.settings.effort = Some(m.default_effort.clone()).filter(|e| !e.is_empty());
+            }
+            h.send(Command::SetSettings(st.settings.clone()));
+            refresh_selectors(&app, &st);
+        });
+    });
+    let weak = app.as_weak();
+    let h = handle.clone();
+    app.on_pick_effort(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            let wanted = st.settings.model.clone().unwrap_or_else(|| st.applied_model.clone());
+            let efforts = st.models.iter().find(|m| m.id == wanted).map(|m| m.efforts.clone()).unwrap_or_default();
+            if let Some(e) = efforts.get(i as usize) {
+                st.settings.effort = Some(e.clone());
+                h.send(Command::SetSettings(st.settings.clone()));
+                refresh_selectors(&app, &st);
+            }
+        });
+    });
+    let weak = app.as_weak();
+    let h = handle.clone();
+    app.on_pick_perm(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            let Some((_, approval, sandbox)) = PERMS.get(i as usize) else { return };
+            st.settings.approval = approval.to_string();
+            st.settings.sandbox = sandbox.to_string();
+            h.send(Command::SetSettings(st.settings.clone()));
+            refresh_selectors(&app, &st);
+        });
+    });
+    let weak = app.as_weak();
+    let h = handle.clone();
+    app.on_toggle_daybreak(move || {
+        let Some(app) = weak.upgrade() else { return };
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            st.settings.daybreak = !st.settings.daybreak;
+            h.send(Command::SetSettings(st.settings.clone()));
+            // The choice is made when a thread is created, so start a fresh one.
+            h.send(Command::NewThread);
+            refresh_selectors(&app, &st);
+        });
+    });
+    let h = handle.clone();
+    app.on_login(move || h.send(Command::Login));
+    let h = handle.clone();
+    app.on_new_chat_in(move |cwd| h.send(Command::NewThreadIn(cwd.to_string())));
     let h = handle.clone();
     app.on_switch_transport(move || h.send(Command::SwitchTransport));
     app.run().unwrap();

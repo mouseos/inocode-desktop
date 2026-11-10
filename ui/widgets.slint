@@ -154,6 +154,80 @@ export component Chip inherits Rectangle {
     }
 }
 
+// Compact drop-up selector: shows the current option and opens a list above it.
+export component SelectChip inherits Rectangle {
+    in property <[string]> options;
+    in property <int> current;
+    in property <string> prefix;
+    in property <bool> enabled: true;
+    in property <color> tint: Theme.fg-secondary;
+    callback picked(int);
+
+    property <string> label: root.current >= 0 && root.current < root.options.length
+        ? root.options[root.current] : "—";
+
+    height: 24px;
+    width: t.preferred-width + 26px;
+    border-radius: Theme.radius-row;
+    background: ta.pressed ? Theme.pressed : ta.has-hover ? Theme.hover : transparent;
+
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 2px;
+        spacing: 2px;
+        t := Text {
+            text: root.prefix + root.label;
+            color: root.enabled ? root.tint : Theme.fg-tertiary;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+        Icon { width: 14px; text: Glyph.expand-more; font-size: 14px; color: Theme.fg-tertiary; }
+    }
+    ta := TouchArea {
+        enabled: root.enabled && root.options.length > 0;
+        mouse-cursor: pointer;
+        clicked => { pop.show(); }
+    }
+    pop := PopupWindow {
+        x: 0px;
+        y: -(root.options.length * 28px + 10px);
+        width: 220px;
+        Rectangle {
+            border-radius: 10px;
+            background: Theme.composer;
+            border-width: 1px;
+            border-color: Theme.border;
+            drop-shadow-blur: 16px;
+            drop-shadow-color: #00000033;
+            VerticalLayout {
+                padding: 4px;
+                for o[i] in root.options: Rectangle {
+                    height: 28px;
+                    border-radius: 6px;
+                    background: oa.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        Text {
+                            text: o;
+                            color: Theme.fg;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                        if i == root.current: Icon { width: 14px; text: "\u{e5ca}"; font-size: 14px; color: Theme.fg; }
+                    }
+                    oa := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.picked(i); }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component Switch inherits Rectangle {
     in-out property <bool> on: true;
     width: 28px;

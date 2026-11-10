@@ -49,6 +49,26 @@ export component AppWindow inherits Window {
     // 0 info, 1 ok, 2 warning, 3 error
     in property <int> status-level: 0;
     in property <string> transport: "WS";
+    in property <[string]> model-names;
+    in property <int> model-index;
+    in property <[string]> effort-names;
+    in property <int> effort-index;
+    in property <[string]> perm-names;
+    in property <int> perm-index;
+    in property <int> context-percent: 0;
+    in property <string> usage-text;
+    in property <string> rate-text;
+    in property <string> cwd-text;
+    in property <string> account-label: "ローカル";
+    in property <bool> logged-in: true;
+    in property <bool> daybreak-available: false;
+    in property <bool> daybreak-on: false;
+    callback pick-model(int);
+    callback pick-effort(int);
+    callback pick-perm(int);
+    callback toggle-daybreak;
+    callback login;
+    callback new-chat-in(string);
     callback new-chat;
     callback open-thread(string);
     callback interrupt;
@@ -135,6 +155,10 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             if root.sidebar-open: Sidebar {
                 projects: root.projects;
+                user-name: root.account-label;
+                logged-in: root.logged-in;
+                login => { root.login(); }
+                new-chat-in(cwd) => { root.new-chat-in(cwd); }
                 new-chat => { root.new-chat(); }
                 open-thread(id) => { root.open-thread(id); }
             }
@@ -145,12 +169,30 @@ export component AppWindow inherits Window {
                 chat-active: root.messages.length > 0;
                 busy: root.busy;
                 approvals: root.approvals;
+                model-names: root.model-names;
+                model-index: root.model-index;
+                effort-names: root.effort-names;
+                effort-index: root.effort-index;
+                perm-names: root.perm-names;
+                perm-index: root.perm-index;
+                context-percent: root.context-percent;
+                daybreak-available: root.daybreak-available;
+                daybreak-on: root.daybreak-on;
+                pick-model(i) => { root.pick-model(i); }
+                pick-effort(i) => { root.pick-effort(i); }
+                pick-perm(i) => { root.pick-perm(i); }
+                toggle-daybreak => { root.toggle-daybreak(); }
                 interrupt => { root.interrupt(); }
                 decide(k, d) => { root.decide(k, d); }
                 prompt <=> root.prompt;
                 submit(t) => { root.submit(t); }
             }
-            if root.panel-open: TaskPanel { }
+            if root.panel-open: TaskPanel {
+                cwd: root.cwd-text;
+                context-percent: root.context-percent;
+                usage-text: root.usage-text;
+                rate-text: root.rate-text;
+            }
         }
     }
 }
