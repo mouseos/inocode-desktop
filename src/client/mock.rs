@@ -66,6 +66,10 @@ fn fixture(method: &str) -> Result<Value, String> {
             let value: Value = serde_json::from_str(&text)
                 .map_err(|e| format!("モック: {} を解析できません: {e}", path.display()))?;
             return Ok(match value {
+                // ref/contract-fixtures files are {method, request, response, note}: the response is the result.
+                Value::Object(mut o) if o.contains_key("response") && o.contains_key("method") => {
+                    o.remove("response").unwrap()
+                }
                 Value::Object(mut o) if o.len() == 1 && o.contains_key("result") => o.remove("result").unwrap(),
                 other => other,
             });
