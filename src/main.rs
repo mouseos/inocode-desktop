@@ -151,13 +151,7 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
     let explicit = st.settings.model.is_some();
     let model_rows: Vec<MenuRow> = visible
         .iter()
-        .map(|m| {
-            let desc = match &m.min_version {
-                Some(v) => format!("未検証（新しい公式モデル）· 必要バージョン {v}"),
-                None => String::new(),
-            };
-            row(&m.name, &desc, explicit && sel.map(|s| s.id == m.id).unwrap_or(false), false)
-        })
+        .map(|m| row(&m.name, "", explicit && sel.map(|s| s.id == m.id).unwrap_or(false), false))
         .collect();
     let trigger = match sel {
         Some(m) if eff_text.is_empty() => m.name.clone(),
@@ -176,7 +170,7 @@ fn refresh_pickers(app: &AppWindow, st: &State) {
         loading: !st.models_loaded,
         daybreak_available,
         daybreak_on: st.settings.daybreak,
-        daybreak_note: "有効にすると、各モデルでより制限の少ない機能を利用できます".into(),
+        daybreak_note: "".into(),
         ultra_warning: eff.as_deref() == Some("ultra"),
         can_reset: explicit || st.settings.effort.is_some() || st.settings.service_tier.is_some(),
     });
@@ -512,7 +506,23 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             }
         }
         Event::Error(e) => {
-            messages_with(app, |m| push(m, "", "assistant", &format!("エラー: {e}")));
+            // A model found only through version discovery is not verified with InoCode:
+            // when its turn fails, say so as part of the error.
+            let unverified = {
+                let st = state.borrow();
+                st.settings
+                    .model
+                    .as_deref()
+                    .and_then(|id| st.extra.iter().find(|m| m.id == id))
+                    .and_then(|m| m.min_version.clone().map(|v| (m.name.clone(), v)))
+            };
+            let text = match unverified {
+                Some((name, v)) => format!(
+                    "エラー: {e}\n「{name}」は InoCode で動作が確認されていません（必要な公式バージョン {v}）。"
+                ),
+                None => format!("エラー: {e}"),
+            };
+            messages_with(app, |m| push(m, "", "assistant", &text));
             app.invoke_scroll_bottom();
         }
     }
@@ -593,18 +603,6 @@ fn main() {
     let h = handle.clone();
     app.on_pick_model(move |i| {
         let Some(app) = weak.upgrade() else { return };
-        let notice = STATE.with(|s| {
-            let st = s.borrow();
-            visible_models(&st).get(i as usize).and_then(|m| {
-                m.min_version.as_ref().map(|v| {
-                    format!("「{}」は InoCode で動作が確認されていません（必要な公式バージョン {v}）。", m.name)
-                })
-            })
-        });
-        if let Some(text) = notice {
-            messages_with(&app, |m| push(m, "", "tool", &text));
-            app.invoke_scroll_bottom();
-        }
         change(&app, &h, |st| {
             let Some(m) = visible_models(st).get(i as usize).map(|m| (*m).clone()) else { return };
             st.settings.model = Some(m.id.clone());

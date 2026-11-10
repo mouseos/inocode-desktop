@@ -51,14 +51,8 @@ export component SettingsDialog inherits Rectangle {
                 IconButton { glyph: Glyph.close; clicked => { root.close(); } }
             }
             Text { text: "モデルの探索"; color: Theme.fg; font-size: 13px; font-weight: 600; }
-            Text {
-                text: "インストール済みの公式 Codex より新しいバージョンで一覧を取り、新しい公式モデルを「未検証」として選択肢に加えます。";
-                color: Theme.fg-secondary;
-                font-size: 12px;
-                wrap: word-wrap;
-            }
 
-            Line { label: "基準のバージョン"; value: root.discovery.base == "" ? "—（公式 Codex が見つかりません）" : root.discovery.base; }
+            Line { label: "基準のバージョン"; value: root.discovery.base == "" ? "—" : root.discovery.base; }
 
             HorizontalLayout {
                 spacing: 12px;
@@ -66,7 +60,7 @@ export component SettingsDialog inherits Rectangle {
                 Text { text: "探索の上限"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; width: 120px; }
                 IconButton { glyph: "\u{e15b}"; enabled: root.discovery.headroom > 0; clicked => { root.headroom-down(); } }
                 Text {
-                    text: root.discovery.limit + "（最新の公式 + " + root.discovery.headroom + "）";
+                    text: root.discovery.limit;
                     color: Theme.fg;
                     font-size: 12px;
                     vertical-alignment: center;
@@ -92,13 +86,7 @@ export component SettingsDialog inherits Rectangle {
                 Rectangle { horizontal-stretch: 1; }
             }
 
-            Line { label: "最後の探索"; value: root.discovery.last == "" ? "まだ探索していません" : root.discovery.last; }
-            if root.discovery.summary != "": Text {
-                text: root.discovery.summary;
-                color: Theme.fg-tertiary;
-                font-size: 11px;
-                wrap: word-wrap;
-            }
+            Line { label: "最後の探索"; value: root.discovery.last == "" ? "—" : root.discovery.last; }
 
             HorizontalLayout {
                 alignment: end;
