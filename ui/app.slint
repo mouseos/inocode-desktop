@@ -79,7 +79,7 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             height: Theme.chrome-height;
             Rectangle {
-                width: root.sidebar-open && Tabs.current == 0 ? Theme.sidebar-width : 160px;
+                width: root.sidebar-open ? Theme.sidebar-width : 160px;
                 background: root.sidebar-open && Tabs.current == 0 ? Theme.sidebar : Theme.chrome;
                 HorizontalLayout {
                     padding-left: 10px;
