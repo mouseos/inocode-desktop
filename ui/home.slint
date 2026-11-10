@@ -1,6 +1,7 @@
 import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Chip, SelectChip } from "widgets.slint";
+import { IntelligenceMenu, PermMenu, LocationRow, IntelligenceState, PermState, ProjectState } from "pickers.slint";
 
 export struct Approval {
     key: string,
@@ -122,35 +123,35 @@ component SendButton inherits Rectangle {
     }
 }
 
-// Single-row composer pill: attach, input, voice/send. Model line sits below it.
+// Composer: input on top, toolbar below it (attach and permissions on the left; model,
+// effort and speed, voice or send on the right), like the desktop client. The location
+// and project pickers sit under the box on a new chat.
 component Composer inherits VerticalLayout {
     in-out property <string> text;
     in property <string> placeholder;
-    in property <[string]> model-names;
-    in property <int> model-index;
-    in property <[string]> effort-names;
-    in property <int> effort-index;
-    in property <[string]> perm-names;
-    in property <int> perm-index;
-    in property <int> context-percent;
-    in property <bool> daybreak-available: false;
-    in property <bool> daybreak-on: false;
+    in property <IntelligenceState> intelligence;
+    in property <PermState> perm;
+    in property <ProjectState> project;
     in property <bool> fresh: false;
-    callback pick-model(int);
-    callback pick-effort(int);
-    callback pick-perm(int);
-    callback toggle-daybreak;
     in property <bool> busy: false;
     callback submit(string);
     callback interrupt;
-    spacing: 6px;
+    callback pick-effort(int);
+    callback pick-speed(int);
+    callback pick-model(int);
+    callback pick-default;
+    callback toggle-daybreak;
+    callback reset-model;
+    callback pick-perm(int);
+    callback pick-project(int);
+    spacing: 8px;
 
     Rectangle {
         border-radius: Theme.radius-composer;
         background: Theme.composer;
         border-width: 1px;
         border-color: Theme.border;
-        min-height: 44px;
+        min-height: 84px;
         drop-shadow-blur: 20px;
         drop-shadow-color: #00000012;
         drop-shadow-offset-y: 4px;
@@ -166,21 +167,24 @@ component Composer inherits VerticalLayout {
                     root.submit(root.text);
                     return accept;
                 }
+                // Ctrl+Shift+M opens the model picker.
+                if (event.modifiers.control && event.modifiers.shift && (event.text == "M" || event.text == "m")) {
+                    picker.open();
+                    return accept;
+                }
                 reject
             }
 
-            HorizontalLayout {
-                padding: 8px;
-                padding-top: 7px;
-                padding-bottom: 7px;
-                spacing: 6px;
-                IconButton { glyph: Glyph.add; box-size: 28px; icon-size: 20px; y: 0px; }
+            VerticalLayout {
+                padding: 10px;
+                padding-left: 14px;
+                spacing: 4px;
+
                 Rectangle {
-                    min-height: max(28px, input.preferred-height);
+                    min-height: max(40px, input.preferred-height + 8px);
                     max-height: 240px;
-                    horizontal-stretch: 1;
                     input := TextInput {
-                        y: (parent.height - self.height) / 2;
+                        y: 4px;
                         width: parent.width;
                         text <=> root.text;
                         wrap: word-wrap;
@@ -190,74 +194,56 @@ component Composer inherits VerticalLayout {
                         selection-background-color: #4d8ff566;
                     }
                     if root.text == "": Text {
+                        y: 4px;
                         width: parent.width;
-                        height: parent.height;
                         text: root.placeholder;
                         color: Theme.fg-tertiary;
                         font-size: Theme.body-font;
-                        vertical-alignment: center;
                         overflow: elide;
                         wrap: no-wrap;
                     }
                 }
-                if root.text == "" && !root.busy: IconButton { glyph: Glyph.mic; box-size: 28px; icon-size: 18px; }
-                if root.text == "" && root.busy: Rectangle {
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 14px;
-                    background: Theme.fg;
-                    Rectangle { width: 10px; height: 10px; border-radius: 2px; background: Theme.surface; }
-                    TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.interrupt(); } }
+
+                HorizontalLayout {
+                    height: 30px;
+                    spacing: 2px;
+                    IconButton { glyph: Glyph.add; box-size: 28px; icon-size: 20px; y: 1px; }
+                    PermMenu {
+                        y: 1px;
+                        state: root.perm;
+                        pick(i) => { root.pick-perm(i); }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    picker := IntelligenceMenu {
+                        y: 1px;
+                        state: root.intelligence;
+                        pick-effort(i) => { root.pick-effort(i); }
+                        pick-speed(i) => { root.pick-speed(i); }
+                        pick-model(i) => { root.pick-model(i); }
+                        pick-default => { root.pick-default(); }
+                        toggle-daybreak => { root.toggle-daybreak(); }
+                        reset => { root.reset-model(); }
+                    }
+                    if root.text == "" && !root.busy: IconButton { glyph: Glyph.mic; box-size: 28px; icon-size: 18px; y: 1px; }
+                    if root.text == "" && root.busy: Rectangle {
+                        width: 28px;
+                        height: 28px;
+                        y: 1px;
+                        border-radius: 14px;
+                        background: Theme.fg;
+                        Rectangle { width: 10px; height: 10px; border-radius: 2px; background: Theme.surface; }
+                        TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.interrupt(); } }
+                    }
+                    if root.text != "": SendButton { y: 1px; clicked => { root.submit(root.text); } }
                 }
-                if root.text != "": SendButton { clicked => { root.submit(root.text); } }
             }
         }
     }
 
-    // Model, effort, mode and context ring.
-    HorizontalLayout {
-        alignment: end;
-        spacing: 8px;
-        padding-right: 8px;
-        if root.daybreak-available && root.fresh: Rectangle {
-            width: dt.preferred-width + 20px;
-            height: 24px;
-            border-radius: Theme.radius-row;
-            background: root.daybreak-on ? Theme.selected : da.has-hover ? Theme.hover : transparent;
-            dt := Text {
-                text: "Daybreak " + (root.daybreak-on ? "オン" : "オフ");
-                color: root.daybreak-on ? Theme.fg : Theme.fg-secondary;
-                font-size: 12px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            da := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.toggle-daybreak(); } }
-        }
-        SelectChip {
-            options: root.model-names;
-            current: root.model-index;
-            tint: Theme.fg;
-            picked(i) => { root.pick-model(i); }
-        }
-        SelectChip {
-            options: root.effort-names;
-            current: root.effort-index;
-            picked(i) => { root.pick-effort(i); }
-        }
-        SelectChip {
-            options: root.perm-names;
-            current: root.perm-index;
-            tint: root.perm-index == 3 ? Theme.warning : Theme.fg;
-            picked(i) => { root.pick-perm(i); }
-        }
-        Rectangle {
-            width: 14px;
-            height: 14px;
-            y: 5px;
-            border-radius: 7px;
-            border-width: 2px;
-            border-color: root.context-percent > 85 ? Theme.danger : Theme.accent;
-        }
+    if root.fresh: LocationRow {
+        height: 28px;
+        state: root.project;
+        pick-project(i) => { root.pick-project(i); }
     }
 }
 
@@ -340,19 +326,17 @@ export component Home inherits Rectangle {
     in property <bool> chat-active: false;
     in property <bool> busy: false;
     in property <[Approval]> approvals;
-    in property <[string]> model-names;
-    in property <int> model-index;
-    in property <[string]> effort-names;
-    in property <int> effort-index;
-    in property <[string]> perm-names;
-    in property <int> perm-index;
-    in property <int> context-percent;
-    in property <bool> daybreak-available: false;
-    in property <bool> daybreak-on: false;
-    callback pick-model(int);
+    in property <IntelligenceState> intelligence;
+    in property <PermState> perm;
+    in property <ProjectState> project;
     callback pick-effort(int);
-    callback pick-perm(int);
+    callback pick-speed(int);
+    callback pick-model(int);
+    callback pick-default;
     callback toggle-daybreak;
+    callback reset-model;
+    callback pick-perm(int);
+    callback pick-project(int);
     callback submit(string);
     callback interrupt;
     callback decide(string, string);
@@ -404,20 +388,18 @@ export component Home inherits Rectangle {
                         horizontal-stretch: 1000;
                         text <=> root.prompt;
                         busy: root.busy;
-                        model-names: root.model-names;
-                        model-index: root.model-index;
-                        effort-names: root.effort-names;
-                        effort-index: root.effort-index;
-                        perm-names: root.perm-names;
-                        perm-index: root.perm-index;
-                        context-percent: root.context-percent;
-                        daybreak-available: root.daybreak-available;
-                        daybreak-on: root.daybreak-on;
+                        intelligence: root.intelligence;
+                        perm: root.perm;
+                        project: root.project;
                         fresh: !root.chat-active;
-                        pick-model(i) => { root.pick-model(i); }
                         pick-effort(i) => { root.pick-effort(i); }
-                        pick-perm(i) => { root.pick-perm(i); }
+                        pick-speed(i) => { root.pick-speed(i); }
+                        pick-model(i) => { root.pick-model(i); }
+                        pick-default => { root.pick-default(); }
                         toggle-daybreak => { root.toggle-daybreak(); }
+                        reset-model => { root.reset-model(); }
+                        pick-perm(i) => { root.pick-perm(i); }
+                        pick-project(i) => { root.pick-project(i); }
                         interrupt => { root.interrupt(); }
                         placeholder: "Enter で送信、Shift+Enter で改行";
                         submit(t) => { root.submit(t); }

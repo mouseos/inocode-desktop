@@ -4,6 +4,7 @@ import { IconButton } from "widgets.slint";
 import { Sidebar, ChatItem, ProjectItem } from "sidebar.slint";
 import { Home, Message, Approval } from "home.slint";
 import { TaskPanel } from "panel.slint";
+import { IntelligenceState, PermState, ProjectState, FullAccessDialog } from "pickers.slint";
 
 // Segmented Chat / Code switch at the top of the sidebar.
 component ModeSwitch inherits Rectangle {
@@ -49,24 +50,26 @@ export component AppWindow inherits Window {
     // 0 info, 1 ok, 2 warning, 3 error
     in property <int> status-level: 0;
     in property <string> transport: "WS";
-    in property <[string]> model-names;
-    in property <int> model-index;
-    in property <[string]> effort-names;
-    in property <int> effort-index;
-    in property <[string]> perm-names;
-    in property <int> perm-index;
+    in property <IntelligenceState> intelligence;
+    in property <PermState> perm;
+    in property <ProjectState> project;
+    in property <bool> full-confirm-open: false;
     in property <int> context-percent: 0;
     in property <string> usage-text;
     in property <string> rate-text;
     in property <string> cwd-text;
     in property <string> account-label: "ローカル";
     in property <bool> logged-in: true;
-    in property <bool> daybreak-available: false;
-    in property <bool> daybreak-on: false;
-    callback pick-model(int);
     callback pick-effort(int);
-    callback pick-perm(int);
+    callback pick-speed(int);
+    callback pick-model(int);
+    callback pick-default;
     callback toggle-daybreak;
+    callback reset-model;
+    callback pick-perm(int);
+    callback pick-project(int);
+    callback confirm-full;
+    callback cancel-full;
     callback login;
     callback new-chat-in(string);
     callback new-chat;
@@ -169,19 +172,17 @@ export component AppWindow inherits Window {
                 chat-active: root.messages.length > 0;
                 busy: root.busy;
                 approvals: root.approvals;
-                model-names: root.model-names;
-                model-index: root.model-index;
-                effort-names: root.effort-names;
-                effort-index: root.effort-index;
-                perm-names: root.perm-names;
-                perm-index: root.perm-index;
-                context-percent: root.context-percent;
-                daybreak-available: root.daybreak-available;
-                daybreak-on: root.daybreak-on;
-                pick-model(i) => { root.pick-model(i); }
+                intelligence: root.intelligence;
+                perm: root.perm;
+                project: root.project;
                 pick-effort(i) => { root.pick-effort(i); }
-                pick-perm(i) => { root.pick-perm(i); }
+                pick-speed(i) => { root.pick-speed(i); }
+                pick-model(i) => { root.pick-model(i); }
+                pick-default => { root.pick-default(); }
                 toggle-daybreak => { root.toggle-daybreak(); }
+                reset-model => { root.reset-model(); }
+                pick-perm(i) => { root.pick-perm(i); }
+                pick-project(i) => { root.pick-project(i); }
                 interrupt => { root.interrupt(); }
                 decide(k, d) => { root.decide(k, d); }
                 prompt <=> root.prompt;
@@ -194,5 +195,14 @@ export component AppWindow inherits Window {
                 rate-text: root.rate-text;
             }
         }
+    }
+
+    if root.full-confirm-open: FullAccessDialog {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        confirm => { root.confirm-full(); }
+        cancel => { root.cancel-full(); }
     }
 }

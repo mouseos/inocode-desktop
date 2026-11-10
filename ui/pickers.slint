@@ -1,0 +1,411 @@
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+import { Switch } from "widgets.slint";
+
+// Composer pickers laid out like the desktop client's: an "intelligence" dropdown
+// (effort, speed, model list, Daybreak), a permission dropdown with a Full access
+// confirmation, and the location / project pickers under the composer.
+// Colours, radii and fonts stay with the InoCode theme.
+
+export struct MenuRow {
+    label: string,
+    desc: string,
+    selected: bool,
+    disabled: bool,
+    locked: bool,
+}
+
+export struct IntelligenceState {
+    trigger: string,
+    efforts: [string],
+    effort-index: int,
+    effort-enabled: bool,
+    speeds: [MenuRow],
+    models: [MenuRow],
+    default-row: MenuRow,
+    loading: bool,
+    daybreak-available: bool,
+    daybreak-on: bool,
+    daybreak-note: string,
+    ultra-warning: bool,
+    can-reset: bool,
+}
+
+export struct PermState {
+    trigger: string,
+    danger: bool,
+    rows: [MenuRow],
+}
+
+export struct ProjectState {
+    location: string,
+    project: string,
+    projects: [MenuRow],
+}
+
+component SectionLabel inherits Text {
+    color: Theme.fg-tertiary;
+    font-size: 11px;
+    height: 24px;
+    vertical-alignment: center;
+}
+
+// One selectable row: radio check on the right, lock icon for locked models.
+component MenuItem inherits Rectangle {
+    in property <MenuRow> item;
+    callback picked;
+
+    height: root.item.desc == "" ? 28px : 44px;
+    border-radius: 6px;
+    background: ta.has-hover && !root.item.disabled ? Theme.hover : transparent;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 6px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.item.label;
+                color: root.item.disabled ? Theme.fg-tertiary : Theme.fg;
+                font-size: 13px;
+                overflow: elide;
+            }
+            if root.item.desc != "": Text {
+                text: root.item.desc;
+                color: Theme.fg-tertiary;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+        if root.item.locked: Icon { width: 14px; text: "\u{e897}"; font-size: 14px; color: Theme.fg-tertiary; }
+        if root.item.selected: Icon { width: 16px; text: "\u{e5ca}"; font-size: 16px; color: Theme.fg; }
+    }
+    ta := TouchArea {
+        mouse-cursor: root.item.disabled ? MouseCursor.default : MouseCursor.pointer;
+        clicked => {
+            if (!root.item.disabled) {
+                root.picked();
+            }
+        }
+    }
+}
+
+component PopupSurface inherits Rectangle {
+    border-radius: 10px;
+    background: Theme.composer;
+    border-width: 1px;
+    border-color: Theme.border;
+    drop-shadow-blur: 18px;
+    drop-shadow-color: #00000040;
+    drop-shadow-offset-y: 4px;
+}
+
+// Trigger chip shared by the dropdowns.
+component TriggerChip inherits Rectangle {
+    in property <string> label;
+    in property <color> tint: Theme.fg;
+    in property <string> glyph;
+    callback clicked;
+    height: 28px;
+    width: row.preferred-width + 8px;
+    border-radius: Theme.radius-row;
+    background: ta.pressed ? Theme.pressed : ta.has-hover ? Theme.hover : transparent;
+    row := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 2px;
+        spacing: 3px;
+        alignment: center;
+        if root.glyph != "": Icon { width: 16px; text: root.glyph; font-size: 14px; color: root.tint; }
+        Text { text: root.label; color: root.tint; font-size: 12px; vertical-alignment: center; }
+        Icon { width: 14px; text: Glyph.expand-more; font-size: 14px; color: Theme.fg-tertiary; }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Model, reasoning effort, speed and Daybreak in one dropdown (Ctrl+Shift+M).
+export component IntelligenceMenu inherits Rectangle {
+    in property <IntelligenceState> state;
+    callback pick-effort(int);
+    callback pick-speed(int);
+    callback pick-model(int);
+    callback pick-default;
+    callback toggle-daybreak;
+    callback reset;
+
+    public function open() { pop.show(); }
+
+    height: 28px;
+    width: chip.width;
+    chip := TriggerChip {
+        label: root.state.loading ? "モデルを読み込み中…" : root.state.trigger;
+        clicked => { pop.show(); }
+    }
+    pop := PopupWindow {
+        x: root.width - 300px;
+        y: -(lay.preferred-height + 12px);
+        width: 300px;
+        height: lay.preferred-height + 8px;
+        PopupSurface {
+            lay := VerticalLayout {
+                padding: 6px;
+                spacing: 1px;
+
+                if root.state.effort-enabled: SectionLabel { text: "思考量を選択"; }
+                if root.state.effort-enabled: Rectangle {
+                    height: 30px;
+                    border-radius: 7px;
+                    background: Theme.hover;
+                    HorizontalLayout {
+                        padding: 2px;
+                        spacing: 2px;
+                        for e[i] in root.state.efforts: Rectangle {
+                            border-radius: 5px;
+                            background: i == root.state.effort-index ? Theme.pressed
+                                : ea.has-hover ? Theme.hover : transparent;
+                            Text {
+                                text: e;
+                                font-size: 12px;
+                                color: i == root.state.effort-index ? Theme.fg : Theme.fg-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            ea := TouchArea { mouse-cursor: pointer; clicked => { root.pick-effort(i); } }
+                        }
+                    }
+                }
+                if root.state.ultra-warning: Text {
+                    text: "利用枠の消費が速くなります";
+                    color: Theme.warning;
+                    font-size: 11px;
+                    height: 20px;
+                    vertical-alignment: center;
+                }
+
+                if root.state.speeds.length > 1: SectionLabel { text: "スピード"; }
+                for r[i] in root.state.speeds: MenuItem {
+                    item: r;
+                    picked => { root.pick-speed(i); }
+                }
+
+                SectionLabel { text: "モデルを選択"; }
+                if root.state.loading: Text {
+                    text: "モデルを読み込み中…";
+                    color: Theme.fg-tertiary;
+                    font-size: 12px;
+                    height: 28px;
+                    vertical-alignment: center;
+                    x: 8px;
+                }
+                MenuItem { item: root.state.default-row; picked => { root.pick-default(); } }
+                for r[i] in root.state.models: MenuItem {
+                    item: r;
+                    picked => { root.pick-model(i); }
+                }
+
+                if root.state.daybreak-available: Rectangle {
+                    height: root.state.daybreak-note == "" ? 30px : 46px;
+                    border-radius: 6px;
+                    background: da.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        spacing: 6px;
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text { text: "Daybreak"; color: Theme.fg; font-size: 13px; }
+                            if root.state.daybreak-note != "": Text {
+                                text: root.state.daybreak-note;
+                                color: Theme.fg-tertiary;
+                                font-size: 11px;
+                                overflow: elide;
+                            }
+                        }
+                        Switch {
+                            y: (parent.height - self.height) / 2;
+                            on: root.state.daybreak-on;
+                        }
+                    }
+                    da := TouchArea { mouse-cursor: pointer; clicked => { root.toggle-daybreak(); } }
+                }
+
+                if root.state.can-reset: MenuItem {
+                    item: { label: "デフォルトに戻す", desc: "", selected: false, disabled: false, locked: false };
+                    picked => { root.reset(); }
+                }
+            }
+        }
+    }
+}
+
+// Permission dropdown: Ask for approval / Approve for me / Full access / Custom / Managed.
+export component PermMenu inherits Rectangle {
+    in property <PermState> state;
+    callback pick(int);
+
+    height: 28px;
+    width: chip.width;
+    chip := TriggerChip {
+        label: root.state.trigger;
+        glyph: root.state.danger ? Glyph.shield : "";
+        tint: root.state.danger ? Theme.warning : Theme.fg-secondary;
+        clicked => { pop.show(); }
+    }
+    pop := PopupWindow {
+        x: 0px;
+        y: -(lay.preferred-height + 12px);
+        width: 300px;
+        height: lay.preferred-height + 8px;
+        PopupSurface {
+            lay := VerticalLayout {
+                padding: 6px;
+                spacing: 1px;
+                SectionLabel { text: "InoCode アクションの承認方法"; }
+                for r[i] in root.state.rows: MenuItem {
+                    item: r;
+                    picked => { root.pick(i); }
+                }
+            }
+        }
+    }
+}
+
+// "Turn on Full Access?" confirmation shown over the window.
+export component FullAccessDialog inherits Rectangle {
+    callback confirm;
+    callback cancel;
+    background: #00000066;
+    TouchArea { }
+    Rectangle {
+        width: 420px;
+        height: col.preferred-height + 8px;
+        border-radius: 14px;
+        background: Theme.composer;
+        border-width: 1px;
+        border-color: Theme.border;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: #00000066;
+        col := VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+            Text { text: "フルアクセスをオンにしますか？"; color: Theme.fg; font-size: 16px; font-weight: 600; }
+            Text {
+                text: "InoCode は、あなたの許可なく、このコンピューター上のどこでもコマンドを実行し、インターネットを使用し、ファイルを作成・編集できるようになります。これには以下が含まれますが、これらに限定されません。";
+                color: Theme.fg-secondary;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+            for item[i] in [
+                { label: "ファイルとフォルダー", desc: "このコンピューター上の任意の場所にあるファイルを読み取り、作成、変更、アップロード、削除する" },
+                { label: "ターミナルコマンド", desc: "コマンドの実行、ソフトウェアのインストール、システム設定の変更" },
+                { label: "インターネットと連携アプリ", desc: "ウェブサイトにアクセスし、データを送信し、有効なプラグインを使用する" },
+            ]: VerticalLayout {
+                Text { text: item.label; color: Theme.fg; font-size: 13px; font-weight: 600; }
+                Text { text: item.desc; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                Rectangle {
+                    width: ct.preferred-width + 28px;
+                    height: 30px;
+                    border-radius: Theme.radius-row;
+                    background: ca.has-hover ? Theme.pressed : Theme.selected;
+                    ct := Text { text: "キャンセルする"; color: Theme.fg; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+                    ca := TouchArea { mouse-cursor: pointer; clicked => { root.cancel(); } }
+                }
+                Rectangle {
+                    width: ot.preferred-width + 28px;
+                    height: 30px;
+                    border-radius: Theme.radius-row;
+                    background: oa.has-hover ? Theme.fg-secondary : Theme.fg;
+                    ot := Text { text: "確認"; color: Theme.surface; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+                    oa := TouchArea { mouse-cursor: pointer; clicked => { root.confirm(); } }
+                }
+            }
+        }
+    }
+}
+
+// Row under the composer on a new chat: where to work and in which project.
+export component LocationRow inherits HorizontalLayout {
+    in property <ProjectState> state;
+    callback pick-project(int);
+    spacing: 2px;
+    padding-left: 6px;
+    alignment: start;
+
+    Rectangle {
+        height: 28px;
+        width: lc.width;
+        lc := TriggerChip {
+            glyph: Glyph.computer;
+            label: root.state.location;
+            tint: Theme.fg-secondary;
+            clicked => { lpop.show(); }
+        }
+        lpop := PopupWindow {
+            x: 0px;
+            y: 32px;
+            width: 280px;
+            height: ll.preferred-height + 8px;
+            PopupSurface {
+                ll := VerticalLayout {
+                    padding: 6px;
+                    spacing: 1px;
+                    SectionLabel { text: "作業場所"; }
+                    MenuItem {
+                        item: { label: "ローカル環境で作業する", desc: "", selected: true, disabled: false, locked: false };
+                        picked => { lpop.close(); }
+                    }
+                    MenuItem {
+                        item: { label: "新しい Worktree", desc: "", selected: false, disabled: true, locked: false };
+                    }
+                    MenuItem {
+                        item: { label: "クラウド", desc: "", selected: false, disabled: true, locked: false };
+                    }
+                }
+            }
+        }
+    }
+    Rectangle {
+        height: 28px;
+        width: pc.width;
+        pc := TriggerChip {
+            glyph: Glyph.folder;
+            label: root.state.project;
+            tint: Theme.fg-secondary;
+            clicked => { ppop.show(); }
+        }
+        ppop := PopupWindow {
+            x: 0px;
+            y: 32px;
+            width: 300px;
+            height: pl.preferred-height + 8px;
+            PopupSurface {
+                pl := VerticalLayout {
+                    padding: 6px;
+                    spacing: 1px;
+                    SectionLabel { text: "プロジェクトを選択"; }
+                    if root.state.projects.length == 0: Text {
+                        text: "プロジェクトが見つかりません";
+                        color: Theme.fg-tertiary;
+                        font-size: 12px;
+                        height: 28px;
+                        vertical-alignment: center;
+                        x: 8px;
+                    }
+                    for r[i] in root.state.projects: MenuItem {
+                        item: r;
+                        picked => { root.pick-project(i); ppop.close(); }
+                    }
+                }
+            }
+        }
+    }
+}

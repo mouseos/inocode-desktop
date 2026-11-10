@@ -43,6 +43,7 @@ pub struct ThreadInfo {
 pub struct ModelInfo {
     pub id: String,
     pub name: String,
+    pub description: String,
     pub efforts: Vec<String>,
     pub default_effort: String,
     pub hidden: bool,
@@ -50,6 +51,9 @@ pub struct ModelInfo {
     /// `availableAccessPrograms.cyber` as advertised by model/list for this caller
     /// ("standard", "daybreakBlue", "daybreakRed").
     pub programs: Vec<String>,
+    /// Service tiers (id, name, description); the first speed option is always "standard".
+    pub service_tiers: Vec<(String, String, String)>,
+    pub default_service_tier: Option<String>,
 }
 
 impl ModelInfo {
@@ -84,18 +88,62 @@ impl ModelInfo {
     }
 }
 
-/// Per-thread choices made in the UI. They are sent with `thread/start` and as
-/// overrides on every `turn/start`.
+/// Permission modes of the composer's permission dropdown.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Perm {
+    /// "Custom (config.toml)": no override, the server's own configuration applies.
+    Server,
+    /// "Ask for approval"
+    Ask,
+    /// "Approve for me": an automatic reviewer answers approval requests.
+    Guardian,
+    /// "Full access"
+    Full,
+}
+
+impl Perm {
+    fn policy(self) -> Option<&'static str> {
+        match self {
+            Perm::Server => None,
+            Perm::Ask | Perm::Guardian => Some("on-request"),
+            Perm::Full => Some("never"),
+        }
+    }
+    fn sandbox_mode(self) -> Option<&'static str> {
+        match self {
+            Perm::Server => None,
+            Perm::Ask | Perm::Guardian => Some("workspace-write"),
+            Perm::Full => Some("danger-full-access"),
+        }
+    }
+    /// Reviewer as spelled in thread/settings/update and in turn/start.
+    fn reviewer(self, turn: bool) -> Option<&'static str> {
+        match self {
+            Perm::Server => None,
+            Perm::Guardian => Some(if turn { "auto_review" } else { "guardian_subagent" }),
+            Perm::Ask | Perm::Full => Some("user"),
+        }
+    }
+    /// What the server reports (policy, sandbox type, reviewer) mapped back to a mode.
+    pub fn from_server(approval: &str, sandbox: &str, reviewer: &str) -> Perm {
+        match (approval, sandbox, reviewer) {
+            ("never", "dangerFullAccess", _) => Perm::Full,
+            ("on-request", "workspaceWrite", "auto_review") => Perm::Guardian,
+            ("on-request", "workspaceWrite", _) => Perm::Ask,
+            _ => Perm::Server,
+        }
+    }
+}
+
+/// Thread settings chosen in the UI (the desktop client keeps these as the thread's
+/// "latest thread settings" and pushes changes with thread/settings/update).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub model: Option<String>,
     pub effort: Option<String>,
-    /// "on-request", "untrusted", "never"
-    pub approval: String,
-    /// "read-only", "workspace-write", "danger-full-access"
-    pub sandbox: String,
-    /// The user picked a permission preset; until then the server's own defaults apply.
-    pub perm_changed: bool,
+    /// None: not chosen. Some(None): Standard speed. Some(Some(id)): that service tier.
+    pub service_tier: Option<Option<String>>,
+    pub perm: Option<Perm>,
     pub daybreak: bool,
     /// Model catalog from model/list, used to resolve the program sent with each turn.
     pub programs: Vec<ModelInfo>,
@@ -107,9 +155,8 @@ impl Default for Settings {
         Settings {
             model: None,
             effort: None,
-            approval: "on-request".into(),
-            sandbox: "workspace-write".into(),
-            perm_changed: false,
+            service_tier: None,
+            perm: None,
             daybreak: false,
             programs: Vec::new(),
             cwd: None,
@@ -124,8 +171,12 @@ pub enum Event {
     /// Context usage of the active thread (percent of the window) and a text summary.
     Usage { percent: i32, text: String },
     RateLimits(String),
+    /// configRequirements/read: allowed approval policies / sandbox modes (None = unrestricted).
+    Requirements { policies: Option<Vec<String>>, sandboxes: Option<Vec<String>> },
+    /// thread.daybreakEnabled as stored by the server.
+    Daybreak(bool),
     /// What the server reports for the thread that was just started or resumed.
-    Applied { model: String, effort: String, approval: String, sandbox: String, cwd: String },
+    Applied { model: String, effort: String, approval: String, sandbox: String, reviewer: String, cwd: String },
     Status(String, Level),
     Threads(Vec<ThreadInfo>),
     ThreadActive { id: String, title: String },
@@ -176,6 +227,7 @@ pub enum Command {
     NewThread,
     NewThreadIn(String),
     SetSettings(Settings),
+    SetDaybreak(bool),
     Login,
     OpenThread(String),
     Interrupt,
@@ -459,6 +511,9 @@ enum Pending {
     ThreadResume,
     TurnStart,
     Models,
+    Requirements,
+    SettingsUpdate,
+    Daybreak,
     Account,
     RateLimits,
     Login,
@@ -470,6 +525,9 @@ struct Session<'a, F: Fn(Event)> {
     on_event: &'a F,
     active_thread: &'a mut Option<String>,
     settings: &'a mut Settings,
+    /// Settings already pushed to the thread (only changes are sent).
+    sent: Settings,
+    settings_update_unsupported: bool,
     next_id: u64,
     pending: HashMap<u64, Pending>,
     turn_id: Option<String>,
@@ -492,7 +550,9 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             conn,
             on_event,
             active_thread,
+            sent: settings.clone(),
             settings,
+            settings_update_unsupported: false,
             next_id: 1,
             pending: HashMap::new(),
             turn_id: None,
@@ -580,7 +640,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                     return Ok(None);
                 };
                 let mut params = json!({ "threadId": tid, "input": [{ "type": "text", "text": text, "text_elements": [] }] });
-                turn_overrides(self.settings, &mut params);
+                turn_overrides(self.settings, self.settings_update_unsupported, &mut params);
                 self.request("turn/start", params, Pending::TurnStart)?;
             }
             Command::NewThread => {
@@ -594,6 +654,17 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             }
             Command::SetSettings(s) => {
                 *self.settings = s;
+                self.push_settings()?;
+            }
+            Command::SetDaybreak(on) => {
+                self.settings.daybreak = on;
+                if let Some(tid) = self.active_thread.clone() {
+                    self.request(
+                        "thread/metadata/update",
+                        json!({ "threadId": tid, "daybreakEnabled": on }),
+                        Pending::Daybreak,
+                    )?;
+                }
             }
             Command::Login => {
                 // One ChatGPT login at a time, as in the desktop client.
@@ -619,6 +690,60 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             }
         }
         Ok(None)
+    }
+
+    /// Push changed choices to the thread (thread/settings/update), as the desktop client does.
+    fn push_settings(&mut self) -> Result<(), String> {
+        let Some(tid) = self.active_thread.clone() else { return Ok(()) };
+        if self.settings_update_unsupported {
+            return Ok(());
+        }
+        let new = self.settings.clone();
+        let old = self.sent.clone();
+        let mut p = json!({ "threadId": tid });
+        let mut any = false;
+        if new.model != old.model {
+            if let Some(m) = &new.model {
+                p["model"] = json!(m);
+                any = true;
+            }
+        }
+        if new.effort != old.effort {
+            if let Some(e) = &new.effort {
+                p["effort"] = json!(e);
+                any = true;
+            }
+        }
+        if new.service_tier != old.service_tier {
+            if let Some(t) = &new.service_tier {
+                p["serviceTier"] = match t {
+                    Some(id) => json!(id),
+                    None => Value::Null,
+                };
+                any = true;
+            }
+        }
+        if new.perm != old.perm {
+            if let Some(perm) = new.perm {
+                if let Some(v) = perm.policy() {
+                    p["approvalPolicy"] = json!(v);
+                    any = true;
+                }
+                if let Some(v) = perm.sandbox_mode() {
+                    p["sandboxPolicy"] = sandbox_policy(v);
+                    any = true;
+                }
+                if let Some(v) = perm.reviewer(false) {
+                    p["approvalsReviewer"] = json!(v);
+                    any = true;
+                }
+            }
+        }
+        self.sent = new;
+        if any {
+            self.request("thread/settings/update", p, Pending::SettingsUpdate)?;
+        }
+        Ok(())
     }
 
     fn list_threads(&mut self) -> Result<(), String> {
@@ -655,6 +780,17 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                     self.login_pending = false;
                     self.report_error(&message);
                 }
+                Pending::SettingsUpdate => {
+                    // Like the desktop client: remember that the server lacks the method and
+                    // send the choices with every turn instead.
+                    let m = message.to_ascii_lowercase();
+                    if m.contains("method not found") || m.contains("unknown variant") || m.contains("unsupported") {
+                        self.settings_update_unsupported = true;
+                    } else {
+                        self.report_error(&message);
+                    }
+                }
+                Pending::Requirements | Pending::Daybreak => {}
                 _ => self.report_error(&message),
             }
             return Ok(());
@@ -671,6 +807,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 )?;
                 self.request("account/read", json!({ "refreshToken": false }), Pending::Account)?;
                 self.request("account/rateLimits/read", Value::Null, Pending::RateLimits)?;
+                self.request("configRequirements/read", Value::Null, Pending::Requirements)?;
                 self.list_threads()?;
                 match self.active_thread.clone() {
                     Some(tid) => {
@@ -719,6 +856,25 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             Pending::RateLimits => {
                 if let Some(text) = rate_limit_text(result.get("rateLimits").unwrap_or(&Value::Null)) {
                     (self.on_event)(Event::RateLimits(text));
+                }
+            }
+            Pending::Requirements => {
+                let req = result.get("requirements").unwrap_or(&Value::Null);
+                let list = |key: &str| {
+                    req.get(key).and_then(Value::as_array).map(|a| {
+                        a.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>()
+                    })
+                };
+                (self.on_event)(Event::Requirements {
+                    policies: list("allowedApprovalPolicies"),
+                    sandboxes: list("allowedSandboxModes"),
+                });
+            }
+            Pending::SettingsUpdate => {}
+            Pending::Daybreak => {
+                if let Some(on) = result.pointer("/thread/daybreakEnabled").and_then(Value::as_bool) {
+                    self.settings.daybreak = on;
+                    (self.on_event)(Event::Daybreak(on));
                 }
             }
             Pending::Login => {
@@ -1000,12 +1156,25 @@ pub fn history_from_thread(thread: &Value) -> Vec<Msg> {
 
 fn thread_start_params(s: &Settings) -> Value {
     let mut p = json!({});
-    if s.perm_changed {
-        p["approvalPolicy"] = json!(s.approval);
-        p["sandbox"] = json!(s.sandbox);
+    if let Some(perm) = s.perm {
+        if let Some(v) = perm.policy() {
+            p["approvalPolicy"] = json!(v);
+        }
+        if let Some(v) = perm.sandbox_mode() {
+            p["sandbox"] = json!(v);
+        }
+        if let Some(v) = perm.reviewer(false) {
+            p["approvalsReviewer"] = json!(v);
+        }
     }
     if let Some(m) = &s.model {
         p["model"] = json!(m);
+    }
+    if let Some(t) = &s.service_tier {
+        p["serviceTier"] = match t {
+            Some(id) => json!(id),
+            None => Value::Null,
+        };
     }
     if let Some(c) = &s.cwd {
         p["cwd"] = json!(c);
@@ -1024,12 +1193,27 @@ fn sandbox_policy(mode: &str) -> Value {
     }
 }
 
-fn turn_overrides(s: &Settings, params: &mut Value) {
-    // Permission overrides only after the user picked a preset (the desktop client
-    // also leaves them out unless they were changed).
-    if s.perm_changed {
-        params["approvalPolicy"] = json!(s.approval);
-        params["sandboxPolicy"] = sandbox_policy(&s.sandbox);
+/// Per-turn fields. Model, effort and speed go with every turn (as in the desktop
+/// client); permissions only when thread/settings/update is unavailable.
+fn turn_overrides(s: &Settings, with_permissions: bool, params: &mut Value) {
+    if with_permissions {
+        if let Some(perm) = s.perm {
+            if let Some(v) = perm.policy() {
+                params["approvalPolicy"] = json!(v);
+            }
+            if let Some(v) = perm.sandbox_mode() {
+                params["sandboxPolicy"] = sandbox_policy(v);
+            }
+            if let Some(v) = perm.reviewer(true) {
+                params["approvalsReviewer"] = json!(v);
+            }
+        }
+    }
+    if let Some(t) = &s.service_tier {
+        params["serviceTier"] = match t {
+            Some(id) => json!(id),
+            None => Value::Null,
+        };
     }
     if let Some(m) = &s.model {
         params["model"] = json!(m);
@@ -1054,6 +1238,7 @@ fn applied(result: &Value) -> Event {
         effort: text("/reasoningEffort"),
         approval,
         sandbox: text("/sandbox/type"),
+        reviewer: text("/approvalsReviewer"),
         cwd: text("/cwd"),
     }
 }
@@ -1086,7 +1271,36 @@ pub fn parse_models(result: &Value) -> Vec<ModelInfo> {
                         .unwrap_or_default();
                     let hidden = m.get("hidden").and_then(Value::as_bool).unwrap_or(false);
                     let is_default = m.get("isDefault").and_then(Value::as_bool).unwrap_or(false);
-                    Some(ModelInfo { id, name, efforts, default_effort, hidden, is_default, programs })
+                    let description = m.get("description").and_then(Value::as_str).unwrap_or("").to_string();
+                    let service_tiers = m
+                        .get("serviceTiers")
+                        .and_then(Value::as_array)
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|t| {
+                                    Some((
+                                        t.get("id")?.as_str()?.to_string(),
+                                        t.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
+                                        t.get("description").and_then(Value::as_str).unwrap_or("").to_string(),
+                                    ))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let default_service_tier =
+                        m.get("defaultServiceTier").and_then(Value::as_str).map(str::to_string);
+                    Some(ModelInfo {
+                        id,
+                        name,
+                        description,
+                        efforts,
+                        default_effort,
+                        hidden,
+                        is_default,
+                        programs,
+                        service_tiers,
+                        default_service_tier,
+                    })
                 })
                 .collect()
         })
@@ -1199,11 +1413,14 @@ mod tests {
         let m = |programs: &[&str]| ModelInfo {
             id: "m".into(),
             name: "m".into(),
+            description: String::new(),
             efforts: vec![],
             default_effort: String::new(),
             hidden: false,
             is_default: false,
             programs: programs.iter().map(|s| s.to_string()).collect(),
+            service_tiers: vec![],
+            default_service_tier: None,
         };
         let sol = m(&["daybreakBlue"]);
         assert_eq!(sol.cyber_program(true), Some("daybreakBlue"));
@@ -1216,9 +1433,14 @@ mod tests {
         let mut p = json!({});
         let mut s = Settings { model: Some("m".into()), programs: vec![sol], ..Settings::default() };
         s.daybreak = true;
-        turn_overrides(&s, &mut p);
+        turn_overrides(&s, false, &mut p);
         assert_eq!(p["cyberAccessProgram"], "daybreakBlue");
         assert!(p.get("approvalPolicy").is_none());
+        s.perm = Some(Perm::Guardian);
+        turn_overrides(&s, true, &mut p);
+        assert_eq!(p["approvalsReviewer"], "auto_review");
+        assert_eq!(Perm::from_server("never", "dangerFullAccess", "user"), Perm::Full);
+        assert_eq!(Perm::from_server("on-request", "workspaceWrite", "auto_review"), Perm::Guardian);
     }
 
     #[test]
@@ -1252,6 +1474,23 @@ mod tests {
             match e {
                 Event::Status(s, Level::Ok) if !sent && s == "接続済み" => {
                     sent = true;
+                    if std::env::var("LIVE_SETTINGS").is_ok() {
+                        // thread/settings/update and thread/metadata/update, without a model call.
+                        let st = Settings {
+                            model: Some("gpt-5.6-luna".into()),
+                            effort: Some("low".into()),
+                            service_tier: Some(None),
+                            perm: Some(Perm::Guardian),
+                            ..Settings::default()
+                        };
+                        h.send(Command::SetSettings(st));
+                        h.send(Command::SetDaybreak(false));
+                        std::thread::sleep(Duration::from_secs(3));
+                        while let Ok(e) = rx.try_recv() {
+                            println!("{e:?}");
+                        }
+                        break;
+                    }
                     if std::env::var("LIVE_PROMPT").is_ok() {
                         h.send(Command::Prompt("hello".into()));
                     } else {

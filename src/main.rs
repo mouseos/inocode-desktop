@@ -2,7 +2,7 @@
 
 mod client;
 
-use client::{Command, Config, Decision, Event, Level, ModelInfo, Msg, Settings, ThreadInfo};
+use client::{Command, Config, Decision, Event, Level, ModelInfo, Msg, Perm, Settings, ThreadInfo};
 use slint::{Model, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -15,38 +15,50 @@ slint::include_modules!();
 struct State {
     threads: Vec<ThreadInfo>,
     active: String,
+    active_cwd: String,
     busy: bool,
     models: Vec<ModelInfo>,
+    models_loaded: bool,
     settings: Settings,
     /// What the server reported for the active thread.
     applied_model: String,
     applied_effort: String,
+    applied_perm: Option<Perm>,
+    /// configRequirements/read: allowed approval policies / sandbox modes.
+    allowed_policies: Option<Vec<String>>,
+    allowed_sandboxes: Option<Vec<String>>,
+    /// Project folders offered by the project picker, in row order.
+    project_cwds: Vec<String>,
 }
 
-/// Permission presets: (label, approval policy, sandbox mode).
-const PERMS: [(&str, &str, &str); 4] = [
-    ("確認して実行", "on-request", "workspace-write"),
-    ("信頼済みのみ自動", "untrusted", "workspace-write"),
-    ("読み取り専用", "on-request", "read-only"),
-    ("フルアクセス", "never", "danger-full-access"),
-];
+/// Order of the permission dropdown rows ("Managed" is appended when requirements restrict).
+const PERM_ORDER: [Perm; 4] = [Perm::Ask, Perm::Guardian, Perm::Full, Perm::Server];
 
 fn strings(items: impl IntoIterator<Item = String>) -> ModelRc<SharedString> {
     let v: Vec<SharedString> = items.into_iter().map(SharedString::from).collect();
     ModelRc::from(Rc::new(VecModel::from(v)))
 }
 
+fn row(label: &str, desc: &str, selected: bool, disabled: bool) -> MenuRow {
+    MenuRow { label: label.into(), desc: desc.into(), selected, disabled, locked: false }
+}
+
+fn rows(items: Vec<MenuRow>) -> ModelRc<MenuRow> {
+    ModelRc::from(Rc::new(VecModel::from(items)))
+}
+
+/// Official reasoning labels (composer.mode.local.reasoning.*), Japanese.
 fn effort_label(e: &str) -> String {
     match e {
         "none" => "なし",
         "minimal" => "最小",
-        "low" => "低",
+        "low" => "軽",
         "medium" => "中",
         "high" => "高",
-        "xhigh" => "超高",
-        "max" => "最大",
+        "xhigh" => "極高",
+        "max" => "マックス",
         "ultra" => "ウルトラ",
-        "persistent" => "持続",
+        "persistent" => "パーシステント",
         other => other,
     }
     .to_string()
@@ -56,10 +68,7 @@ fn effort_label(e: &str) -> String {
 /// with the current Daybreak choice (a model that advertises access programs must offer
 /// "standard" when the choice is off, or a daybreak program when it is on).
 fn visible_models(st: &State) -> Vec<&ModelInfo> {
-    st.models
-        .iter()
-        .filter(|m| !m.hidden && m.usable(st.settings.daybreak))
-        .collect()
+    st.models.iter().filter(|m| !m.hidden && m.usable(st.settings.daybreak)).collect()
 }
 
 /// Selected model: the user's choice, else what the server uses, else the catalog default,
@@ -75,13 +84,25 @@ fn selected_model<'a>(st: &'a State, visible: &[&'a ModelInfo]) -> Option<&'a Mo
         .or_else(|| visible.first().copied())
 }
 
-/// Push the model / effort / permission choices into the window.
-fn refresh_selectors(app: &AppWindow, st: &State) {
+fn current_perm(st: &State) -> Perm {
+    st.settings.perm.or(st.applied_perm).unwrap_or(Perm::Ask)
+}
+
+fn perm_allowed(st: &State, perm: Perm) -> bool {
+    let ok = |list: &Option<Vec<String>>, v: &str| list.as_ref().map(|l| l.iter().any(|x| x == v)).unwrap_or(true);
+    match perm {
+        Perm::Ask | Perm::Guardian => ok(&st.allowed_policies, "on-request") && ok(&st.allowed_sandboxes, "workspace-write"),
+        Perm::Full => ok(&st.allowed_policies, "never") && ok(&st.allowed_sandboxes, "danger-full-access"),
+        Perm::Server => true,
+    }
+}
+
+/// Rebuild what the model, permission and project pickers show.
+fn refresh_pickers(app: &AppWindow, st: &State) {
     let visible = visible_models(st);
     let sel = selected_model(st, &visible);
-    let mi = sel.and_then(|m| visible.iter().position(|v| v.id == m.id));
-    app.set_model_names(strings(visible.iter().map(|m| m.name.clone())));
-    app.set_model_index(mi.map(|i| i as i32).unwrap_or(-1));
+
+    // Reasoning effort
     let efforts: Vec<String> = sel.map(|m| m.efforts.clone()).unwrap_or_default();
     let eff = st
         .settings
@@ -90,28 +111,119 @@ fn refresh_selectors(app: &AppWindow, st: &State) {
         .filter(|e| efforts.contains(e))
         .or_else(|| Some(st.applied_effort.clone()).filter(|e| efforts.contains(e)))
         .or_else(|| sel.map(|m| m.default_effort.clone()));
-    let ei = eff.and_then(|e| efforts.iter().position(|x| *x == e)).unwrap_or(0);
-    app.set_effort_names(strings(efforts.iter().map(|e| format!("推論 {}", effort_label(e)))));
-    app.set_effort_index(if efforts.is_empty() { -1 } else { ei as i32 });
-    let pi = PERMS
-        .iter()
-        .position(|(_, a, sb)| *a == st.settings.approval && *sb == st.settings.sandbox)
-        .unwrap_or(0);
-    app.set_perm_index(pi as i32);
-    // The switch is offered when any listed model advertises a Daybreak program.
-    app.set_daybreak_available(st.models.iter().any(|m| !m.hidden && m.daybreak()));
-    app.set_daybreak_on(st.settings.daybreak);
-}
+    let ei = eff.as_ref().and_then(|e| efforts.iter().position(|x| x == e));
+    let eff_text = ei.map(|i| effort_label(&efforts[i])).unwrap_or_default();
 
-fn sandbox_mode(policy_type: &str) -> &'static str {
-    match policy_type {
-        "readOnly" => "read-only",
-        "dangerFullAccess" => "danger-full-access",
-        _ => "workspace-write",
+    // Speed: Standard plus the model's service tiers.
+    let tier_sel: Option<String> = match &st.settings.service_tier {
+        Some(t) => t.clone(),
+        None => sel.and_then(|m| m.default_service_tier.clone()),
+    };
+    let mut speeds = Vec::new();
+    if let Some(m) = sel {
+        if !m.service_tiers.is_empty() {
+            speeds.push(row("標準", "", tier_sel.is_none(), false));
+            for (id, name, _desc) in &m.service_tiers {
+                let fast = id == "priority" || name.eq_ignore_ascii_case("fast");
+                let label = if fast { "高速".to_string() } else { name.clone() };
+                let desc = if fast { "1.5倍速、使用量増加".to_string() } else { String::new() };
+                speeds.push(row(&label, &desc, tier_sel.as_deref() == Some(id.as_str()), false));
+            }
+        }
     }
+
+    // Models: the Default row, then the list.
+    let explicit = st.settings.model.is_some();
+    let model_rows: Vec<MenuRow> = visible
+        .iter()
+        .map(|m| row(&m.name, "", explicit && sel.map(|s| s.id == m.id).unwrap_or(false), false))
+        .collect();
+    let trigger = match sel {
+        Some(m) if eff_text.is_empty() => m.name.clone(),
+        Some(m) => format!("{} {}", m.name, eff_text),
+        None => "モデルを選択".to_string(),
+    };
+    let daybreak_available = st.models.iter().any(|m| !m.hidden && m.daybreak());
+    app.set_intelligence(IntelligenceState {
+        trigger: trigger.into(),
+        efforts: strings(efforts.iter().map(|e| effort_label(e))),
+        effort_index: ei.map(|i| i as i32).unwrap_or(-1),
+        effort_enabled: !efforts.is_empty(),
+        speeds: rows(speeds),
+        models: rows(model_rows),
+        default_row: row("デフォルト", "おすすめのモデルセット", !explicit, false),
+        loading: !st.models_loaded,
+        daybreak_available,
+        daybreak_on: st.settings.daybreak,
+        daybreak_note: "有効にすると、各モデルでより制限の少ない機能を利用できます".into(),
+        ultra_warning: eff.as_deref() == Some("ultra"),
+        can_reset: explicit || st.settings.effort.is_some() || st.settings.service_tier.is_some(),
+    });
+
+    // Permissions
+    let cur = current_perm(st);
+    let managed = st.allowed_policies.is_some() || st.allowed_sandboxes.is_some();
+    let disabled_desc = "requirements.toml により無効になっています";
+    let mut perm_rows = vec![
+        {
+            let ok = perm_allowed(st, Perm::Ask);
+            row("承認を求める", if ok { "外部ファイルの編集やインターネットの利用について、常に確認を求めます" } else { disabled_desc }, cur == Perm::Ask, !ok)
+        },
+        {
+            let ok = perm_allowed(st, Perm::Guardian);
+            row("代わりに承認", if ok { "安全でない可能性があると検出された操作についてのみ確認を求めます" } else { disabled_desc }, cur == Perm::Guardian, !ok)
+        },
+        {
+            let ok = perm_allowed(st, Perm::Full);
+            row("フルアクセス", if ok { "インターネットとコンピューター上のすべてのファイルに無制限でアクセスします" } else { disabled_desc }, cur == Perm::Full, !ok)
+        },
+        row("カスタム（config.toml）", "config.toml で定義された権限を使用します", cur == Perm::Server, false),
+    ];
+    if managed {
+        perm_rows.push(row("管理対象", "Enterprise ポリシーで管理されています", false, true));
+    }
+    let (trigger, danger) = match cur {
+        Perm::Ask => ("承認を依頼", false),
+        Perm::Guardian => ("代わりに承認", false),
+        Perm::Full => ("フルアクセス", true),
+        Perm::Server => ("カスタム", false),
+    };
+    app.set_perm(PermState { trigger: trigger.into(), danger, rows: rows(perm_rows) });
+
+    // Projects: folders of the known threads.
+    let mut cwds: Vec<String> = Vec::new();
+    for t in &st.threads {
+        if !t.cwd.is_empty() && !cwds.contains(&t.cwd) {
+            cwds.push(t.cwd.clone());
+        }
+    }
+    let chosen = st.settings.cwd.clone().unwrap_or_else(|| st.active_cwd.clone());
+    let base = |p: &str| {
+        std::path::Path::new(p)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| p.to_string())
+    };
+    let project_rows: Vec<MenuRow> = cwds.iter().map(|c| row(&base(c), c, *c == chosen, false)).collect();
+    app.set_project(ProjectState {
+        location: "ローカルで作業".into(),
+        project: if chosen.is_empty() { "プロジェクトを選択".into() } else { base(&chosen).into() },
+        projects: rows(project_rows),
+    });
+    // (kept in State by the caller through project_cwds)
 }
 
-fn with_messages<R>(app: &AppWindow, f: impl FnOnce(&VecModel<Message>) -> R) -> Option<R> {
+fn sync_project_cwds(st: &mut State) {
+    let mut cwds: Vec<String> = Vec::new();
+    for t in &st.threads {
+        if !t.cwd.is_empty() && !cwds.contains(&t.cwd) {
+            cwds.push(t.cwd.clone());
+        }
+    }
+    st.project_cwds = cwds;
+}
+
+fn messages_with<R>(app: &AppWindow, f: impl FnOnce(&VecModel<Message>) -> R) -> Option<R> {
     let model = app.get_messages();
     let vec = model.as_any().downcast_ref::<VecModel<Message>>()?;
     Some(f(vec))
@@ -150,6 +262,14 @@ fn rebuild_projects(app: &AppWindow, state: &State) {
     app.set_projects(ModelRc::from(Rc::new(VecModel::from(projects))));
 }
 
+fn sandbox_label(t: &str) -> &'static str {
+    match t {
+        "readOnly" => "read-only",
+        "dangerFullAccess" => "danger-full-access",
+        _ => "workspace-write",
+    }
+}
+
 fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
     match event {
         Event::Status(text, level) => {
@@ -166,20 +286,31 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             let mut st = state.borrow_mut();
             st.settings.programs = list.clone();
             st.models = list;
-            refresh_selectors(app, &st);
+            st.models_loaded = true;
+            refresh_pickers(app, &st);
         }
-        Event::Applied { model, effort, approval, sandbox, cwd } => {
+        Event::Requirements { policies, sandboxes } => {
+            let mut st = state.borrow_mut();
+            st.allowed_policies = policies;
+            st.allowed_sandboxes = sandboxes;
+            refresh_pickers(app, &st);
+        }
+        Event::Daybreak(on) => {
+            let mut st = state.borrow_mut();
+            st.settings.daybreak = on;
+            refresh_pickers(app, &st);
+        }
+        Event::Applied { model, effort, approval, sandbox, reviewer, cwd } => {
             let mut st = state.borrow_mut();
             st.applied_model = model;
             st.applied_effort = effort;
-            if !approval.is_empty() && approval != "granular" {
-                st.settings.approval = approval;
+            if !approval.is_empty() {
+                st.applied_perm = Some(Perm::from_server(&approval, &sandbox, &reviewer));
             }
-            if !sandbox.is_empty() {
-                st.settings.sandbox = sandbox_mode(&sandbox).to_string();
-            }
+            let _ = sandbox_label(&sandbox);
+            st.active_cwd = cwd.clone();
             app.set_cwd_text(cwd.into());
-            refresh_selectors(app, &st);
+            refresh_pickers(app, &st);
         }
         Event::Account { logged_in, label } => {
             app.set_logged_in(logged_in);
@@ -197,7 +328,9 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::Threads(list) => {
             let mut st = state.borrow_mut();
             st.threads = list;
+            sync_project_cwds(&mut st);
             rebuild_projects(app, &st);
+            refresh_pickers(app, &st);
         }
         Event::ThreadActive { id, title } => {
             let mut st = state.borrow_mut();
@@ -217,10 +350,10 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             app.invoke_scroll_bottom();
         }
         Event::AssistantStart => {
-            with_messages(app, |m| push(m, "", "assistant", ""));
+            messages_with(app, |m| push(m, "", "assistant", ""));
         }
         Event::Delta(delta) => {
-            with_messages(app, |model| {
+            messages_with(app, |model| {
                 let n = model.row_count();
                 match model.row_data(n.wrapping_sub(1)) {
                     Some(mut last) if last.role == "assistant" => {
@@ -233,7 +366,7 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             app.invoke_scroll_bottom();
         }
         Event::Tool { id, text } => {
-            with_messages(app, |model| {
+            messages_with(app, |model| {
                 for i in 0..model.row_count() {
                     if let Some(mut row) = model.row_data(i) {
                         if row.role == "tool" && row.id == id.as_str() {
@@ -259,7 +392,7 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             app.set_busy(false);
             rebuild_projects(app, &st);
             if interrupted {
-                with_messages(app, |m| push(m, "", "tool", "中断しました"));
+                messages_with(app, |m| push(m, "", "tool", "中断しました"));
                 app.invoke_scroll_bottom();
             }
         }
@@ -280,10 +413,24 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             }
         }
         Event::Error(e) => {
-            with_messages(app, |m| push(m, "", "assistant", &format!("エラー: {e}")));
+            messages_with(app, |m| push(m, "", "assistant", &format!("エラー: {e}")));
             app.invoke_scroll_bottom();
         }
     }
+}
+
+thread_local! {
+    static STATE: RefCell<State> = RefCell::new(State::default());
+}
+
+/// Run `f` on the shared state, push the changed settings to the client, and redraw the pickers.
+fn change(app: &AppWindow, h: &client::Handle, f: impl FnOnce(&mut State)) {
+    STATE.with(|s| {
+        let mut st = s.borrow_mut();
+        f(&mut st);
+        h.send(Command::SetSettings(st.settings.clone()));
+        refresh_pickers(app, &st);
+    });
 }
 
 fn main() {
@@ -291,8 +438,7 @@ fn main() {
     app.set_messages(ModelRc::from(Rc::new(VecModel::<Message>::default())));
     app.set_approvals(ModelRc::from(Rc::new(VecModel::<Approval>::default())));
     app.set_projects(ModelRc::from(Rc::new(VecModel::<ProjectItem>::default())));
-    app.set_perm_names(strings(PERMS.iter().map(|p| p.0.to_string())));
-    app.set_perm_index(0);
+    STATE.with(|s| refresh_pickers(&app, &s.borrow()));
 
     // Default: start `inocode app-server --listen stdio://` as a child process.
     // INOCODE_WS_URL connects to an already running app-server over WebSocket instead;
@@ -323,7 +469,7 @@ fn main() {
         if text.is_empty() {
             return;
         }
-        with_messages(&app, |m| push(m, "", "user", &text));
+        messages_with(&app, |m| push(m, "", "user", &text));
         h.send(Command::Prompt(text));
         app.set_prompt("".into());
         app.invoke_scroll_bottom();
@@ -338,50 +484,65 @@ fn main() {
     app.on_decide(move |key, decision| {
         h.send(Command::Approve { key: key.to_string(), decision: Decision::parse(&decision) })
     });
-    // Model / effort / permission choices are kept in STATE and sent as thread settings;
-    // the client applies them to thread/start and as overrides on every turn/start.
+
+    // ---- composer pickers (model, effort, speed, Daybreak, permissions, project)
     let weak = app.as_weak();
     let h = handle.clone();
     app.on_pick_model(move |i| {
         let Some(app) = weak.upgrade() else { return };
-        STATE.with(|s| {
-            let mut st = s.borrow_mut();
-            let Some(m) = visible_models(&st).get(i as usize).map(|m| (*m).clone()) else { return };
+        change(&app, &h, |st| {
+            let Some(m) = visible_models(st).get(i as usize).map(|m| (*m).clone()) else { return };
             st.settings.model = Some(m.id.clone());
             if !st.settings.effort.as_ref().map(|e| m.efforts.contains(e)).unwrap_or(false) {
                 st.settings.effort = Some(m.default_effort.clone()).filter(|e| !e.is_empty());
             }
-            h.send(Command::SetSettings(st.settings.clone()));
-            refresh_selectors(&app, &st);
+            // A speed tier belongs to a model.
+            if let Some(Some(t)) = &st.settings.service_tier {
+                if !m.service_tiers.iter().any(|(id, _, _)| id == t) {
+                    st.settings.service_tier = Some(None);
+                }
+            }
+        });
+    });
+    let weak = app.as_weak();
+    let h = handle.clone();
+    app.on_pick_default(move || {
+        let Some(app) = weak.upgrade() else { return };
+        change(&app, &h, |st| {
+            st.settings.model = None;
+            st.settings.effort = None;
+        });
+    });
+    let weak = app.as_weak();
+    let h = handle.clone();
+    app.on_reset_model(move || {
+        let Some(app) = weak.upgrade() else { return };
+        change(&app, &h, |st| {
+            st.settings.model = None;
+            st.settings.effort = None;
+            st.settings.service_tier = None;
         });
     });
     let weak = app.as_weak();
     let h = handle.clone();
     app.on_pick_effort(move |i| {
         let Some(app) = weak.upgrade() else { return };
-        STATE.with(|s| {
-            let mut st = s.borrow_mut();
-            let visible = visible_models(&st);
-            let efforts = selected_model(&st, &visible).map(|m| m.efforts.clone()).unwrap_or_default();
+        change(&app, &h, |st| {
+            let visible = visible_models(st);
+            let efforts = selected_model(st, &visible).map(|m| m.efforts.clone()).unwrap_or_default();
             if let Some(e) = efforts.get(i as usize) {
                 st.settings.effort = Some(e.clone());
-                h.send(Command::SetSettings(st.settings.clone()));
-                refresh_selectors(&app, &st);
             }
         });
     });
     let weak = app.as_weak();
     let h = handle.clone();
-    app.on_pick_perm(move |i| {
+    app.on_pick_speed(move |i| {
         let Some(app) = weak.upgrade() else { return };
-        STATE.with(|s| {
-            let mut st = s.borrow_mut();
-            let Some((_, approval, sandbox)) = PERMS.get(i as usize) else { return };
-            st.settings.approval = approval.to_string();
-            st.settings.sandbox = sandbox.to_string();
-            st.settings.perm_changed = true;
-            h.send(Command::SetSettings(st.settings.clone()));
-            refresh_selectors(&app, &st);
+        change(&app, &h, |st| {
+            let visible = visible_models(st);
+            let tiers = selected_model(st, &visible).map(|m| m.service_tiers.clone()).unwrap_or_default();
+            st.settings.service_tier = if i <= 0 { Some(None) } else { tiers.get(i as usize - 1).map(|t| Some(t.0.clone())) };
         });
     });
     let weak = app.as_weak();
@@ -391,6 +552,7 @@ fn main() {
         STATE.with(|s| {
             let mut st = s.borrow_mut();
             st.settings.daybreak = !st.settings.daybreak;
+            // A model that cannot be used with the new choice falls back to the default.
             let usable = st
                 .settings
                 .model
@@ -402,11 +564,46 @@ fn main() {
                 st.settings.model = None;
             }
             h.send(Command::SetSettings(st.settings.clone()));
-            // The choice is made when a thread is created, so start a fresh one.
-            h.send(Command::NewThread);
-            refresh_selectors(&app, &st);
+            h.send(Command::SetDaybreak(st.settings.daybreak));
+            refresh_pickers(&app, &st);
         });
     });
+    let weak = app.as_weak();
+    let h = handle.clone();
+    app.on_pick_perm(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        let Some(perm) = PERM_ORDER.get(i as usize).copied() else { return };
+        if perm == Perm::Full {
+            // Full access asks for confirmation first.
+            app.set_full_confirm_open(true);
+            return;
+        }
+        change(&app, &h, |st| st.settings.perm = Some(perm));
+    });
+    let weak = app.as_weak();
+    let h = handle.clone();
+    app.on_confirm_full(move || {
+        let Some(app) = weak.upgrade() else { return };
+        app.set_full_confirm_open(false);
+        change(&app, &h, |st| st.settings.perm = Some(Perm::Full));
+    });
+    let weak = app.as_weak();
+    app.on_cancel_full(move || {
+        if let Some(app) = weak.upgrade() {
+            app.set_full_confirm_open(false);
+        }
+    });
+    let weak = app.as_weak();
+    let h = handle.clone();
+    app.on_pick_project(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        let cwd = STATE.with(|s| s.borrow().project_cwds.get(i as usize).cloned());
+        if let Some(cwd) = cwd {
+            change(&app, &h, |st| st.settings.cwd = Some(cwd.clone()));
+            h.send(Command::NewThreadIn(cwd));
+        }
+    });
+
     let h = handle.clone();
     app.on_login(move || h.send(Command::Login));
     let h = handle.clone();
@@ -416,8 +613,4 @@ fn main() {
     app.run().unwrap();
     // Closing the window: stop the client so the app-server child it started exits too.
     handle.shutdown();
-}
-
-thread_local! {
-    static STATE: RefCell<State> = RefCell::new(State::default());
 }
