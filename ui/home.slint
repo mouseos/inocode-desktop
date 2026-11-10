@@ -17,7 +17,7 @@ component Logo inherits Rectangle {
         viewbox-width: 40;
         viewbox-height: 40;
         commands: "M20 4 a16 16 0 1 0 0.001 0 Z";
-        stroke: Theme.fg;
+        stroke: Theme.brand;
         stroke-width: 3px;
         fill: transparent;
     }
@@ -25,7 +25,7 @@ component Logo inherits Rectangle {
         width: 8px;
         height: 8px;
         border-radius: 4px;
-        background: Theme.fg;
+        background: Theme.brand;
     }
 }
 
@@ -34,14 +34,14 @@ component SendButton inherits Rectangle {
     callback clicked;
     width: 32px;
     height: 32px;
-    border-radius: 16px;
-    background: root.active ? Theme.fg : Theme.hover;
+    border-radius: 8px;
+    background: root.active ? (ta.has-hover ? Theme.brand-strong : Theme.brand) : Theme.hover;
     Icon {
         text: Glyph.arrow-upward;
         font-size: 20px;
         color: root.active ? Theme.on-primary : Theme.fg-tertiary;
     }
-    TouchArea {
+    ta := TouchArea {
         enabled: root.active;
         mouse-cursor: root.active ? MouseCursor.pointer : MouseCursor.default;
         clicked => { root.clicked(); }
@@ -88,7 +88,7 @@ component Composer inherits Rectangle {
                     single-line: false;
                     color: Theme.fg;
                     font-size: 14px;
-                    selection-background-color: #339cff66;
+                    selection-background-color: #d9775766;
                 }
                 if root.text == "": Text {
                     x: 4px;
@@ -149,14 +149,15 @@ component ChatView inherits Rectangle {
                         Rectangle {
                             max-width: m.role == "user" ? 560px : Theme.composer-max-width;
                             horizontal-stretch: m.role == "user" ? 0 : 1;
-                            border-radius: 18px;
-                            background: m.role == "user" ? Theme.composer : transparent;
+                            border-radius: Theme.radius-bubble;
+                            background: m.role == "user" ? Theme.bubble : transparent;
                             VerticalLayout {
                                 padding: m.role == "user" ? 12px : 0px;
                                 Text {
                                     text: m.text;
                                     wrap: word-wrap;
                                     color: Theme.fg;
+                                    font-size: 15px;
                                 }
                             }
                         }
@@ -216,14 +217,16 @@ export component Home inherits Rectangle {
                 if root.project-name != "": VerticalLayout {
                     Text {
                         text: root.project-name;
-                        font-size: 28px;
+                        font-size: 32px;
+                        font-family: Theme.font-serif;
                         color: Theme.fg;
                     }
-                    Rectangle { height: 1px; background: Theme.fg-tertiary; }
+                    Rectangle { height: 1px; background: Theme.brand; }
                 }
                 Text {
                     text: root.project-name != "" ? " で何を作りますか？" : "何を作成しましょうか？";
-                    font-size: 28px;
+                    font-size: 32px;
+                    font-family: Theme.font-serif;
                     color: Theme.fg;
                 }
             }
@@ -234,7 +237,7 @@ export component Home inherits Rectangle {
                     max-width: Theme.composer-max-width;
                     horizontal-stretch: 1000;
                     text <=> root.prompt;
-                    placeholder: "Codex に何でも質問。@ でプラグインを使用、またはファイルをメンション";
+                    placeholder: "InoCode にご用件をどうぞ";
                     submit(t) => { root.submit(t); }
                 }
                 Rectangle { horizontal-stretch: 1; }

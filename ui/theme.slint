@@ -1,26 +1,31 @@
 import { Palette } from "std-widgets.slint";
 
-// Design tokens. Values follow the light/dark pairs of the Codex Desktop web
-// assets (gray scale, alpha overlays, 14px base text). The sidebar colour
-// approximates the translucent "surface-under" material with a solid colour.
-// The scheme follows the operating system.
+// Design tokens following the Claude Desktop "claude" theme (ref/docs/05-claude-desktop-design.md).
+// Surfaces are the warm-gray bg-000..300 scale, text uses the text-000/200/400 steps and the
+// accent is the brand terracotta. The scheme follows the operating system.
 export global Theme {
     out property <bool> dark: Palette.color-scheme != ColorScheme.light;
-    out property <color> surface: dark ? #181818 : #ffffff;
-    out property <color> sidebar: dark ? #111111 : #f9f9f9;
-    out property <color> fg: dark ? #dfdfdf : #1a1c1f;
-    out property <color> fg-secondary: dark ? #dfdfdfb3 : #1a1c1fb3;
-    out property <color> fg-tertiary: dark ? #dfdfdf80 : #1a1c1f80;
-    out property <color> border: dark ? #ffffff1f : #0000001a;
-    out property <color> hover: dark ? #ffffff14 : #00000014;
-    out property <color> pressed: dark ? #ffffff1f : #0000001f;
-    out property <color> composer: dark ? #262626 : #ffffff;
-    out property <color> warning: dark ? #ff8549 : #fb6a22;
-    out property <color> accent: #339cff;
-    out property <color> on-primary: dark ? #0d0d0d : #ffffff;
+    out property <color> surface: dark ? #262624 : #faf9f5;
+    out property <color> sidebar: dark ? #1f1e1d : #f5f4ed;
+    out property <color> fg: dark ? #faf9f5 : #141413;
+    out property <color> fg-secondary: dark ? #c2c0b6 : #3d3d3a;
+    out property <color> fg-tertiary: dark ? #9c9a92 : #73726c;
+    out property <color> border: dark ? #dedcd126 : #1f1e1d26;
+    out property <color> hover: dark ? #faf9f50f : #1f1e1d0f;
+    out property <color> pressed: dark ? #faf9f51a : #1f1e1d1a;
+    out property <color> composer: dark ? #30302e : #ffffff;
+    out property <color> bubble: dark ? #141413 : #f0eee6;
+    out property <color> warning: dark ? #e0a41a : #8f5a0e;
+    out property <color> brand: #d97757;
+    out property <color> brand-strong: #c6613f;
+    out property <color> accent: dark ? #6fa8e0 : #2c84db;
+    out property <color> on-primary: #ffffff;
     out property <length> radius-row: 8px;
-    out property <length> radius-composer: 22px;
+    out property <length> radius-composer: 20px;
+    out property <length> radius-bubble: 14px;
     out property <length> row-height: 32px;
     out property <length> titlebar-height: 36px;
     out property <length> composer-max-width: 768px;
+    out property <string> font-sans: "Segoe UI";
+    out property <string> font-serif: "Georgia";
 }
