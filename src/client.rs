@@ -1020,7 +1020,6 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
     }
 
     fn report_error(&mut self, message: &str) {
-        let message = &mask_emails(message);
         if is_auth_error(message) {
             (self.on_event)(Event::Status("認証が必要です (401)".into(), Level::Error));
         }
@@ -1154,7 +1153,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 let message = params.pointer("/error/message").and_then(Value::as_str).unwrap_or("error");
                 let will_retry = params.get("willRetry").and_then(Value::as_bool).unwrap_or(false);
                 if will_retry {
-                    (self.on_event)(Event::Status(mask_emails(message), Level::Warn));
+                    (self.on_event)(Event::Status(message.to_string(), Level::Warn));
                 } else {
                     self.report_error(message);
                     (self.on_event)(Event::TurnDone { interrupted: false });
@@ -1459,40 +1458,6 @@ pub fn parse_account(result: &Value) -> (bool, String) {
     }
 }
 
-/// Replace anything that looks like an e-mail address with `***`. Applied to every piece of
-/// server text that can reach the screen (error messages, status lines).
-pub fn mask_emails(text: &str) -> String {
-    let is_local = |c: char| c.is_alphanumeric() || "._%+-".contains(c);
-    let is_domain = |c: char| c.is_alphanumeric() || ".-".contains(c);
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] == '@' {
-            // the local part is already in `out`: cut it off again
-            let mut start = out.chars().count();
-            let out_chars: Vec<char> = out.chars().collect();
-            while start > 0 && is_local(out_chars[start - 1]) {
-                start -= 1;
-            }
-            let mut end = i + 1;
-            while end < chars.len() && is_domain(chars[end]) {
-                end += 1;
-            }
-            let domain: String = chars[i + 1..end].iter().collect();
-            if start < out_chars.len() && domain.contains('.') && !domain.starts_with('.') {
-                out = out_chars[..start].iter().collect();
-                out.push_str("***");
-                i = end;
-                continue;
-            }
-        }
-        out.push(chars[i]);
-        i += 1;
-    }
-    out
-}
-
 fn window_label(mins: Option<i64>) -> String {
     match mins {
         Some(m) if m >= 10_000 => "週".to_string(),
@@ -1628,15 +1593,6 @@ mod tests {
         assert_eq!(label, "pro");
         let no_plan = json!({ "account": { "type": "chatgpt", "email": "x@y.zz" } });
         assert_eq!(parse_account(&no_plan).1, "アカウント");
-    }
-
-    #[test]
-    fn emails_are_masked_in_server_text() {
-        assert_eq!(mask_emails("failed for a.b+c@mail.example.co.jp today"), "failed for *** today");
-        assert_eq!(mask_emails("x@y.zz and q@r.ss"), "*** and ***");
-        assert_eq!(mask_emails("no address @ here, user@host"), "no address @ here, user@host");
-        let m = mask_emails("unexpected status 401: account abc@def.gh not allowed");
-        assert!(!m.contains('@'));
     }
 
     #[test]

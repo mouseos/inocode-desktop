@@ -283,7 +283,7 @@ fn rebuild_projects(app: &AppWindow, state: &State) {
         let selected = t.id == state.active;
         groups.entry(name).or_insert_with(|| (t.cwd.clone(), Vec::new())).1.push(ChatItem {
             id: t.id.as_str().into(),
-            title: client::mask_emails(&t.title).into(),
+            title: t.title.as_str().into(),
             status: if selected && state.busy { 1 } else { 0 },
             selected,
             depth: 0,
@@ -382,7 +382,7 @@ fn start_discovery(app: &AppWindow, force: bool) {
 fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
     match event {
         Event::Status(text, level) => {
-            app.set_status(client::mask_emails(&text).into());
+            app.set_status(text.into());
             app.set_status_level(match level {
                 Level::Info => 0,
                 Level::Ok => 1,
@@ -529,7 +529,6 @@ fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             }
         }
         Event::Error(e) => {
-            let e = client::mask_emails(&e);
             // A model found only through version discovery is not verified with InoCode:
             // when its turn fails, say so as part of the error.
             let unverified = {
