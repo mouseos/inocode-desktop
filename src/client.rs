@@ -400,6 +400,35 @@ pub fn find_inocode(configured: &str) -> Result<std::path::PathBuf, String> {
     Err("inocode.exe が見つかりません。INOCODE_BIN を指定してください".to_string())
 }
 
+/// Version (x.y.z) reported by the installed official Codex CLI (`codex --version`), if any.
+fn official_codex_version() -> Option<String> {
+    let mut cmd;
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // The npm shim is a .cmd file, so go through cmd.exe.
+        cmd = Proc::new("cmd");
+        cmd.args(["/c", "codex", "--version"]).creation_flags(0x0800_0000);
+    }
+    #[cfg(not(windows))]
+    {
+        cmd = Proc::new("codex");
+        cmd.arg("--version");
+    }
+    let out = cmd.stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+    parse_codex_version(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// "codex-cli 0.155.0-alpha.16.4" -> "0.155.0"
+pub fn parse_codex_version(text: &str) -> Option<String> {
+    text.split_whitespace().find_map(|word| {
+        let whole = word.split(['-', '+']).next()?;
+        let parts: Vec<&str> = whole.split('.').collect();
+        (parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())))
+            .then(|| whole.to_string())
+    })
+}
+
 fn toml_string(s: &str) -> String {
     let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{escaped}\"")
@@ -413,6 +442,13 @@ fn open_stdio(program: &str) -> Result<Conn, String> {
     if let Ok(path) = std::env::var("INOCODE_MODEL_CATALOG") {
         if !path.is_empty() {
             cmd.arg("-c").arg(format!("model_catalog_json={}", toml_string(&path)));
+        }
+    }
+    // Present the version of the official Codex that is installed, so the backend offers the
+    // same models; INOCODE_CLIENT_VERSION in our own environment wins.
+    if std::env::var_os("INOCODE_CLIENT_VERSION").is_none() {
+        if let Some(v) = official_codex_version() {
+            cmd.env("INOCODE_CLIENT_VERSION", v);
         }
     }
     cmd.stdin(Stdio::piped())
@@ -1467,6 +1503,13 @@ mod tests {
         assert_eq!(p["approvalsReviewer"], "auto_review");
         assert_eq!(Perm::from_server("never", "dangerFullAccess", "user"), Perm::Full);
         assert_eq!(Perm::from_server("on-request", "workspaceWrite", "auto_review"), Perm::Guardian);
+    }
+
+    #[test]
+    fn codex_version_parse() {
+        assert_eq!(parse_codex_version("codex-cli 0.155.0-alpha.16.4
+").as_deref(), Some("0.155.0"));
+        assert_eq!(parse_codex_version("nothing here"), None);
     }
 
     #[test]
