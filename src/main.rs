@@ -52,12 +52,13 @@ fn effort_label(e: &str) -> String {
     .to_string()
 }
 
-/// Models offered in the picker: not hidden, usable with the current Daybreak choice,
-/// and never gpt-6-astra.
+/// Models offered in the picker, by the desktop client's rules: not hidden, and usable
+/// with the current Daybreak choice (a model that advertises access programs must offer
+/// "standard" when the choice is off, or a daybreak program when it is on).
 fn visible_models(st: &State) -> Vec<&ModelInfo> {
     st.models
         .iter()
-        .filter(|m| !m.hidden && !m.id.contains("gpt-6-astra") && m.usable(st.settings.daybreak))
+        .filter(|m| !m.hidden && m.usable(st.settings.daybreak))
         .collect()
 }
 
