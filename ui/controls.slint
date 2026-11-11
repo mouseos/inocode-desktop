@@ -1,0 +1,56 @@
+import { Theme } from "theme.slint";
+
+export component Chip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked;
+    height: 26px;
+    width: t.preferred-width + 20px;
+    border-radius: Theme.radius-row;
+    background: root.active ? Theme.fg : ta.has-hover ? Theme.pressed : Theme.selected;
+    t := Text {
+        text: root.label;
+        color: root.active ? Theme.surface : Theme.fg;
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component Field inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> secret: false;
+    callback accepted(string);
+    callback edited(string);
+    height: 30px;
+    border-radius: Theme.radius-row;
+    background: Theme.composer;
+    border-width: 1px;
+    border-color: ti.has-focus ? Theme.accent : Theme.border;
+    ti := TextInput {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        text <=> root.text;
+        font-size: 13px;
+        color: Theme.fg;
+        vertical-alignment: center;
+        single-line: true;
+        input-type: root.secret ? InputType.password : InputType.text;
+        accepted => { root.accepted(self.text); }
+        edited => { root.edited(self.text); }
+    }
+    if root.text == "" && ti.preedit-text == "" && !ti.has-focus: Text {
+        x: 10px;
+        width: parent.width - 18px;
+        height: parent.height;
+        text: root.placeholder;
+        color: Theme.fg-tertiary;
+        font-size: 13px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+

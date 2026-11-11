@@ -198,6 +198,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     crate::attach::register(app, handle);
     crate::panel_data::register(app, handle);
     crate::settings_page::register(app, handle);
+    crate::accounts_page::register(app, handle);
     crate::nav::register(app, handle);
     let weak = app.as_weak();
     app.global::<SidebarState>().on_open_menu(move |kind, id, x, y| {

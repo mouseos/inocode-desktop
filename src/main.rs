@@ -2,6 +2,7 @@
 
 mod chat_actions;
 mod client;
+mod accounts_page;
 mod attach;
 mod callbacks;
 mod discovery;

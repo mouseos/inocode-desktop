@@ -12,6 +12,7 @@ import { MenuOverlay } from "menus.slint";
 import { PaletteOverlay, PaletteState } from "palette.slint";
 import { PanelState } from "panel_data.slint";
 import { SettingsPage, SettingsPageState } from "settings_page.slint";
+import { AccountsState } from "accounts_page.slint";
 import { ShortcutState } from "shortcuts.slint";
 import { NavState } from "nav.slint";
 import { SidebarState } from "menus.slint";
@@ -25,6 +26,7 @@ export { MessageActions } from "chat_actions.slint";
 export { PromptState } from "prompts.slint";
 export { PanelState } from "panel_data.slint";
 export { SettingsPageState } from "settings_page.slint";
+export { AccountsState } from "accounts_page.slint";
 export { ShortcutState } from "shortcuts.slint";
 export { NavState } from "nav.slint";
 export { MetricsState } from "metrics.slint";
@@ -163,7 +165,7 @@ export component AppWindow inherits Window {
                     projects: AppState.projects;
                     user-name: AppState.account-label;
                     logged-in: AppState.logged-in;
-                    login => { AppState.login(); }
+                    login => { AccountsState.begin("chatgpt"); }
                     open-settings => { SettingsPageState.open-page(); }
                     new-chat-in(cwd) => { AppState.new-chat-in(cwd); }
                     new-chat => { AppState.new-chat(); }

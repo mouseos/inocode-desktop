@@ -200,12 +200,13 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             crate::attach::on_rpc(app, &tag, &result);
             crate::panel_data::on_rpc(app, &tag, &result);
             crate::settings_page::on_rpc(app, &tag, &result);
+            crate::accounts_page::on_rpc(app, &tag, &result);
             crate::sidebar::on_rpc(app, &tag, &result);
             crate::chat_actions::on_rpc(app, &tag, &result);
         }
         Event::Notify { method, params } => {
             crate::panel_data::on_notify(app, &method, &params);
-            crate::settings_page::on_notify(app, &method, &params);
+            crate::accounts_page::on_notify(app, &method, &params);
             if method == "inocode/accounts/switched" {
                 // One line in the chat: which account, and why (alias only).
                 let to = params.get("toAlias").and_then(|v| v.as_str()).unwrap_or("");

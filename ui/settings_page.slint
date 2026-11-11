@@ -1,7 +1,9 @@
 import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Switch } from "widgets.slint";
-import { InocodePage, AccountsPage } from "tabs/settings.slint";
+import { InocodePage } from "tabs/settings.slint";
+import { Chip, Field } from "controls.slint";
+import { AccountsView } from "accounts_page.slint";
 
 export struct NavItem {
     label: string,
@@ -101,60 +103,6 @@ export global SettingsPageState {
     callback switch-transport;
 }
 
-component Chip inherits Rectangle {
-    in property <string> label;
-    in property <bool> active;
-    callback clicked;
-    height: 26px;
-    width: t.preferred-width + 20px;
-    border-radius: Theme.radius-row;
-    background: root.active ? Theme.fg : ta.has-hover ? Theme.pressed : Theme.selected;
-    t := Text {
-        text: root.label;
-        color: root.active ? Theme.surface : Theme.fg;
-        font-size: 12px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
-}
-
-component Field inherits Rectangle {
-    in-out property <string> text;
-    in property <string> placeholder;
-    in property <bool> secret: false;
-    callback accepted(string);
-    callback edited(string);
-    height: 30px;
-    border-radius: Theme.radius-row;
-    background: Theme.composer;
-    border-width: 1px;
-    border-color: ti.has-focus ? Theme.accent : Theme.border;
-    ti := TextInput {
-        x: 8px;
-        width: parent.width - 16px;
-        height: parent.height;
-        text <=> root.text;
-        font-size: 13px;
-        color: Theme.fg;
-        vertical-alignment: center;
-        single-line: true;
-        input-type: root.secret ? InputType.password : InputType.text;
-        accepted => { root.accepted(self.text); }
-        edited => { root.edited(self.text); }
-    }
-    if root.text == "" && ti.preedit-text == "" && !ti.has-focus: Text {
-        x: 10px;
-        width: parent.width - 18px;
-        height: parent.height;
-        text: root.placeholder;
-        color: Theme.fg-tertiary;
-        font-size: 13px;
-        vertical-alignment: center;
-        overflow: elide;
-    }
-}
-
 component Rows inherits VerticalLayout {
     callback record-start(string);
     for r in SettingsPageState.rows: Rectangle {
@@ -227,62 +175,6 @@ component Rows inherits VerticalLayout {
             }
         }
     }
-}
-
-component SignInForm inherits VerticalLayout {
-    spacing: 8px;
-    Text { text: "ChatGPT のアカウントが無くても、次のどれかで使い始められます。"; color: Theme.fg-secondary; font-size: 13px; wrap: word-wrap; }
-    if SettingsPageState.providers.length > 1: HorizontalLayout {
-        spacing: 6px;
-        alignment: start;
-        for p[i] in SettingsPageState.providers: Chip {
-            label: p;
-            active: i == SettingsPageState.provider;
-            clicked => { SettingsPageState.pick-provider(i); }
-        }
-    }
-    HorizontalLayout {
-        spacing: 8px;
-        alignment: start;
-        if SettingsPageState.can-chatgpt: Chip { label: "ChatGPT でログイン"; clicked => { SettingsPageState.login-chatgpt(); } }
-        if SettingsPageState.can-claude: Chip { label: "Claude でログイン(サブスク)"; clicked => { SettingsPageState.login-claude("browser"); } }
-        if SettingsPageState.can-claude: Chip { label: "コードを貼り付けてログイン"; clicked => { SettingsPageState.login-claude("oauthCode"); } }
-        Chip { label: "プロバイダを追加"; clicked => { SettingsPageState.open-providers(); } }
-    }
-    if SettingsPageState.code-open: VerticalLayout {
-        spacing: 6px;
-        Text { text: "ブラウザで表示されたコードを貼り付けてください。"; color: Theme.fg-secondary; font-size: 12px; }
-        HorizontalLayout {
-            spacing: 8px;
-            Field {
-                horizontal-stretch: 1;
-                placeholder: "コード";
-                secret: !SettingsPageState.show-key;
-                text <=> SettingsPageState.code-value;
-                accepted(t) => { SettingsPageState.submit-code(); }
-            }
-            Chip { label: SettingsPageState.show-key ? "隠す" : "表示"; clicked => { SettingsPageState.show-key = !SettingsPageState.show-key; } }
-            Chip { label: "送信"; active: true; clicked => { SettingsPageState.submit-code(); } }
-        }
-    }
-    if SettingsPageState.can-key: VerticalLayout {
-        spacing: 8px;
-        Text { text: "API キーで使う"; color: Theme.fg; font-size: 14px; font-weight: 600; height: 32px; vertical-alignment: center; }
-        Field { placeholder: "別名(任意。入れるとアカウントプールに追加)"; text <=> SettingsPageState.key-alias; }
-        HorizontalLayout {
-            spacing: 8px;
-            Field {
-                horizontal-stretch: 1;
-                placeholder: "API キー";
-                secret: !SettingsPageState.show-key;
-                text <=> SettingsPageState.key-value;
-                accepted(t) => { SettingsPageState.login-key(); }
-            }
-            Chip { label: SettingsPageState.show-key ? "隠す" : "表示"; clicked => { SettingsPageState.show-key = !SettingsPageState.show-key; } }
-            Chip { label: "使う"; active: true; clicked => { SettingsPageState.login-key(); } }
-        }
-    }
-    if SettingsPageState.login-note != "": Text { text: SettingsPageState.login-note; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
 }
 
 component UsageCards inherits VerticalLayout {
@@ -434,30 +326,7 @@ export component SettingsPage inherits Rectangle {
                             InocodePage { vertical-stretch: 1; }
                         }
                     }
-                    if SettingsPageState.layout == 2: VerticalLayout {
-                        Text {
-                            text: "アカウントプール";
-                            color: Theme.fg;
-                            font-size: 20px;
-                            font-weight: 600;
-                            height: 64px;
-                            vertical-alignment: center;
-                            x: 40px;
-                        }
-                        AccountsPage { vertical-stretch: 1; }
-                    }
-                    if SettingsPageState.layout == 6: Flickable {
-                        content-height: sb.preferred-height;
-                        sb := VerticalLayout {
-                            padding: 24px;
-                            padding-left: 40px;
-                            padding-right: 40px;
-                            spacing: 8px;
-                            alignment: start;
-                            Text { text: SettingsPageState.title; color: Theme.fg; font-size: 20px; font-weight: 600; height: 40px; vertical-alignment: center; }
-                            SignInForm { }
-                        }
-                    }
+                    if SettingsPageState.layout == 2: AccountsView { }
                     if SettingsPageState.layout == 5: Flickable {
                         content-height: ub.preferred-height;
                         ub := VerticalLayout {

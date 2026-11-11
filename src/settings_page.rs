@@ -30,8 +30,6 @@ enum S {
     Skills,
     Mcp,
     Inocode,
-    Pool,
-    SignIn,
 }
 
 fn nav() -> Vec<(S, &'static str)> {
@@ -52,8 +50,6 @@ fn nav() -> Vec<(S, &'static str)> {
         (S::Mcp, "MCP サーバー"),
         (S::Head, "InoCode"),
         (S::Inocode, "InoCode"),
-        (S::Pool, "アカウントプール"),
-        (S::SignIn, "サインイン"),
     ]
 }
 
@@ -93,8 +89,6 @@ struct Data {
     pending_key: Option<String>,
     /// Providers from inocode/providers/list: (id, name, auth kinds, account count).
     providers: Vec<(String, String, Vec<String>, i64)>,
-    /// The provider chosen on the sign-in page.
-    provider: usize,
     /// The sign-in in progress (Claude): its id, to complete it with the pasted code.
     login_id: Option<String>,
 }
@@ -171,6 +165,17 @@ pub(crate) fn set_sidebar_open(open: bool) {
     remember(|p| p.sidebar_open = open);
 }
 
+/// Show the account page (used by the sign-in entries).
+pub(crate) fn show_accounts(app: &AppWindow) {
+    load(app, index_of(S::Account));
+}
+
+/// Show the model providers page.
+pub(crate) fn show_providers(app: &AppWindow) {
+    app.global::<SettingsPageState>().set_open(true);
+    load(app, index_of(S::Providers));
+}
+
 pub(crate) fn open(app: &AppWindow) {
     app.global::<SettingsPageState>().set_open(true);
     let cur = app.global::<SettingsPageState>().get_section();
@@ -211,7 +216,7 @@ fn open_file(path: &std::path::Path) {
 }
 
 /// Open a URL in the default browser (the sign-in page).
-fn open_url(url: &str) {
+pub(crate) fn open_url(url: &str) {
     // The mock mode answers with a fake address: do not open it.
     if std::env::var("INOCODE_GUI_MOCK").map(|v| !v.is_empty() && v != "0").unwrap_or(false) {
         return;
@@ -227,55 +232,13 @@ fn open_url(url: &str) {
     }
 }
 
-/// What the chosen provider offers on the sign-in page.
-fn apply_provider(app: &AppWindow) {
-    let s = app.global::<SettingsPageState>();
-    let (names, idx, kinds) = DATA.with(|d| {
-        let d = d.borrow();
-        let idx = d.provider.min(d.providers.len().saturating_sub(1));
-        (
-            d.providers.iter().map(|p| p.1.clone()).collect::<Vec<_>>(),
-            idx,
-            d.providers.get(idx).map(|p| p.2.clone()).unwrap_or_else(|| vec!["chatgpt".to_string(), "apiKey".to_string()]),
-        )
-    });
-    s.set_providers(strings(names));
-    s.set_provider(idx as i32);
-    s.set_can_chatgpt(kinds.iter().any(|k| k == "chatgpt"));
-    s.set_can_claude(kinds.iter().any(|k| k == "claudeOauth"));
-    s.set_can_key(kinds.iter().any(|k| k == "apiKey"));
-}
-
-fn selected_provider_id() -> String {
-    DATA.with(|d| {
-        let d = d.borrow();
-        d.providers.get(d.provider).map(|p| p.0.clone()).unwrap_or_else(|| "openai".to_string())
-    })
-}
-
-fn provider_name(id: &str) -> String {
+pub(crate) fn provider_name(id: &str) -> String {
     DATA.with(|d| d.borrow().providers.iter().find(|p| p.0 == id).map(|p| p.1.clone()))
         .unwrap_or_else(|| match id {
             "claude" => "Claude".to_string(),
             "openai" | "" => "OpenAI".to_string(),
             other => other.to_string(),
         })
-}
-
-/// A sign-in notification of the account pool (never shows tokens).
-pub(crate) fn on_notify(app: &AppWindow, method: &str, params: &Value) {
-    if method != "inocode/accounts/loginCompleted" {
-        return;
-    }
-    let s = app.global::<SettingsPageState>();
-    s.set_code_open(false);
-    DATA.with(|d| d.borrow_mut().login_id = None);
-    if params.get("success").and_then(Value::as_bool).unwrap_or(false) {
-        note(app, "ログインしました");
-    } else {
-        let e = params.get("error").and_then(Value::as_str).unwrap_or("");
-        note(app, &format!("ログインできませんでした{}", if e.is_empty() { String::new() } else { format!(": {e}") }));
-    }
 }
 
 fn shortcut_rows() -> Vec<SRow> {
@@ -358,7 +321,11 @@ fn load(app: &AppWindow, section: i32) {
             rpc("spage.usage.pool", "inocode/accounts/list", json!({ "refresh": true }));
             rpc("spage.usage.account", "account/read", json!({ "refreshToken": false }));
         }
-        S::Account => rpc("spage.account", "account/read", json!({ "refreshToken": false })),
+        S::Account => {
+            s.set_layout(2);
+            s.set_loading(false);
+            crate::accounts_page::open(app);
+        }
         S::Providers => {
             s.set_layout(3);
             rpc("spage.prov", "modelProvider/list", json!({}));
@@ -377,17 +344,6 @@ fn load(app: &AppWindow, section: i32) {
             s.set_layout(1);
             s.set_loading(false);
             app.global::<Tabs>().invoke_opened(4);
-        }
-        S::Pool => {
-            s.set_layout(2);
-            s.set_loading(false);
-            app.global::<Tabs>().invoke_opened(4);
-        }
-        S::SignIn => {
-            s.set_layout(6);
-            s.set_loading(false);
-            apply_provider(app);
-            rpc("spage.provlist", "inocode/providers/list", json!({}));
         }
     }
 }
@@ -445,13 +401,6 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         if let Some(app) = weak.upgrade() {
             app.global::<SettingsPageState>().set_open(true);
             load(&app, index_of(S::Providers));
-        }
-    });
-    let weak = app.as_weak();
-    st.on_open_signin(move || {
-        if let Some(app) = weak.upgrade() {
-            app.global::<SettingsPageState>().set_open(true);
-            load(&app, index_of(S::SignIn));
         }
     });
     let weak = app.as_weak();
@@ -531,72 +480,6 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         set_rows(&app, shortcut_rows());
     });
     let weak = app.as_weak();
-    st.on_pick_provider(move |i| {
-        if let Some(app) = weak.upgrade() {
-            DATA.with(|d| d.borrow_mut().provider = i.max(0) as usize);
-            app.global::<SettingsPageState>().set_code_open(false);
-            apply_provider(&app);
-        }
-    });
-    let weak = app.as_weak();
-    st.on_login_claude(move |method| {
-        let Some(app) = weak.upgrade() else { return };
-        let alias = app.global::<SettingsPageState>().get_key_alias().trim().to_string();
-        let alias = if alias.is_empty() { "Claude".to_string() } else { alias };
-        rpc(
-            "spage.claude.start",
-            "inocode/accounts/login/start",
-            json!({ "alias": alias, "provider": "claude", "method": method.as_str() }),
-        );
-        note(&app, "サインインを開始しています…");
-    });
-    let weak = app.as_weak();
-    st.on_submit_code(move || {
-        let Some(app) = weak.upgrade() else { return };
-        let s = app.global::<SettingsPageState>();
-        let code = s.get_code_value().trim().to_string();
-        let Some(login_id) = DATA.with(|d| d.borrow().login_id.clone()) else { return };
-        if code.is_empty() {
-            return;
-        }
-        // The code leaves the field at once.
-        s.set_code_value("".into());
-        rpc("spage.claude.complete", "inocode/accounts/login/complete", json!({ "loginId": login_id, "code": code }));
-        note(&app, "確認しています…");
-    });
-    let weak = app.as_weak();
-    st.on_login_chatgpt(move || {
-        if let Some(app) = weak.upgrade() {
-            app.global::<AppState>().invoke_login();
-            note(&app, "ブラウザでログインしてください");
-        }
-    });
-    let weak = app.as_weak();
-    st.on_login_key(move || {
-        let Some(app) = weak.upgrade() else { return };
-        let s = app.global::<SettingsPageState>();
-        let key = s.get_key_value().trim().to_string();
-        let alias = s.get_key_alias().trim().to_string();
-        if key.is_empty() {
-            note(&app, "API キーを入力してください");
-            return;
-        }
-        // The key leaves the field at once; it is never shown again.
-        s.set_key_value("".into());
-        let provider = selected_provider_id();
-        if provider != "openai" {
-            // Another provider's key always goes to the pool, with a name.
-            let alias = if alias.is_empty() { provider_name(&provider) } else { alias };
-            rpc("spage.addkey.other", "inocode/accounts/addApiKey", json!({ "alias": alias, "apiKey": key, "provider": provider }));
-        } else if alias.is_empty() {
-            rpc("spage.login.key", "account/login/start", json!({ "type": "apiKey", "apiKey": key }));
-        } else {
-            DATA.with(|d| d.borrow_mut().pending_key = Some(key.clone()));
-            rpc("spage.addkey", "inocode/accounts/addApiKey", json!({ "alias": alias, "apiKey": key }));
-        }
-        note(&app, "送信しています…");
-    });
-    let weak = app.as_weak();
     st.on_add_provider(move || {
         let Some(app) = weak.upgrade() else { return };
         let s = app.global::<SettingsPageState>();
@@ -662,8 +545,7 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                 "spage.login.key" | "spage.addkey.other" | "spage.claude.start" | "spage.claude.complete" => {
                     note(app, &format!("できませんでした: {e}"))
                 }
-                // The server has no provider list yet: OpenAI only.
-                "spage.provlist" => apply_provider(app),
+                "spage.provlist" => {}
                 t if t.ends_with(".write") || t == "spage.memory.reset" => {
                     app.global::<AppState>().set_status(format!("設定を変更できませんでした: {e}").into());
                     app.global::<AppState>().set_status_level(2);
@@ -766,7 +648,6 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                 .collect();
             DATA.with(|d| d.borrow_mut().providers = list.clone());
             match here {
-                Some(S::SignIn) => apply_provider(app),
                 Some(S::Providers) => {
                     // The providers the account pool signs in to, above the config providers.
                     let mut rows: Vec<SRow> = list
@@ -898,14 +779,18 @@ fn window_name(mins: Option<i64>) -> String {
     }
 }
 
+/// "3 時間 10 分" for a number of seconds.
+pub(crate) fn span(secs: i64) -> String {
+    let secs = secs.max(0);
+    let (d, h, m) = (secs / 86_400, (secs % 86_400) / 3600, (secs % 3600) / 60);
+    if d > 0 { format!("{d} 日 {h} 時間") } else if h > 0 { format!("{h} 時間 {m} 分") } else { format!("{m} 分") }
+}
+
 /// "あと 3 時間 10 分でリセット" until `resets_at` (Unix seconds).
-fn until(resets_at: Option<i64>) -> String {
+pub(crate) fn until(resets_at: Option<i64>) -> String {
     let Some(at) = resets_at else { return String::new() };
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
-    let secs = (at - now).max(0);
-    let (d, h, m) = (secs / 86_400, (secs % 86_400) / 3600, (secs % 3600) / 60);
-    let text = if d > 0 { format!("{d} 日 {h} 時間") } else if h > 0 { format!("{h} 時間 {m} 分") } else { format!("{m} 分") };
-    format!("あと {text} でリセット")
+    format!("あと {} でリセット", span(at - now))
 }
 
 fn bar(label: &str, w: &Value) -> Option<UsageBar> {
