@@ -1,0 +1,29 @@
+{
+  "method": "inocode/providers/list",
+  "request": {},
+  "response": {
+    "providers": [
+      {
+        "id": "openai",
+        "name": "OpenAI",
+        "wire": "responses",
+        "authKinds": [
+          "chatgpt",
+          "apiKey"
+        ],
+        "accountCount": 4
+      },
+      {
+        "id": "claude",
+        "name": "Claude",
+        "wire": "anthropic",
+        "authKinds": [
+          "claudeOauth",
+          "apiKey"
+        ],
+        "accountCount": 1
+      }
+    ]
+  },
+  "note": "サインイン / キー追加の入口の一覧。authKinds の各種類で、GUI は追加の手順を出し分ける(chatgpt: login/start、claudeOauth: login/start(provider: claude)、apiKey: addApiKey)。モデルの一覧は model/list。"
+}

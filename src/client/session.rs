@@ -62,8 +62,8 @@ pub(super) fn supervise(mut cfg: Config, rx: Receiver<Command>, on_event: impl F
                         }
                         Ok(Command::Quit) => return,
                         Ok(Command::Prompt(_)) => on_event(Event::Error("未接続のため送信できません".into())),
-                        Ok(Command::Rpc { tag, method, .. }) => {
-                            if !mock_rpc(&on_event, &tag, &method) {
+                        Ok(Command::Rpc { tag, method, params }) => {
+                            if !mock_rpc(&on_event, &tag, &method, &params) {
                                 on_event(Event::Rpc { tag, result: Err("未接続です".into()) });
                             }
                         }
@@ -222,7 +222,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             }
             Command::Quit => return Ok(Some(End::Quit)),
             Command::Rpc { tag, method, params } => {
-                if mock_rpc(self.on_event, &tag, &method) {
+                if mock_rpc(self.on_event, &tag, &method, &params) {
                     return Ok(None);
                 }
                 let id = self.next_id;

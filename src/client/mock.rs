@@ -15,11 +15,14 @@ pub fn enabled() -> bool {
 }
 
 /// Answers `inocode/*` calls in mock mode. Returns false when the request is not mocked.
-pub fn mock_rpc(on_event: &impl Fn(Event), tag: &str, method: &str) -> bool {
+pub fn mock_rpc(on_event: &impl Fn(Event), tag: &str, method: &str, params: &Value) -> bool {
     if !enabled() || !method.starts_with("inocode/") {
         return false;
     }
-    let result = fixture(method);
+    // A request for another provider uses the fixture with that provider as a suffix when there is one
+    // (accounts-login-start-claude.json).
+    let variant = params.get("provider").and_then(Value::as_str).filter(|p| *p != "openai");
+    let result = variant.and_then(|v| fixture_named(method, Some(v))).unwrap_or_else(|| fixture(method));
     on_event(Event::Rpc { tag: tag.to_string(), result });
     true
 }
@@ -48,36 +51,47 @@ fn fixture_dir() -> Option<PathBuf> {
     None
 }
 
-fn candidates(method: &str) -> Vec<PathBuf> {
+fn candidates(method: &str, suffix: Option<&str>) -> Vec<PathBuf> {
+    let tail = suffix.map(|s| format!("-{s}")).unwrap_or_default();
     let bare = method.strip_prefix("inocode/").unwrap_or(method);
     let mut names = Vec::new();
     for m in [method, bare] {
-        names.push(PathBuf::from(format!("{m}.json")));
+        names.push(PathBuf::from(format!("{m}{tail}.json")));
         for sep in [".", "_", "-"] {
-            names.push(PathBuf::from(format!("{}.json", m.replace('/', sep))));
+            names.push(PathBuf::from(format!("{}{tail}.json", m.replace('/', sep))));
         }
     }
     names
 }
 
 fn fixture(method: &str) -> Result<Value, String> {
-    let dir = fixture_dir().ok_or("モック: ref/contract-fixtures が見つかりません")?;
-    for name in candidates(method) {
+    match fixture_named(method, None) {
+        Some(r) => r,
+        None => Err(format!("モック: {method} のフィクスチャがありません")),
+    }
+}
+
+/// The fixture of `method` (with the provider suffix when given); None when there is no such file.
+fn fixture_named(method: &str, suffix: Option<&str>) -> Option<Result<Value, String>> {
+    let dir = fixture_dir()?;
+    for name in candidates(method, suffix) {
         let path = dir.join(&name);
         if let Ok(text) = std::fs::read_to_string(&path) {
-            let value: Value = serde_json::from_str(&text)
-                .map_err(|e| format!("モック: {} を解析できません: {e}", path.display()))?;
-            return Ok(match value {
+            let value: Value = match serde_json::from_str(&text) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(format!("モック: {} を解析できません: {e}", path.display()))),
+            };
+            return Some(Ok(match value {
                 // ref/contract-fixtures files are {method, request, response, note}: the response is the result.
                 Value::Object(mut o) if o.contains_key("response") && o.contains_key("method") => {
                     o.remove("response").unwrap()
                 }
                 Value::Object(mut o) if o.len() == 1 && o.contains_key("result") => o.remove("result").unwrap(),
                 other => other,
-            });
+            }));
         }
     }
-    Err(format!("モック: {method} のフィクスチャがありません ({})", dir.display()))
+    None
 }
 
 #[cfg(test)]
@@ -86,7 +100,7 @@ mod tests {
 
     #[test]
     fn candidate_names_include_area_dash_name() {
-        let names: Vec<String> = candidates("inocode/knowledge/list").iter().map(|p| p.display().to_string()).collect();
+        let names: Vec<String> = candidates("inocode/knowledge/list", None).iter().map(|p| p.display().to_string()).collect();
         assert!(names.contains(&"knowledge-list.json".to_string()));
     }
 

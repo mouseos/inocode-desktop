@@ -205,6 +205,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         }
         Event::Notify { method, params } => {
             crate::panel_data::on_notify(app, &method, &params);
+            crate::settings_page::on_notify(app, &method, &params);
             if method == "inocode/accounts/switched" {
                 // One line in the chat: which account, and why (alias only).
                 let to = params.get("toAlias").and_then(|v| v.as_str()).unwrap_or("");

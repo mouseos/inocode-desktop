@@ -16,6 +16,8 @@ export struct UsageBar {
 }
 
 export struct UsageAccount {
+    // Human name of the provider (OpenAI, Claude); the cards are grouped by it.
+    provider: string,
     alias: string,
     email: string,
     plan: string,
@@ -55,6 +57,15 @@ export global SettingsPageState {
     in-out property <string> key-value;
     in-out property <bool> show-key: false;
     in property <string> login-note;
+    // Sign-in: the providers the server knows, the chosen one and what it offers
+    in property <[string]> providers;
+    in property <int> provider: 0;
+    in property <bool> can-chatgpt: true;
+    in property <bool> can-claude: false;
+    in property <bool> can-key: true;
+    // The code Anthropic shows after a browser sign-in (code#state)
+    in-out property <bool> code-open: false;
+    in-out property <string> code-value;
     // New model provider
     in-out property <string> prov-name;
     in-out property <string> prov-url;
@@ -78,6 +89,10 @@ export global SettingsPageState {
     // id, lower-case key text, ctrl, shift, alt
     callback record(string, string, bool, bool, bool);
     callback login-chatgpt;
+    callback pick-provider(int);
+    // method: "browser" or "oauthCode"
+    callback login-claude(string);
+    callback submit-code;
     callback login-key;
     callback add-provider;
     callback save-raw;
@@ -217,32 +232,72 @@ component Rows inherits VerticalLayout {
 component SignInForm inherits VerticalLayout {
     spacing: 8px;
     Text { text: "ChatGPT のアカウントが無くても、次のどれかで使い始められます。"; color: Theme.fg-secondary; font-size: 13px; wrap: word-wrap; }
+    if SettingsPageState.providers.length > 1: HorizontalLayout {
+        spacing: 6px;
+        alignment: start;
+        for p[i] in SettingsPageState.providers: Chip {
+            label: p;
+            active: i == SettingsPageState.provider;
+            clicked => { SettingsPageState.pick-provider(i); }
+        }
+    }
     HorizontalLayout {
         spacing: 8px;
         alignment: start;
-        Chip { label: "ChatGPT でログイン"; clicked => { SettingsPageState.login-chatgpt(); } }
+        if SettingsPageState.can-chatgpt: Chip { label: "ChatGPT でログイン"; clicked => { SettingsPageState.login-chatgpt(); } }
+        if SettingsPageState.can-claude: Chip { label: "Claude でログイン(サブスク)"; clicked => { SettingsPageState.login-claude("browser"); } }
+        if SettingsPageState.can-claude: Chip { label: "コードを貼り付けてログイン"; clicked => { SettingsPageState.login-claude("oauthCode"); } }
         Chip { label: "プロバイダを追加"; clicked => { SettingsPageState.open-providers(); } }
     }
-    Text { text: "OpenAI の API キーで使う"; color: Theme.fg; font-size: 14px; font-weight: 600; height: 32px; vertical-alignment: center; }
-    Field { placeholder: "別名(任意。入れるとアカウントプールに追加)"; text <=> SettingsPageState.key-alias; }
-    HorizontalLayout {
-        spacing: 8px;
-        Field {
-            horizontal-stretch: 1;
-            placeholder: "API キー";
-            secret: !SettingsPageState.show-key;
-            text <=> SettingsPageState.key-value;
-            accepted(t) => { SettingsPageState.login-key(); }
+    if SettingsPageState.code-open: VerticalLayout {
+        spacing: 6px;
+        Text { text: "ブラウザで表示されたコードを貼り付けてください。"; color: Theme.fg-secondary; font-size: 12px; }
+        HorizontalLayout {
+            spacing: 8px;
+            Field {
+                horizontal-stretch: 1;
+                placeholder: "コード";
+                secret: !SettingsPageState.show-key;
+                text <=> SettingsPageState.code-value;
+                accepted(t) => { SettingsPageState.submit-code(); }
+            }
+            Chip { label: SettingsPageState.show-key ? "隠す" : "表示"; clicked => { SettingsPageState.show-key = !SettingsPageState.show-key; } }
+            Chip { label: "送信"; active: true; clicked => { SettingsPageState.submit-code(); } }
         }
-        Chip { label: SettingsPageState.show-key ? "隠す" : "表示"; clicked => { SettingsPageState.show-key = !SettingsPageState.show-key; } }
-        Chip { label: "使う"; active: true; clicked => { SettingsPageState.login-key(); } }
+    }
+    if SettingsPageState.can-key: VerticalLayout {
+        spacing: 8px;
+        Text { text: "API キーで使う"; color: Theme.fg; font-size: 14px; font-weight: 600; height: 32px; vertical-alignment: center; }
+        Field { placeholder: "別名(任意。入れるとアカウントプールに追加)"; text <=> SettingsPageState.key-alias; }
+        HorizontalLayout {
+            spacing: 8px;
+            Field {
+                horizontal-stretch: 1;
+                placeholder: "API キー";
+                secret: !SettingsPageState.show-key;
+                text <=> SettingsPageState.key-value;
+                accepted(t) => { SettingsPageState.login-key(); }
+            }
+            Chip { label: SettingsPageState.show-key ? "隠す" : "表示"; clicked => { SettingsPageState.show-key = !SettingsPageState.show-key; } }
+            Chip { label: "使う"; active: true; clicked => { SettingsPageState.login-key(); } }
+        }
     }
     if SettingsPageState.login-note != "": Text { text: SettingsPageState.login-note; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
 }
 
 component UsageCards inherits VerticalLayout {
     spacing: 12px;
-    for a in SettingsPageState.usage: Rectangle {
+    for a[ai] in SettingsPageState.usage: VerticalLayout {
+        spacing: 8px;
+        if ai == 0 || SettingsPageState.usage[ai - 1].provider != a.provider: Text {
+            text: a.provider;
+            color: Theme.fg-secondary;
+            font-size: 12px;
+            font-weight: 600;
+            height: 24px;
+            vertical-alignment: bottom;
+        }
+        Rectangle {
         height: uc.preferred-height + 24px;
         border-radius: Theme.radius-row + 2px;
         background: Theme.bubble;
@@ -286,6 +341,7 @@ component UsageCards inherits VerticalLayout {
                 Text { text: "リセット券"; color: Theme.fg; font-size: 12px; horizontal-stretch: 1; }
                 Text { text: a.banked; color: Theme.fg-secondary; font-size: 12px; }
             }
+        }
         }
     }
 }

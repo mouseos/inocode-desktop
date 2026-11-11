@@ -87,7 +87,13 @@ fn account_row(a: &Value, now: i64) -> AccountRow {
     AccountRow {
         id: s(a, "id").into(),
         alias: s(a, "alias").into(),
-        kind_label: if s(a, "kind") == "apiKey" { "API キー" } else { "ChatGPT" }.into(),
+        kind_label: match (s(a, "provider"), s(a, "kind")) {
+            ("claude", "apiKey") => "Claude · API キー",
+            ("claude", _) => "Claude · サブスク",
+            (_, "apiKey") => "API キー",
+            _ => "ChatGPT",
+        }
+        .into(),
         plan: s(a, "plan").into(),
         has_usage: usage.is_some(),
         five_pct,
@@ -155,7 +161,12 @@ fn open_url(url: &str) {
 
 fn render(app: &AppWindow) {
     let now = now_secs();
-    let rows: Vec<AccountRow> = A.with(|a| a.borrow().accounts.iter().map(|x| account_row(x, now)).collect());
+    // Grouped by provider (the order inside a provider is kept).
+    let rows: Vec<AccountRow> = A.with(|a| {
+        let mut list: Vec<Value> = a.borrow().accounts.clone();
+        list.sort_by_key(|x| s(x, "provider") == "claude");
+        list.iter().map(|x| account_row(x, now)).collect()
+    });
     app.global::<SettingsTabState>().set_accounts(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 

@@ -1,0 +1,9 @@
+{
+  "method": "inocode/accounts/login/complete",
+  "request": {
+    "loginId": "7c2e91aa-0000-4000-8000-000000000000",
+    "code": "FAKECODE#FAKESTATE"
+  },
+  "response": {},
+  "note": "code は、code#state、最後のリダイレクトの URL、コードだけ、のいずれでもよい。成功すると通知 inocode/accounts/loginCompleted と inocode/accounts/updated が出る。失敗は JSON-RPC のエラー(資格情報は含めない)。"
+}
