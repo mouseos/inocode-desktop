@@ -159,6 +159,12 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
     }
 
     pub(super) fn request(&mut self, method: &str, params: Value, kind: Pending) -> Result<(), String> {
+        // The one place every turn passes: without a chosen model the server's own default (the
+        // costly one) would be used, so no turn starts.
+        if method == "turn/start" && params.get("model").and_then(Value::as_str).map_or(true, str::is_empty) {
+            (self.on_event)(Event::Error("モデルを選んでください".into()));
+            return Ok(());
+        }
         let id = self.next_id;
         self.next_id += 1;
         self.pending.insert(id, kind);
