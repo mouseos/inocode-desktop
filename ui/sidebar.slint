@@ -116,8 +116,7 @@ export component Sidebar inherits Rectangle {
 
         NavRow { glyph: Glyph.add; label: "新規作成"; clicked => { root.new-chat(); } }
         NavRow { glyph: Glyph.search; label: "検索"; clicked => { PaletteState.open = true; } }
-        NavRow { glyph: Glyph.category; label: "Artifacts"; action-glyph: Glyph.add; }
-        NavRow { glyph: Glyph.work; label: "カスタマイズ"; }
+        NavRow { glyph: Glyph.work; label: "カスタマイズ"; clicked => { SidebarState.open-customize(); } }
         more := NavRow {
             glyph: Glyph.more-horiz;
             label: "その他";

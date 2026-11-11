@@ -169,14 +169,14 @@ pub(crate) fn app_menu(app: &AppWindow) -> Vec<MenuItem> {
     let maximized = app.window().is_maximized();
     vec![
         head("ファイル"),
-        it("app:new", "新規セッション", "\u{e145}"),
-        it("app:palette", "コマンドパレット", "\u{e8b6}"),
-        it("app:settings", "設定", "\u{e8b8}"),
-        it("app:quit", "終了", "\u{e5cd}"),
+        it("app:new", "新規セッション", ""),
+        it("app:palette", "コマンドパレット", ""),
+        it("app:settings", "設定", ""),
+        it("app:quit", "終了", ""),
         menus::separator(),
         head("表示"),
-        it("app:sidebar", "サイドバーを開閉", "\u{f114}"),
-        it("app:panel", "右パネルを開閉", "\u{e241}"),
+        it("app:sidebar", "サイドバーを開閉", ""),
+        it("app:panel", "右パネルを開閉", ""),
         it("app:fullscreen", if fullscreen { "全画面を終了" } else { "全画面" }, ""),
         menus::separator(),
         head("ウィンドウ"),
@@ -203,10 +203,7 @@ pub(crate) fn menu_pick(app: &AppWindow, action: &str) -> bool {
         "fullscreen" => app.window().set_fullscreen(!app.window().is_fullscreen()),
         "min" => app.window().set_minimized(true),
         "max" => app.window().set_maximized(!app.window().is_maximized()),
-        "about" => {
-            app.global::<AppState>().set_status(format!("InoCode Desktop {}", env!("CARGO_PKG_VERSION")).into());
-            app.global::<AppState>().set_status_level(0);
-        }
+        "about" => crate::sidebar::show_info(app, "InoCode Desktop", &format!("バージョン {}", env!("CARGO_PKG_VERSION"))),
         t if t.starts_with("tab:") => {
             let i: i32 = t[4..].parse().unwrap_or(0);
             app.global::<SettingsPageState>().set_open(false);

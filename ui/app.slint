@@ -143,9 +143,6 @@ export component AppWindow inherits Window {
                         selected: root.panel-open;
                         clicked => { root.panel-open = !root.panel-open; }
                     }
-                    if Tabs.current == 0: IconButton { glyph: Glyph.terminal; }
-                    if Tabs.current == 0: IconButton { glyph: Glyph.language; }
-                    if Tabs.current == 0: IconButton { glyph: Glyph.folder; }
                     if Tabs.current == 0: IconButton {
                         glyph: Glyph.more-horiz;
                         clicked => { SidebarState.open-menu("head-more", PanelState.thread-id, self.absolute-position.x - 180px, self.absolute-position.y + self.height); }

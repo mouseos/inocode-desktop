@@ -112,6 +112,13 @@ pub(crate) fn init(app: &AppWindow) {
     PREFS.with(|p| *p.borrow_mut() = prefs);
 }
 
+/// The "カスタマイズ" row: the skills page of the settings.
+pub(crate) fn open_customize(app: &AppWindow) {
+    let idx = sections().iter().position(|(s, _)| *s == S::Skills).unwrap_or(0);
+    app.global::<SettingsPageState>().set_open(true);
+    load(app, idx as i32);
+}
+
 pub(crate) fn open(app: &AppWindow) {
     app.global::<SettingsPageState>().set_open(true);
     load(app, app.global::<SettingsPageState>().get_section());

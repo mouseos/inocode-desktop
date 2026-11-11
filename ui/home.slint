@@ -10,28 +10,6 @@ import { SettingsPageState } from "settings_page.slint";
 import { AttachState, AttachChips, SuggestList } from "attach.slint";
 import { PromptState, QuestionCard, QueueList, ErrorBanner } from "prompts.slint";
 
-// InoCode mark: a ring with a dot, drawn as vector paths.
-component Logo inherits Rectangle {
-    width: 40px;
-    height: 40px;
-    Path {
-        width: parent.width;
-        height: parent.height;
-        viewbox-width: 40;
-        viewbox-height: 40;
-        commands: "M20 4 a16 16 0 1 0 0.001 0 Z";
-        stroke: Theme.brand;
-        stroke-width: 3px;
-        fill: transparent;
-    }
-    Rectangle {
-        width: 8px;
-        height: 8px;
-        border-radius: 4px;
-        background: Theme.brand;
-    }
-}
-
 component ApprovalButton inherits Rectangle {
     in property <string> label;
     in property <bool> primary: false;
@@ -226,7 +204,6 @@ component Composer inherits VerticalLayout {
                         pick-default => { root.pick-default(); }
                         reset => { root.reset-model(); }
                     }
-                    if root.text == "" && !root.busy: IconButton { glyph: Glyph.mic; box-size: 28px; icon-size: 18px; y: 1px; }
                     if root.text == "" && root.busy: Rectangle {
                         width: 28px;
                         height: 28px;
@@ -263,7 +240,6 @@ component ActionRow inherits HorizontalLayout {
         running: root.copied;
         triggered => { root.copied = false; }
     }
-    if root.user: Icon { width: 18px; text: Glyph.done-all; font-size: 14px; color: Theme.fg-tertiary; }
     IconButton {
         glyph: root.copied ? "\u{e5ca}" : Glyph.copy;
         box-size: 24px;
@@ -276,8 +252,6 @@ component ActionRow inherits HorizontalLayout {
     if root.user: IconButton { glyph: Glyph.edit-note; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("edit", root.index); } }
     if root.user: IconButton { glyph: Glyph.replay; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("rewind", root.index); } }
     if !root.user: IconButton { glyph: Glyph.branch; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("fork", root.index); } }
-    IconButton { glyph: Glyph.share; box-size: 24px; icon-size: 14px; }
-    if !root.user: IconButton { glyph: Glyph.volume; box-size: 24px; icon-size: 14px; }
 }
 
 component ChatView inherits Rectangle {
@@ -373,7 +347,6 @@ export component Home inherits Rectangle {
                 if !root.chat-active: HorizontalLayout {
                     alignment: center;
                     spacing: 10px;
-                    Logo { width: 28px; height: 28px; }
                     Text {
                         text: "こんにちは、何を作りましょうか？";
                         font-size: 30px;

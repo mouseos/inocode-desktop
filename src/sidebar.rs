@@ -17,6 +17,8 @@ const PINNED: &str = "Pinned";
 enum Confirm {
     /// A request to send when accepted: (tag, method).
     Request(&'static str, &'static str),
+    /// Information only.
+    Info,
     Archive(String),
     Delete(String),
     Logout,
@@ -345,12 +347,19 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
                 rpc(&h, format!("chat.archive|{id}"), "thread/archive", json!({ "threadId": id }))
             }
             Some(Confirm::Delete(id)) => rpc(&h, format!("chat.delete|{id}"), "thread/delete", json!({ "threadId": id })),
+            Some(Confirm::Info) => {}
             Some(Confirm::Request(tag, method)) => rpc(&h, tag.to_string(), method, json!({})),
             Some(Confirm::Logout) => rpc(&h, "chat.logout".into(), "account/logout", Value::Null),
             None => {}
         }
     });
     app.global::<SidebarState>().on_load_more(load_more);
+    let weak = app.as_weak();
+    app.global::<SidebarState>().on_open_customize(move || {
+        if let Some(app) = weak.upgrade() {
+            crate::settings_page::open_customize(&app);
+        }
+    });
     let weak = app.as_weak();
     app.global::<SidebarState>().on_cancel_confirm(move || {
         if let Some(app) = weak.upgrade() {
@@ -525,4 +534,9 @@ pub(crate) fn on_notify(method: &str) {
 /// Ask for confirmation, then send `method` with no parameters (used by the settings page).
 pub(crate) fn ask_request(app: &AppWindow, tag: &'static str, method: &'static str, title: &str, body: &str, label: &str) {
     confirm(app, Confirm::Request(tag, method), title, body, label, true);
+}
+
+/// A message with one button (the version dialog).
+pub(crate) fn show_info(app: &AppWindow, title: &str, body: &str) {
+    confirm(app, Confirm::Info, title, body, "閉じる", false);
 }
