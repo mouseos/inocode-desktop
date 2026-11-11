@@ -22,6 +22,8 @@ struct Data {
     auth_url: String,
     /// The API key kept while the pool answers (fallback to the plain login).
     pending_key: Option<String>,
+    /// The operation id of a credit use that got no answer (resent as it is: never used twice).
+    credit_op: Option<String>,
     /// The accounts there were when the sign-in started, and the checks made since (a new one means done).
     ids_at_start: Vec<String>,
     poll_ticks: u32,
@@ -768,7 +770,11 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         if let Some(app) = weak.upgrade() {
             app.global::<AccountsState>().set_credit_result("".into());
         }
-        rpc("acct.credit", "inocode/accounts/resetCredit/consume", json!({ "id": id.to_string() }));
+        let mut p = json!({ "id": id.to_string() });
+        if let Some(op) = DATA.with(|d| d.borrow_mut().credit_op.take()) {
+            p["operationId"] = json!(op);
+        }
+        rpc("acct.credit", "inocode/accounts/resetCredit/consume", p);
     });
     let weak = app.as_weak();
     st.on_make_default(move || {
@@ -924,8 +930,30 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
         }
         "acct.act" => refresh(false),
         "acct.credit" => {
-            st.set_credit_result("リセット券を使いました。使用量を更新しています".into());
-            refresh(true);
+            if v.get("ok").and_then(Value::as_bool).unwrap_or(true) {
+                DATA.with(|d| d.borrow_mut().credit_op = None);
+                st.set_credit_result("リセット券を使いました。使用量を更新しています".into());
+                refresh(true);
+            } else {
+                let f = v.get("failure").cloned().unwrap_or(Value::Null);
+                let retry = f.get("retryable").and_then(Value::as_bool).unwrap_or(false);
+                DATA.with(|d| d.borrow_mut().credit_op = if retry { v.get("operationId").and_then(Value::as_str).map(str::to_string) } else { None });
+                let why = match s(&f, "reason") {
+                    "notUsable" => "いまは使えません".to_string(),
+                    "expired" => "期限が切れています".to_string(),
+                    "cooldown" => "しばらく使えません".to_string(),
+                    "alreadyUsed" => "すでに使われています".to_string(),
+                    "networkError" => "通信できませんでした。もう一度試せます".to_string(),
+                    "authFailed" => "ログインが必要です。ログインし直してください".to_string(),
+                    "rateLimited" => "しばらくしてから、もう一度試してください".to_string(),
+                    "inProgress" => "処理中です".to_string(),
+                    "unsupported" => "このアカウントでは使えません".to_string(),
+                    "journalError" => "記録できなかったので、使われていない可能性があります。使用量を確認してください".to_string(),
+                    _ if !s(&f, "detail").is_empty() => crate::errmsg::short(s(&f, "detail")),
+                    _ => "使えませんでした".to_string(),
+                };
+                st.set_credit_result(format!("リセット券を使えませんでした: {why}").into());
+            }
         }
         "acct.poll" => {
             let list = v.get("accounts").and_then(Value::as_array).cloned().unwrap_or_default();

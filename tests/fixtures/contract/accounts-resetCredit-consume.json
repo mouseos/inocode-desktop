@@ -1,8 +1,326 @@
 {
-  "method": "inocode/accounts/resetCredit/consume",
+  "_comment": "inocode/accounts/resetCredit/consume. Params: {id, grantId?, operationId?}. Responses: success; and failures (each is a normal result with ok:false, not a JSON-RPC error).",
   "request": {
-    "id": "claude-5d2a7e0b91c3f4a8"
+    "method": "inocode/accounts/resetCredit/consume",
+    "params": {
+      "id": "claude-5d2a7e0b91c3f4a8",
+      "grantId": "grant_1"
+    }
   },
-  "response": {},
-  "note": "モックの仮の応答。契約(cli-account-pool が docs/16 に追記)ができたら、その形に合わせる。"
+  "responseOk": {
+    "ok": true,
+    "code": "reset",
+    "replayed": false,
+    "operationId": "01927f3e-8a52-7c10-9d3b-6a1f0c2e4b77",
+    "grantId": "grant_1",
+    "failure": null,
+    "usage": {
+      "fiveHour": {
+        "usedPercent": 0.0,
+        "windowMinutes": 300,
+        "resetsAt": 1794408000
+      },
+      "weekly": {
+        "usedPercent": 0.0,
+        "windowMinutes": 10080,
+        "resetsAt": 1794994800
+      },
+      "updatedAt": 1794390100,
+      "resetCredit": {
+        "eligible": true,
+        "atLimit": false,
+        "resetsLeft": 0,
+        "resetsTotal": 2,
+        "usableNow": false,
+        "endsAt": null,
+        "cooldownUntil": null,
+        "grants": [
+          {
+            "id": "grant_1",
+            "label": "Bonus reset",
+            "resetsLeft": 0,
+            "resetsTotal": 2,
+            "endsAt": 1796083200,
+            "paused": false,
+            "usableNow": false,
+            "clears": [
+              "five_hour",
+              "seven_day"
+            ]
+          }
+        ]
+      }
+    },
+    "resetCredit": {
+      "eligible": true,
+      "atLimit": false,
+      "resetsLeft": 0,
+      "resetsTotal": 2,
+      "usableNow": false,
+      "endsAt": null,
+      "cooldownUntil": null,
+      "grants": [
+        {
+          "id": "grant_1",
+          "label": "Bonus reset",
+          "resetsLeft": 0,
+          "resetsTotal": 2,
+          "endsAt": 1796083200,
+          "paused": false,
+          "usableNow": false,
+          "clears": [
+            "five_hour",
+            "seven_day"
+          ]
+        }
+      ]
+    }
+  },
+  "responseNotUsable": {
+    "ok": false,
+    "code": null,
+    "replayed": false,
+    "operationId": "01927f3e-8a52-7c10-9d3b-6a1f0c2e4b78",
+    "grantId": null,
+    "failure": {
+      "reason": "notUsable",
+      "detail": "not_limited",
+      "retryable": false
+    },
+    "usage": {
+      "fiveHour": {
+        "usedPercent": 0.0,
+        "windowMinutes": 300,
+        "resetsAt": 1794408000
+      },
+      "weekly": {
+        "usedPercent": 0.0,
+        "windowMinutes": 10080,
+        "resetsAt": 1794994800
+      },
+      "updatedAt": 1794390100,
+      "resetCredit": {
+        "eligible": true,
+        "atLimit": false,
+        "resetsLeft": 0,
+        "resetsTotal": 2,
+        "usableNow": false,
+        "endsAt": null,
+        "cooldownUntil": null,
+        "grants": [
+          {
+            "id": "grant_1",
+            "label": "Bonus reset",
+            "resetsLeft": 0,
+            "resetsTotal": 2,
+            "endsAt": 1796083200,
+            "paused": false,
+            "usableNow": false,
+            "clears": [
+              "five_hour",
+              "seven_day"
+            ]
+          }
+        ]
+      }
+    },
+    "resetCredit": {
+      "eligible": true,
+      "atLimit": false,
+      "resetsLeft": 0,
+      "resetsTotal": 2,
+      "usableNow": false,
+      "endsAt": null,
+      "cooldownUntil": null,
+      "grants": [
+        {
+          "id": "grant_1",
+          "label": "Bonus reset",
+          "resetsLeft": 0,
+          "resetsTotal": 2,
+          "endsAt": 1796083200,
+          "paused": false,
+          "usableNow": false,
+          "clears": [
+            "five_hour",
+            "seven_day"
+          ]
+        }
+      ]
+    }
+  },
+  "responseExpired": {
+    "ok": false,
+    "code": null,
+    "replayed": false,
+    "operationId": "01927f3e-8a52-7c10-9d3b-6a1f0c2e4b79",
+    "grantId": null,
+    "failure": {
+      "reason": "expired",
+      "detail": "not_usable",
+      "retryable": false
+    },
+    "usage": null,
+    "resetCredit": null
+  },
+  "responseCooldown": {
+    "ok": false,
+    "code": "cooldown",
+    "replayed": false,
+    "operationId": "01927f3e-8a52-7c10-9d3b-6a1f0c2e4b7a",
+    "grantId": "grant_1",
+    "failure": {
+      "reason": "cooldown",
+      "detail": null,
+      "retryable": false
+    },
+    "usage": {
+      "fiveHour": {
+        "usedPercent": 0.0,
+        "windowMinutes": 300,
+        "resetsAt": 1794408000
+      },
+      "weekly": {
+        "usedPercent": 0.0,
+        "windowMinutes": 10080,
+        "resetsAt": 1794994800
+      },
+      "updatedAt": 1794390100,
+      "resetCredit": {
+        "eligible": true,
+        "atLimit": false,
+        "resetsLeft": 0,
+        "resetsTotal": 2,
+        "usableNow": false,
+        "endsAt": null,
+        "cooldownUntil": null,
+        "grants": [
+          {
+            "id": "grant_1",
+            "label": "Bonus reset",
+            "resetsLeft": 0,
+            "resetsTotal": 2,
+            "endsAt": 1796083200,
+            "paused": false,
+            "usableNow": false,
+            "clears": [
+              "five_hour",
+              "seven_day"
+            ]
+          }
+        ]
+      }
+    },
+    "resetCredit": {
+      "eligible": true,
+      "atLimit": false,
+      "resetsLeft": 0,
+      "resetsTotal": 2,
+      "usableNow": false,
+      "endsAt": null,
+      "cooldownUntil": null,
+      "grants": [
+        {
+          "id": "grant_1",
+          "label": "Bonus reset",
+          "resetsLeft": 0,
+          "resetsTotal": 2,
+          "endsAt": 1796083200,
+          "paused": false,
+          "usableNow": false,
+          "clears": [
+            "five_hour",
+            "seven_day"
+          ]
+        }
+      ]
+    }
+  },
+  "responseNetworkErrorRetryable": {
+    "ok": false,
+    "code": null,
+    "replayed": false,
+    "operationId": "01927f3e-8a52-7c10-9d3b-6a1f0c2e4b7b",
+    "grantId": null,
+    "failure": {
+      "reason": "networkError",
+      "detail": "unknown_outcome",
+      "retryable": true
+    },
+    "usage": {
+      "fiveHour": {
+        "usedPercent": 0.0,
+        "windowMinutes": 300,
+        "resetsAt": 1794408000
+      },
+      "weekly": {
+        "usedPercent": 0.0,
+        "windowMinutes": 10080,
+        "resetsAt": 1794994800
+      },
+      "updatedAt": 1794390100,
+      "resetCredit": {
+        "eligible": true,
+        "atLimit": false,
+        "resetsLeft": 0,
+        "resetsTotal": 2,
+        "usableNow": false,
+        "endsAt": null,
+        "cooldownUntil": null,
+        "grants": [
+          {
+            "id": "grant_1",
+            "label": "Bonus reset",
+            "resetsLeft": 0,
+            "resetsTotal": 2,
+            "endsAt": 1796083200,
+            "paused": false,
+            "usableNow": false,
+            "clears": [
+              "five_hour",
+              "seven_day"
+            ]
+          }
+        ]
+      }
+    },
+    "resetCredit": {
+      "eligible": true,
+      "atLimit": false,
+      "resetsLeft": 0,
+      "resetsTotal": 2,
+      "usableNow": false,
+      "endsAt": null,
+      "cooldownUntil": null,
+      "grants": [
+        {
+          "id": "grant_1",
+          "label": "Bonus reset",
+          "resetsLeft": 0,
+          "resetsTotal": 2,
+          "endsAt": 1796083200,
+          "paused": false,
+          "usableNow": false,
+          "clears": [
+            "five_hour",
+            "seven_day"
+          ]
+        }
+      ]
+    }
+  },
+  "responseApiKey": {
+    "ok": false,
+    "code": null,
+    "replayed": false,
+    "operationId": "01927f3e-8a52-7c10-9d3b-6a1f0c2e4b7c",
+    "grantId": null,
+    "failure": {
+      "reason": "unsupported",
+      "detail": "api_key",
+      "retryable": false
+    },
+    "usage": null,
+    "resetCredit": null
+  }
 }
