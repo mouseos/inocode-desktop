@@ -1,5 +1,6 @@
 import { Theme } from "../theme.slint";
 import { Tag, Button, LineEdit } from "g_widgets.slint";
+import { TeamMetrics, TeamState } from "team.slint";
 
 // 統計の画面(設定の「InoCode」群)。値はすべてサーバーの統計 RPC(inocode/stats/*)から来る。
 // このファイルと src/tabs/stats.rs だけを編集して実装する。
@@ -93,7 +94,10 @@ component Bars inherits Rectangle {
 }
 
 export component StatsPage inherits Rectangle {
-    init => { StatsState.refresh(); }
+    init => {
+        StatsState.refresh();
+        TeamState.refresh();
+    }
     Flickable {
         content-height: page.preferred-height;
         page := VerticalLayout {
@@ -172,7 +176,7 @@ export component StatsPage inherits Rectangle {
             Bars { bars: StatsState.hours; }
 
             Rectangle { height: 8px; }
-            Heading { text: "日ごとの推移(5時間枠の消費と速度) · " + StatsState.selected-model; }
+            Heading { text: "日ごとの推移(5時間枠の消費と速度)" + (StatsState.selected-model == "" ? "" : " · " + StatsState.selected-model); }
             Bars { bars: StatsState.days; }
 
             Rectangle { height: 8px; }
@@ -222,6 +226,9 @@ export component StatsPage inherits Rectangle {
                 }
                 if StatsState.seed-text != "": Text { text: StatsState.seed-text; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
             }
+
+            Rectangle { height: 8px; }
+            TeamMetrics { }
         }
     }
 }

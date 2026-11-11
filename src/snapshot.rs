@@ -16,6 +16,12 @@ fn env_num(name: &str, default: u64) -> u64 {
 
 pub(crate) fn install(app: &AppWindow) {
     let Ok(path) = std::env::var("INOCODE_GUI_SNAPSHOT") else { return };
+    // INOCODE_GUI_SIZE=<width>x<height> (logical pixels): a window as tall as the screen to look at.
+    if let Some((w, h)) = std::env::var("INOCODE_GUI_SIZE").ok().and_then(|v| v.split_once('x').map(|(a, b)| (a.to_string(), b.to_string()))) {
+        if let (Ok(w), Ok(h)) = (w.parse::<f32>(), h.parse::<f32>()) {
+            app.window().set_size(slint::LogicalSize::new(w, h));
+        }
+    }
     let tab = env_num("INOCODE_GUI_TAB", 0) as i32;
     let delay = env_num("INOCODE_GUI_SNAPSHOT_DELAY", 8);
     let weak = app.as_weak();

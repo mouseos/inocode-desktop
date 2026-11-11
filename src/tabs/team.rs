@@ -194,7 +194,7 @@ fn render(app: &AppWindow) {
         ts.set_progress(if rows.is_empty() { String::new() } else { format!("{done}/{}", rows.len()) }.into());
         ts.set_agents(ModelRc::from(Rc::new(VecModel::from(rows))));
         match &d.estimate {
-            Some(e) => {
+            Some(e) if estimate_says_something(e) => {
                 let num = |k: &str| e.get(k).and_then(Value::as_f64);
                 ts.set_has_estimate(true);
                 ts.set_speedup(num("speedup").map(|v| format!("×{v:.1}")).unwrap_or_default().into());
@@ -206,17 +206,36 @@ fn render(app: &AppWindow) {
                     None => "",
                 };
                 ts.set_decision(decision.into());
-                ts.set_reason(e.get("reason").and_then(Value::as_str).unwrap_or("").into());
+                ts.set_reason(reason_text(e.get("reason").and_then(Value::as_str).unwrap_or("")).into());
                 let tasks: Vec<MetricRow> =
                     e.get("tasks").and_then(Value::as_array).map(|a| a.iter().map(task_row).collect()).unwrap_or_default();
                 ts.set_tasks(ModelRc::from(Rc::new(VecModel::from(tasks))));
             }
-            None => {
+            _ => {
                 ts.set_has_estimate(false);
                 ts.set_tasks(ModelRc::from(Rc::new(VecModel::from(Vec::<MetricRow>::new()))));
             }
         }
     });
+}
+
+/// The estimate of a thread without a team is "single, x1.0, x1.0, no estimate yet": that says
+/// nothing and is not shown.
+fn estimate_says_something(e: &Value) -> bool {
+    let num = |k: &str| e.get(k).and_then(Value::as_f64);
+    let has_tasks = e.get("tasks").and_then(Value::as_array).map(|a| !a.is_empty()).unwrap_or(false);
+    has_tasks || num("speedup").map(|v| (v - 1.0).abs() > 1e-6).unwrap_or(false) || num("costMultiplier").map(|v| (v - 1.0).abs() > 1e-6).unwrap_or(false)
+        || !reason_text(e.get("reason").and_then(Value::as_str).unwrap_or("")).is_empty()
+}
+
+/// The reason of the estimate in Japanese; a text the server wrote in English only is not shown.
+fn reason_text(reason: &str) -> String {
+    let r = reason.trim();
+    if r.is_empty() || r.eq_ignore_ascii_case("no estimate yet") || r.is_ascii() {
+        String::new()
+    } else {
+        r.to_string()
+    }
 }
 
 fn task_row(t: &Value) -> MetricRow {
