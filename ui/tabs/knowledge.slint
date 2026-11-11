@@ -393,9 +393,12 @@ component EditForm inherits Rectangle {
             }
             Text { text: KnowledgeState.edit-title-label; color: Theme.fg-tertiary; font-size: 11px; }
             LineEdit { text <=> KnowledgeState.edit-title; }
-            for f[i] in KnowledgeState.edit-fields: VerticalLayout {
-                spacing: 2px;
-                if !f.advanced: FieldInput { index: i; field: f; }
+            VerticalLayout {
+                spacing: 0px;
+                for f[i] in KnowledgeState.edit-fields: VerticalLayout {
+                    padding-bottom: f.advanced ? 0px : 10px;
+                    if !f.advanced: FieldInput { index: i; field: f; }
+                }
             }
             if !KnowledgeState.edit-body-advanced && KnowledgeState.edit-body-label != "": VerticalLayout {
                 spacing: 2px;
@@ -417,9 +420,9 @@ component EditForm inherits Rectangle {
                 Button { label: KnowledgeState.edit-more ? "閉じる" : "もっと詳しく"; clicked => { KnowledgeState.edit-more = !KnowledgeState.edit-more; } }
             }
             if KnowledgeState.edit-more: VerticalLayout {
-                spacing: 10px;
+                spacing: 0px;
                 for f[i] in KnowledgeState.edit-fields: VerticalLayout {
-                    spacing: 2px;
+                    padding-bottom: f.advanced ? 10px : 0px;
                     if f.advanced: FieldInput { index: i; field: f; }
                 }
                 if KnowledgeState.edit-body-advanced && KnowledgeState.edit-body-label != "": VerticalLayout {
