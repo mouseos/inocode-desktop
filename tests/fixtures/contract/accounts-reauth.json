@@ -1,0 +1,15 @@
+{
+  "method": "inocode/accounts/reauth",
+  "request": {
+    "id": "claude-5d2a7e0b91c3f4a8",
+    "method": "browser"
+  },
+  "response": {
+    "loginId": "9e41d2b7-0000-4000-8000-000000000000",
+    "authUrl": "https://claude.ai/oauth/authorize?FAKE",
+    "verificationUrl": null,
+    "userCode": null,
+    "codeEntry": false
+  },
+  "note": "失効・拒否された資格情報の、同じアカウントでのやり直し。応答は login/start と同じ形で、完了は通知 inocode/accounts/loginCompleted(成功すると同じ id のまま、別名・優先度・有効/無効は変わらず、冷却は解ける)。別のアカウントでサインインした場合は失敗し、何も保存しない。API キーと、従来の既定のログインは対象外(JSON-RPC のエラー)。method は login/start と同じ(Claude は browser / oauthCode)。"
+}

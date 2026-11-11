@@ -22,6 +22,10 @@ struct Data {
     auth_url: String,
     /// The API key kept while the pool answers (fallback to the plain login).
     pending_key: Option<String>,
+    /// The account being signed in again (re-login), when the dialog is for that.
+    reauth_id: Option<String>,
+    /// The policy was set to "use in the listed order" once in this run.
+    policy_fixed: bool,
 }
 
 thread_local! {
@@ -66,6 +70,7 @@ pub(crate) fn begin(app: &AppWindow, kind: &str) {
     app.global::<SettingsPageState>().set_open(true);
     crate::settings_page::show_accounts(app);
     let st = app.global::<AccountsState>();
+    DATA.with(|d| d.borrow_mut().reauth_id = None);
     st.set_add_alias("".into());
     st.set_add_key("".into());
     st.set_code_value("".into());
@@ -131,22 +136,56 @@ fn set_rows(app: &AppWindow) {
     app.global::<AccountsState>().set_add_rows(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 
-const ORDER: [i64; 5] = [10, 5, 0, -5, -10];
-
-fn order_index(p: i64) -> i32 {
-    ORDER.iter().enumerate().min_by_key(|(_, v)| (p - **v).abs()).map(|(i, _)| i as i32).unwrap_or(2)
-}
-
 fn bar(label: &str, w: &Value) -> Option<AcctBar> {
     let pct = w.get("usedPercent").and_then(Value::as_f64)?;
-    Some(AcctBar { label: label.into(), pct: pct as f32, reset: crate::settings_page::until(w.get("resetsAt").and_then(Value::as_i64)).into() })
+    Some(AcctBar { label: label.into(), pct: pct as f32, reset: reset_text(w.get("resetsAt").and_then(Value::as_i64)).into() })
+}
+
+/// "1時間20分", "4日8時間", "5分".
+fn span_jp(secs: i64) -> String {
+    let secs = secs.max(0);
+    let (d, h, m) = (secs / 86_400, (secs % 86_400) / 3600, (secs % 3600) / 60);
+    if d > 0 {
+        format!("{d}日{h}時間")
+    } else if h > 0 {
+        format!("{h}時間{m}分")
+    } else {
+        format!("{}分", m.max(1))
+    }
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+fn reset_text(at: Option<i64>) -> String {
+    at.filter(|t| *t > now_secs()).map(|t| format!("あと{}で使用量が戻ります", span_jp(t - now_secs()))).unwrap_or_default()
+}
+
+/// The accounts in the order of use: the highest priority first, the server's order inside a tie.
+fn ordered(accounts: &[Value]) -> Vec<Value> {
+    let mut v = accounts.to_vec();
+    v.sort_by_key(|a| std::cmp::Reverse(a.get("priority").and_then(Value::as_i64).unwrap_or(0)));
+    v
+}
+
+/// The mean of the used percentages of one window over the accounts that report it.
+fn mean(accounts: &[Value], key: &str) -> Option<i64> {
+    let vals: Vec<f64> = accounts
+        .iter()
+        .filter_map(|a| a.get("usage").filter(|u| u.is_object()).and_then(|u| u.get(key)).and_then(|w| w.get("usedPercent")).and_then(Value::as_f64))
+        .collect();
+    if vals.is_empty() {
+        None
+    } else {
+        Some((vals.iter().sum::<f64>() / vals.len() as f64).round() as i64)
+    }
 }
 
 fn render(app: &AppWindow) {
-    let mut accounts = DATA.with(|d| d.borrow().accounts.clone());
-    // Grouped by provider: OpenAI first, the order inside a provider is kept.
-    accounts.sort_by_key(|a| s(a, "provider") != "openai" && !s(a, "provider").is_empty());
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let all = DATA.with(|d| d.borrow().accounts.clone());
+    let accounts = ordered(&all);
+    let now = now_secs();
     let cards: Vec<AcctCard> = accounts
         .iter()
         .map(|a| {
@@ -160,28 +199,44 @@ fn render(app: &AppWindow) {
                     }
                 }
             }
-            let cooldown = a
+            let full = bars.iter().any(|b| b.pct >= 99.5);
+            let back = a
                 .get("cooldownUntil")
                 .and_then(Value::as_i64)
                 .filter(|t| *t > now)
-                .map(|t| format!("あと {}", crate::settings_page::span(t - now)))
+                .map(|t| format!(" · あと{}で回復", span_jp(t - now)))
                 .unwrap_or_default();
+            let in_use = a.get("inUse").and_then(Value::as_bool).unwrap_or(false);
+            let state = s(a, "state");
+            let (status, tone) = match state {
+                "cooldown" if full => (format!("上限に達しています{back}"), "danger"),
+                "cooldown" => (format!("今は使えません{back}"), "warn"),
+                "disabled" => ("停止中です。自動では使われません".to_string(), "off"),
+                _ if in_use => ("使用中".to_string(), "ok"),
+                _ => (String::new(), "ok"),
+            };
+            let kind_label = match kind {
+                "apiKey" => "API キー",
+                "claudeOauth" => "サブスク",
+                _ => "ChatGPT",
+            };
+            let plan = s(a, "plan");
+            let meta = if plan.is_empty() {
+                format!("{} · {}", crate::settings_page::provider_name(provider), kind_label)
+            } else {
+                format!("{} · {} · {}", crate::settings_page::provider_name(provider), kind_label, plan)
+            };
             AcctCard {
                 id: s(a, "id").into(),
-                provider: crate::settings_page::provider_name(provider).into(),
                 alias: s(a, "alias").into(),
-                plan: s(a, "plan").into(),
-                kind_label: match kind {
-                    "apiKey" => "API キー",
-                    "claudeOauth" => "サブスク",
-                    _ => "ChatGPT",
-                }
-                .into(),
-                state: s(a, "state").into(),
-                cooldown: cooldown.into(),
-                in_use: a.get("inUse").and_then(Value::as_bool).unwrap_or(false),
-                enabled: s(a, "state") != "disabled",
-                order: order_index(a.get("priority").and_then(Value::as_i64).unwrap_or(0)),
+                email: s(a, "email").into(),
+                owner: s(a, "name").into(),
+                meta: meta.into(),
+                status: status.into(),
+                tone: tone.into(),
+                in_use,
+                enabled: state != "disabled",
+                can_reauth: kind != "apiKey" && !a.get("isDefault").and_then(Value::as_bool).unwrap_or(false),
                 bars: ModelRc::from(Rc::new(VecModel::from(bars))),
             }
         })
@@ -189,18 +244,34 @@ fn render(app: &AppWindow) {
     let st = app.global::<AccountsState>();
     st.set_cards(ModelRc::from(Rc::new(VecModel::from(cards))));
     st.set_loading(false);
+    // The total usage: the mean of every account that reports it.
+    let mut parts = Vec::new();
+    if let Some(n) = mean(&all, "fiveHour") {
+        parts.push(format!("5時間 平均 {n}%"));
+    }
+    if let Some(n) = mean(&all, "weekly") {
+        parts.push(format!("週 平均 {n}%"));
+    }
+    st.set_total(format!("総使用量  {}", parts.join("、")).trim_end().into());
+    if parts.is_empty() {
+        st.set_total("".into());
+    }
 }
 
+/// The page's one rule is "use the accounts in the listed order"; the policy is set to that once.
 fn show_policy(app: &AppWindow) {
     let p = DATA.with(|d| d.borrow().policy.clone());
     let st = app.global::<AccountsState>();
-    st.set_auto_switch(p.get("autoSwitch").and_then(Value::as_bool).unwrap_or(true));
-    st.set_strategy(match s(&p, "selection") {
-        "roundRobin" => 1,
-        "fillFirst" => 2,
-        _ => 0,
-    });
-    st.set_threshold(p.get("thresholdPercent").and_then(Value::as_i64).map(|n| n.to_string()).unwrap_or_default().into());
+    st.set_threshold(p.get("thresholdPercent").and_then(Value::as_f64).map(|n| (n.round() as i64).to_string()).unwrap_or_default().into());
+    let fixed = DATA.with(|d| d.borrow().policy_fixed);
+    if !fixed && p.is_object() && (s(&p, "selection") != "fillFirst" || s(&p, "apiKeyOrder") != "mixed" || p.get("autoSwitch").and_then(Value::as_bool) == Some(false)) {
+        DATA.with(|d| d.borrow_mut().policy_fixed = true);
+        write_policy(|p| {
+            p["selection"] = json!("fillFirst");
+            p["apiKeyOrder"] = json!("mixed");
+            p["autoSwitch"] = json!(true);
+        });
+    }
 }
 
 fn write_policy(change: impl FnOnce(&mut Value)) {
@@ -259,11 +330,15 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         let provider = if kind == "claude" { "claude" } else { "openai" };
         let alias = st.get_add_alias().trim().to_string();
         let alias = if alias.is_empty() { crate::settings_page::provider_name(provider) } else { alias };
-        rpc(
-            "acct.login.start",
-            "inocode/accounts/login/start",
-            json!({ "alias": alias, "provider": provider, "method": method.as_str() }),
-        );
+        if let Some(id) = DATA.with(|d| d.borrow().reauth_id.clone()) {
+            rpc("acct.login.start", "inocode/accounts/reauth", json!({ "id": id, "method": method.as_str() }));
+        } else {
+            rpc(
+                "acct.login.start",
+                "inocode/accounts/login/start",
+                json!({ "alias": alias, "provider": provider, "method": method.as_str() }),
+            );
+        }
         login_note(&app, "サインインを開始しています…");
     });
     let weak = app.as_weak();
@@ -340,10 +415,34 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             rpc("acct.act", "inocode/accounts/rename", json!({ "id": id.to_string(), "alias": alias }));
         }
     });
-    st.on_set_order(|id, i| {
-        if let Some(p) = ORDER.get(i as usize) {
-            rpc("acct.act", "inocode/accounts/setPriority", json!({ "id": id.to_string(), "priority": p }));
+    st.on_move_account(|id, delta| {
+        let list = DATA.with(|d| ordered(&d.borrow().accounts));
+        let ids: Vec<String> = list.iter().map(|a| s(a, "id").to_string()).collect();
+        let Some(i) = ids.iter().position(|x| x == id.as_str()) else { return };
+        let j = i as i64 + delta as i64;
+        if j < 0 || j as usize >= ids.len() {
+            return;
         }
+        let mut ids = ids;
+        ids.swap(i, j as usize);
+        // The list order becomes the priority: the first has the highest.
+        let n = ids.len() as i64;
+        for (k, aid) in ids.iter().enumerate() {
+            let prio = (n - k as i64) * 10;
+            let old = list.iter().find(|a| s(a, "id") == aid).and_then(|a| a.get("priority").and_then(Value::as_i64)).unwrap_or(0);
+            if old != prio {
+                rpc("acct.act", "inocode/accounts/setPriority", json!({ "id": aid, "priority": prio }));
+            }
+        }
+    });
+    let weak = app.as_weak();
+    st.on_reauth(move |id| {
+        let Some(app) = weak.upgrade() else { return };
+        let kind = DATA.with(|d| d.borrow().accounts.iter().find(|a| s(a, "id") == id.as_str()).map(|a| s(a, "kind").to_string())).unwrap_or_default();
+        begin(&app, if kind == "claudeOauth" { "claude" } else { "chatgpt" });
+        let st = app.global::<AccountsState>();
+        st.set_add_title("ログインし直す".into());
+        DATA.with(|d| d.borrow_mut().reauth_id = Some(id.to_string()));
     });
     let weak = app.as_weak();
     st.on_remove(move |id| {
@@ -353,11 +452,6 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             st.set_open_id("".into());
         }
         rpc("acct.act", "inocode/accounts/remove", json!({ "id": id.to_string() }));
-    });
-    st.on_set_auto(|on| write_policy(|p| p["autoSwitch"] = json!(on)));
-    st.on_set_strategy(|i| {
-        let v = ["quota", "roundRobin", "fillFirst"].get(i as usize).copied().unwrap_or("quota");
-        write_policy(|p| p["selection"] = json!(v));
     });
     let weak = app.as_weak();
     st.on_commit_threshold(move |t| match t.trim().parse::<i64>() {

@@ -29,7 +29,9 @@
         "priority": 10,
         "lastUsedAt": 1794389000,
         "inUse": true,
-        "isDefault": true
+        "isDefault": true,
+        "email": "main@example.com",
+        "name": "Main User"
       },
       {
         "id": "chatgpt-91be77aa02c4d5e6",
@@ -55,7 +57,9 @@
         "priority": 5,
         "lastUsedAt": 1794380000,
         "inUse": false,
-        "isDefault": false
+        "isDefault": false,
+        "email": "sub@example.com",
+        "name": "Sub User"
       },
       {
         "id": "apikey-3f9c1a",
@@ -95,7 +99,9 @@
         "priority": 5,
         "lastUsedAt": null,
         "inUse": false,
-        "isDefault": false
+        "isDefault": false,
+        "email": "claude@example.com",
+        "name": "Claude User"
       },
       {
         "id": "claude-5d2a7e0b91c3f4a8",
@@ -103,15 +109,29 @@
         "provider": "claude",
         "alias": "クロード",
         "plan": "max",
-        "usage": null,
+        "usage": {
+          "fiveHour": {
+            "usedPercent": 42.0,
+            "windowMinutes": 300,
+            "resetsAt": 1794398400
+          },
+          "weekly": {
+            "usedPercent": 18.75,
+            "windowMinutes": 10080,
+            "resetsAt": 1794744000
+          },
+          "updatedAt": 1794390000
+        },
         "state": "active",
         "cooldownUntil": null,
         "priority": 0,
         "lastUsedAt": 1794388000,
         "inUse": true,
-        "isDefault": false
+        "isDefault": false,
+        "email": "claude@example.com",
+        "name": "Claude User"
       }
     ]
   },
-  "note": "メールアドレスは載せない。識別は alias と plan。usage は ChatGPT のみ(API キーは null)。時刻は Unix 秒。id は chatgpt- + (chatgpt_user_id とワークスペース ID のハッシュ)、API キーは apikey- + 短いハッシュ。isDefault は従来の auth.json のログイン。cooldown の間は cooldownUntil が入る。 provider は openai か claude。Claude の OAuth は usage が null(使用率は取れない。上限は 429 で知る)。一覧は両方のプロバイダの全件。"
+  "note": "メールアドレスは載せない。識別は alias と plan。usage は ChatGPT のみ(API キーは null)。時刻は Unix 秒。id は chatgpt- + (chatgpt_user_id とワークスペース ID のハッシュ)、API キーは apikey- + 短いハッシュ。isDefault は従来の auth.json のログイン。cooldown の間は cooldownUntil が入る。 provider は openai か claude。Claude の OAuth の usage は、最後の Messages の応答の anthropic-ratelimit-unified-5h / 7d ヘッダー(利用率と、リセット時刻)から、リクエストの後に更新される(一覧の取得では取りに行かない)。まだ 1 回もリクエストしていないときは null。一覧は両方のプロバイダの全件。"
 }
