@@ -5,6 +5,7 @@ mod chat_md;
 mod coding;
 mod client;
 mod accounts_page;
+mod model_init;
 mod attach;
 mod callbacks;
 mod discovery;

@@ -25,11 +25,19 @@ pub(crate) fn refresh_pickers(app: &AppWindow, st: &State) {
         Some(t) => t.clone(),
         None => sel.and_then(|m| m.default_service_tier.clone()),
     };
-    // Models: the Default row, then the list.
-    let explicit = st.settings.model.is_some();
+    // Models: one section per provider.
     let model_rows: Vec<MenuRow> = shown_models(st)
         .iter()
-        .map(|(m, kind)| {
+        .map(|item| {
+            let (m, kind) = match item {
+                Item::Heading(p, open) => {
+                    let mut r = row(&crate::settings_page::provider_name(p), "", false, false);
+                    r.heading = true;
+                    r.expanded = *open;
+                    return r;
+                }
+                Item::Model(m, k) => (*m, k),
+            };
             let label = match kind {
                 Kind::Normal => m.name.clone(),
                 Kind::Fast => format!("{} Fast", m.name),
@@ -44,13 +52,14 @@ pub(crate) fn refresh_pickers(app: &AppWindow, st: &State) {
             } else {
                 Kind::Normal
             };
-            let on = explicit && sel.map(|s| s.id == m.id).unwrap_or(false) && mode == *kind;
+            let on = sel.map(|s| s.id == m.id && s.provider == m.provider).unwrap_or(false) && mode == *kind;
             row(&label, "", on, false)
         })
         .collect();
     let trigger = match sel {
         Some(m) if eff_text.is_empty() => m.name.clone(),
         Some(m) => format!("{} {}", m.name, eff_text),
+        None if st.models_loaded => "モデルを選んでください".to_string(),
         None => "モデルを選択".to_string(),
     };
     app.global::<AppState>().set_intelligence(IntelligenceState {
@@ -60,10 +69,10 @@ pub(crate) fn refresh_pickers(app: &AppWindow, st: &State) {
         effort_enabled: !efforts.is_empty(),
         effort_label: eff_text.clone().into(),
         models: rows(model_rows),
-        default_row: row("デフォルト", "おすすめのモデルセット", !explicit, false),
         loading: !st.models_loaded,
         ultra_warning: eff.as_deref() == Some("ultra"),
-        can_reset: explicit || st.settings.effort.is_some() || st.settings.service_tier.is_some(),
+        can_reset: st.settings.effort.is_some() || st.settings.service_tier.is_some(),
+        missing: st.models_loaded && sel.is_none(),
     });
 
     // Permissions

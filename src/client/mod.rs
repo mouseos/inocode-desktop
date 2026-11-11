@@ -83,6 +83,7 @@ mod tests {
     fn cyber_programs() {
         let m = |programs: &[&str]| ModelInfo {
             id: "m".into(),
+            provider: "openai".into(),
             name: "m".into(),
             description: String::new(),
             efforts: vec![],

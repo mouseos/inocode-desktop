@@ -6,6 +6,7 @@ use crate::*;
 
 pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     crate::sidebar::register(app, handle);
+    crate::model_init::register(handle);
     let weak = app.as_weak();
     let h = handle.clone();
     app.on_submit(move |text| {
@@ -21,6 +22,15 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         }
         if !app.global::<AppState>().get_busy() {
             crate::thread_stats::note_send();
+        }
+        // A message is never sent without a chosen model: the server's own default would be used.
+        let missing = STATE.with(|s| {
+            let st = s.borrow();
+            let visible = visible_models(&st);
+            selected_model(&st, &visible).is_none()
+        });
+        if missing {
+            return;
         }
         // The replies that are ready go in front of the text, one line each.
         let text = crate::reply::compose(&app, text);
@@ -50,9 +60,30 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     app.global::<AppState>().on_pick_model(move |i| {
         let Some(app) = weak.upgrade() else { return };
         let before = STATE.with(|s| s.borrow().settings.daybreak);
+        // A heading opens or closes its section; nothing is chosen.
+        let heading = STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            let toggled = match shown_models(&st).get(i as usize) {
+                Some(Item::Heading(p, open)) => Some((p.clone(), *open)),
+                _ => None,
+            };
+            if let Some((p, open)) = &toggled {
+                st.provider_open.insert(p.clone(), !open);
+                refresh_pickers(&app, &st);
+            }
+            toggled.is_some()
+        });
+        if heading {
+            return;
+        }
         change(&app, &h, |st| {
-            let Some((m, kind)) = shown_models(st).get(i as usize).map(|(m, k)| ((*m).clone(), *k)) else { return };
+            let Some((m, kind)) = shown_models(st).get(i as usize).and_then(|it| match it {
+                Item::Model(m, k) => Some(((*m).clone(), *k)),
+                Item::Heading(..) => None,
+            }) else { return };
             st.settings.model = Some(m.id.clone());
+            st.settings.model_provider = Some(m.provider.clone());
+            crate::gui_prefs::save_last_model(&m.id, &m.provider);
             // Each row picks one mode: Daybreak on for the Daybreak row, Fast for the Fast row,
             // and the normal row turns both off.
             st.settings.daybreak = kind == Kind::Daybreak;
@@ -81,27 +112,10 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     });
     let weak = app.as_weak();
     let h = handle.clone();
-    app.global::<AppState>().on_pick_default(move || {
-        let Some(app) = weak.upgrade() else { return };
-        let before = STATE.with(|s| s.borrow().settings.daybreak);
-        change(&app, &h, |st| {
-            st.settings.model = None;
-            st.settings.effort = None;
-            st.settings.daybreak = false;
-            if matches!(st.settings.service_tier, Some(Some(_))) {
-                st.settings.service_tier = Some(None);
-            }
-        });
-        if before {
-            h.send(Command::SetDaybreak(false));
-        }
-    });
-    let weak = app.as_weak();
-    let h = handle.clone();
     app.global::<AppState>().on_reset_model(move || {
         let Some(app) = weak.upgrade() else { return };
+        // The model stays: only the effort and the speed go back to the model's own.
         change(&app, &h, |st| {
-            st.settings.model = None;
             st.settings.effort = None;
             st.settings.service_tier = None;
         });

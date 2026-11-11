@@ -25,10 +25,42 @@ pub(crate) fn install(app: &AppWindow) {
             app.global::<Tabs>().invoke_select(tab);
         }
     });
+    // INOCODE_GUI_MODELS=<file>: a model/list reply (the `result`) that is shown as the list of
+    // models; INOCODE_GUI_OPEN=picker opens the model popup.
+    let mut extra: Vec<slint::Timer> = Vec::new();
+    if let Ok(file) = std::env::var("INOCODE_GUI_MODELS") {
+        let weak = app.as_weak();
+        let t = slint::Timer::default();
+        // After the real server's own list, so that this one stays.
+        t.start(slint::TimerMode::SingleShot, Duration::from_secs(delay + 2), move || {
+            let Some(app) = weak.upgrade() else { return };
+            let Ok(text) = std::fs::read_to_string(&file) else { return };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { return };
+            let list = crate::client::parse_models(v.get("response").unwrap_or(&v));
+            STATE.with(|s| {
+                let mut st = s.borrow_mut();
+                st.settings.programs = list.clone();
+                st.models = list;
+                st.models_loaded = true;
+            });
+            crate::model_init::on_models(&app);
+            STATE.with(|s| crate::view::refresh_pickers(&app, &s.borrow()));
+        });
+        extra.push(t);
+    }
+    if std::env::var("INOCODE_GUI_OPEN").as_deref() == Ok("picker") {
+        let weak = app.as_weak();
+        let t = slint::Timer::default();
+        t.start(slint::TimerMode::SingleShot, Duration::from_secs(delay + 3), move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<PickerDemo>().set_open(true);
+            }
+        });
+        extra.push(t);
+    }
     // INOCODE_GUI_OPEN opens a screen of the settings first: settings:<section> | provider:<id> |
     // account:<provider>:<account id> | history:<provider>:<account id> | add
-    let mut extra: Vec<slint::Timer> = Vec::new();
-    if let Ok(what) = std::env::var("INOCODE_GUI_OPEN") {
+    if let Ok(what) = std::env::var("INOCODE_GUI_OPEN").map(|w| if w == "picker" { String::new() } else { w }).and_then(|w| if w.is_empty() { Err(std::env::VarError::NotPresent) } else { Ok(w) }) {
         let weak = app.as_weak();
         let first = slint::Timer::default();
         let w1 = what.clone();
@@ -62,7 +94,7 @@ pub(crate) fn install(app: &AppWindow) {
     }
     let weak = app.as_weak();
     let shot = slint::Timer::default();
-    shot.start(slint::TimerMode::SingleShot, Duration::from_secs(delay + 5), move || {
+    shot.start(slint::TimerMode::SingleShot, Duration::from_secs(delay + 6), move || {
         if let Some(app) = weak.upgrade() {
             if let Ok(buf) = app.window().take_snapshot() {
                 if let Ok(file) = std::fs::File::create(&path) {

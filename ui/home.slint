@@ -173,7 +173,6 @@ component Composer inherits VerticalLayout {
     callback search-model(string);
     callback pick-effort(int);
     callback pick-model(int);
-    callback pick-default;
     callback reset-model;
     callback pick-perm(int);
     callback pick-project(int);
@@ -269,7 +268,6 @@ component Composer inherits VerticalLayout {
                         search(q) => { root.search-model(q); }
                         pick-effort(i) => { root.pick-effort(i); }
                         pick-model(i) => { root.pick-model(i); }
-                        pick-default => { root.pick-default(); }
                         reset => { root.reset-model(); }
                     }
                     if root.text == "" && root.busy: Rectangle {
@@ -281,7 +279,7 @@ component Composer inherits VerticalLayout {
                         Rectangle { width: 10px; height: 10px; border-radius: 2px; background: Theme.surface; }
                         TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.interrupt(); } }
                     }
-                    if root.text != "": SendButton { y: 1px; clicked => { root.submit(root.text); } }
+                    if root.text != "": SendButton { y: 1px; opacity: root.intelligence.missing ? 0.4 : 1.0; clicked => { root.submit(root.text); } }
                 }
             }
         }
@@ -552,7 +550,6 @@ export component Home inherits Rectangle {
                         search-model(q) => { AppState.search-model(q); }
                         pick-effort(i) => { AppState.pick-effort(i); }
                         pick-model(i) => { AppState.pick-model(i); }
-                        pick-default => { AppState.pick-default(); }
                         reset-model => { AppState.reset-model(); }
                         pick-perm(i) => { AppState.pick-perm(i); }
                         pick-project(i) => { AppState.pick-project(i); }

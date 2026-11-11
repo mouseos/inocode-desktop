@@ -292,6 +292,9 @@ pub(super) fn thread_start_params(s: &Settings) -> Value {
     }
     if let Some(m) = &s.model {
         p["model"] = json!(m);
+        if let Some(pr) = &s.model_provider {
+            p["modelProvider"] = json!(pr);
+        }
     }
     if let Some(t) = &s.service_tier {
         p["serviceTier"] = match t {
@@ -340,6 +343,9 @@ pub(super) fn turn_overrides(s: &Settings, with_permissions: bool, params: &mut 
     }
     if let Some(m) = &s.model {
         params["model"] = json!(m);
+        if let Some(pr) = &s.model_provider {
+            params["modelProvider"] = json!(pr);
+        }
         if let Some(program) = s.programs.iter().find(|x| &x.id == m).and_then(|x| x.program_for(s.daybreak)) {
             params["cyberAccessProgram"] = json!(program);
         }
@@ -412,8 +418,10 @@ pub fn parse_models(result: &Value) -> Vec<ModelInfo> {
                         .unwrap_or_default();
                     let default_service_tier =
                         m.get("defaultServiceTier").and_then(Value::as_str).map(str::to_string);
+                    let provider = m.get("modelProvider").and_then(Value::as_str).filter(|p| !p.is_empty()).unwrap_or("openai").to_string();
                     Some(ModelInfo {
                         id,
+                        provider,
                         name,
                         description,
                         efforts,

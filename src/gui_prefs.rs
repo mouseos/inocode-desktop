@@ -83,6 +83,26 @@ pub(crate) fn load() -> Prefs {
     }
 }
 
+/// The model chosen last: (id, provider).
+pub(crate) fn load_last_model() -> Option<(String, String)> {
+    let text = std::fs::read_to_string(path()).ok()?;
+    let v = serde_json::from_str::<Value>(&text).ok()?;
+    let id = v.get("lastModel").and_then(Value::as_str).filter(|c| !c.is_empty())?.to_string();
+    let provider = v.get("lastModelProvider").and_then(Value::as_str).filter(|c| !c.is_empty()).unwrap_or("openai").to_string();
+    Some((id, provider))
+}
+
+pub(crate) fn save_last_model(id: &str, provider: &str) {
+    let path = path();
+    let mut v = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).unwrap_or_else(|| json!({}));
+    v["lastModel"] = json!(id);
+    v["lastModelProvider"] = json!(provider);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, v.to_string());
+}
+
 /// The working folder that was used last (where a new chat starts after a restart).
 pub(crate) fn load_last_cwd() -> Option<String> {
     let text = std::fs::read_to_string(path()).ok()?;
@@ -105,6 +125,10 @@ pub(crate) fn save(p: &Prefs) {
     let mut v = json!({ "scheme": p.scheme, "sidebarOpen": p.sidebar_open, "palette": s(&p.palette), "model": s(&p.model) });
     if let Some(c) = load_last_cwd() {
         v["lastCwd"] = json!(c);
+    }
+    if let Some((m, p)) = load_last_model() {
+        v["lastModel"] = json!(m);
+        v["lastModelProvider"] = json!(p);
     }
     let path = path();
     if let Some(dir) = path.parent() {

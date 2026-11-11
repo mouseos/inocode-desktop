@@ -54,6 +54,8 @@ pub struct ThreadInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelInfo {
     pub id: String,
+    /// The provider that serves the model (`modelProvider` of model/list); "openai" when it names none.
+    pub provider: String,
     pub name: String,
     pub description: String,
     pub efforts: Vec<String>,
@@ -175,6 +177,8 @@ impl Perm {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub model: Option<String>,
+    /// The provider of `model` (sent as modelProvider).
+    pub model_provider: Option<String>,
     pub effort: Option<String>,
     /// None: not chosen. Some(None): Standard speed. Some(Some(id)): that service tier.
     pub service_tier: Option<Option<String>>,
@@ -220,6 +224,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             model: None,
+            model_provider: None,
             effort: None,
             service_tier: None,
             perm: None,

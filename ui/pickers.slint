@@ -13,6 +13,9 @@ export struct MenuRow {
     selected: bool,
     disabled: bool,
     locked: bool,
+    // The heading of a provider's section (it opens and closes) and whether the section is open
+    heading: bool,
+    expanded: bool,
 }
 
 export struct IntelligenceState {
@@ -22,8 +25,9 @@ export struct IntelligenceState {
     effort-enabled: bool,
     effort-label: string,
     models: [MenuRow],
-    default-row: MenuRow,
     loading: bool,
+    // No model is chosen: nothing can be sent
+    missing: bool,
     ultra-warning: bool,
     can-reset: bool,
 }
@@ -50,6 +54,8 @@ component SectionLabel inherits Text {
 // One selectable row: radio check on the right, lock icon for locked models.
 component MenuItem inherits Rectangle {
     in property <MenuRow> item;
+    // A model under the heading of its provider
+    in property <bool> indent: false;
     callback picked;
 
     height: root.item.desc == "" ? 28px : 44px;
@@ -57,7 +63,7 @@ component MenuItem inherits Rectangle {
     background: ta.has-hover && !root.item.disabled ? Theme.hover : transparent;
 
     HorizontalLayout {
-        padding-left: 8px;
+        padding-left: root.indent ? 20px : 8px;
         padding-right: 8px;
         spacing: 6px;
         VerticalLayout {
@@ -65,8 +71,9 @@ component MenuItem inherits Rectangle {
             horizontal-stretch: 1;
             Text {
                 text: root.item.label;
-                color: root.item.disabled ? Theme.fg-tertiary : Theme.fg;
-                font-size: 13px;
+                color: root.item.disabled ? Theme.fg-tertiary : root.item.heading ? Theme.fg-secondary : Theme.fg;
+                font-size: root.item.heading ? 12px : 13px;
+                font-weight: root.item.heading ? 700 : 400;
                 overflow: elide;
             }
             if root.item.desc != "": Text {
@@ -77,7 +84,8 @@ component MenuItem inherits Rectangle {
             }
         }
         if root.item.locked: Icon { width: 14px; text: "\u{e897}"; font-size: 14px; color: Theme.fg-tertiary; }
-        if root.item.selected: Icon { width: 16px; text: "\u{e5ca}"; font-size: 16px; color: Theme.fg; }
+        if root.item.selected && !root.item.heading: Icon { width: 16px; text: "\u{e5ca}"; font-size: 16px; color: Theme.fg; }
+        if root.item.heading: Icon { width: 16px; text: root.item.expanded ? Glyph.expand-less : Glyph.expand-more; font-size: 16px; color: Theme.fg-tertiary; }
     }
     ta := TouchArea {
         mouse-cursor: root.item.disabled ? MouseCursor.default : MouseCursor.pointer;
@@ -190,6 +198,11 @@ component Separator inherits Rectangle {
     Rectangle { y: 4px; height: 1px; background: Theme.border; }
 }
 
+// Lets a test entry (INOCODE_GUI_OPEN=picker) open the model popup without the keyboard.
+export global PickerDemo {
+    in-out property <bool> open: false;
+}
+
 // Model, reasoning effort and Daybreak in one popup (Ctrl+Shift+M): search, Daybreak,
 // the model list, then the reasoning slider for the selected model.
 export component IntelligenceMenu inherits Rectangle {
@@ -197,15 +210,17 @@ export component IntelligenceMenu inherits Rectangle {
     callback search(string);
     callback pick-effort(int);
     callback pick-model(int);
-    callback pick-default;
     callback reset;
 
     public function open() { pop.show(); }
+    property <bool> demo: PickerDemo.open;
+    changed demo => { if (self.demo) { pop.show(); } }
 
     height: 28px;
     width: chip.width;
     chip := TriggerChip {
         label: root.state.loading ? "モデルを読み込み中…" : root.state.trigger;
+        tint: root.state.missing ? Theme.warning : Theme.fg;
         clicked => { pop.show(); }
     }
     pop := PopupWindow {
@@ -270,7 +285,6 @@ export component IntelligenceMenu inherits Rectangle {
                     vertical-alignment: center;
                     x: 8px;
                 }
-                MenuItem { item: root.state.default-row; picked => { root.pick-default(); } }
                 Flickable {
                     height: min(root.state.models.length * 28px, 224px);
                     content-height: root.state.models.length * 28px;
@@ -278,6 +292,7 @@ export component IntelligenceMenu inherits Rectangle {
                         width: parent.width;
                         for r[i] in root.state.models: MenuItem {
                             item: r;
+                            indent: !r.heading;
                             picked => { root.pick-model(i); }
                         }
                     }

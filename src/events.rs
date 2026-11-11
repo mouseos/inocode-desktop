@@ -34,6 +34,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             let first = !st.discovery_started;
             st.discovery_started = true;
             drop(st);
+            crate::model_init::on_models(app);
             if first {
                 start_discovery(app, false);
             }
@@ -53,6 +54,23 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             let mut st = state.borrow_mut();
             st.applied_model = model;
             st.applied_effort = effort;
+            // A thread that was just opened uses the model recorded on it; when that model is not
+            // on the list nothing is chosen (no other model is put in its place).
+            if st.sync_model && !st.applied_model.is_empty() {
+                st.sync_model = false;
+                let found = visible_models(&st).iter().find(|m| m.id == st.applied_model).map(|m| (m.id.clone(), m.provider.clone()));
+                match found {
+                    Some((id, provider)) => {
+                        st.settings.model = Some(id);
+                        st.settings.model_provider = Some(provider);
+                    }
+                    None => {
+                        st.settings.model = None;
+                        st.settings.model_provider = None;
+                    }
+                }
+                crate::model_init::push(&st);
+            }
             if !approval.is_empty() {
                 st.applied_perm = Some(Perm::from_server(&approval, &sandbox, &reviewer));
             }
@@ -90,6 +108,10 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             crate::nav::visit(app, crate::nav::Entry::Thread(id.clone()));
             let mut st = state.borrow_mut();
             st.active = id;
+            // A thread with a title is an existing one: it brings its own model. A new one has
+            // the server's default recorded, which is not a choice.
+            st.sync_model = !title.is_empty();
+            st.model_locked = !title.is_empty();
             st.busy = false;
             app.global::<AppState>().set_busy(false);
             // Each thread has its own approvals: show the ones of this thread.
@@ -211,6 +233,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         }
         // Rpc / Notify are delivered to the screen tabs (src/tabs) before apply().
         Event::Rpc { tag, result } => {
+            crate::model_init::on_rpc(app, &tag, &result);
             crate::prompts::on_rpc(app, &tag, &result);
             crate::attach::on_rpc(app, &tag, &result);
             crate::panel_data::on_rpc(app, &tag, &result);
