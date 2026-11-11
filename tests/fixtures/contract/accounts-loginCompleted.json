@@ -1,0 +1,11 @@
+{
+  "method": "inocode/accounts/loginCompleted",
+  "request": {},
+  "response": {
+    "loginId": "3b1f6c2e-0000-4000-8000-000000000000",
+    "success": true,
+    "accountId": "chatgpt-91be77aa02c4d5e6",
+    "error": null
+  },
+  "note": "通知。失敗時は success: false と error(資格情報は含めない)。"
+}

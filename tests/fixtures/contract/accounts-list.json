@@ -1,0 +1,99 @@
+{
+  "method": "inocode/accounts/list",
+  "request": {
+    "refresh": false
+  },
+  "response": {
+    "accounts": [
+      {
+        "id": "chatgpt-3a9f0c12d4e5b678",
+        "kind": "chatgpt",
+        "alias": "メイン",
+        "plan": "pro",
+        "usage": {
+          "fiveHour": {
+            "usedPercent": 42.0,
+            "windowMinutes": 300,
+            "resetsAt": 1794398400
+          },
+          "weekly": {
+            "usedPercent": 18.0,
+            "windowMinutes": 10080,
+            "resetsAt": 1794744000
+          },
+          "updatedAt": 1794390000
+        },
+        "state": "active",
+        "cooldownUntil": null,
+        "priority": 10,
+        "lastUsedAt": 1794389000,
+        "inUse": true,
+        "isDefault": true
+      },
+      {
+        "id": "chatgpt-91be77aa02c4d5e6",
+        "kind": "chatgpt",
+        "alias": "サブ",
+        "plan": "plus",
+        "usage": {
+          "fiveHour": {
+            "usedPercent": 100.0,
+            "windowMinutes": 300,
+            "resetsAt": 1794398400
+          },
+          "weekly": {
+            "usedPercent": 61.0,
+            "windowMinutes": 10080,
+            "resetsAt": 1794744000
+          },
+          "updatedAt": 1794390000
+        },
+        "state": "cooldown",
+        "cooldownUntil": 1794398400,
+        "priority": 5,
+        "lastUsedAt": 1794380000,
+        "inUse": false,
+        "isDefault": false
+      },
+      {
+        "id": "apikey-3f9c1a",
+        "kind": "apiKey",
+        "alias": "予備キー",
+        "plan": null,
+        "usage": null,
+        "state": "active",
+        "cooldownUntil": null,
+        "priority": 0,
+        "lastUsedAt": null,
+        "inUse": false,
+        "isDefault": false
+      },
+      {
+        "id": "chatgpt-c07d12ef98ab3456",
+        "kind": "chatgpt",
+        "alias": "チーム",
+        "plan": "team",
+        "usage": {
+          "fiveHour": {
+            "usedPercent": 7.0,
+            "windowMinutes": 300,
+            "resetsAt": 1794398400
+          },
+          "weekly": {
+            "usedPercent": 3.0,
+            "windowMinutes": 10080,
+            "resetsAt": 1794744000
+          },
+          "updatedAt": 1794390000
+        },
+        "state": "disabled",
+        "cooldownUntil": null,
+        "priority": 5,
+        "lastUsedAt": null,
+        "inUse": false,
+        "isDefault": false
+      }
+    ]
+  },
+  "note": "メールアドレスは載せない。識別は alias と plan。usage は ChatGPT のみ(API キーは null)。時刻は Unix 秒。id は chatgpt- + (chatgpt_user_id とワークスペース ID のハッシュ)、API キーは apikey- + 短いハッシュ。isDefault は従来の auth.json のログイン。cooldown の間は cooldownUntil が入る。"
+}

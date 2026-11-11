@@ -1,0 +1,24 @@
+{
+  "method": "inocode/accounts/policy/write",
+  "request": {
+    "policy": {
+      "thresholdPercent": 90.0,
+      "window": "both",
+      "selection": "quota",
+      "apiKeyOrder": "afterChatgpt",
+      "defaultCooldownSeconds": 60,
+      "autoSwitch": true
+    }
+  },
+  "response": {
+    "policy": {
+      "thresholdPercent": 90.0,
+      "window": "both",
+      "selection": "quota",
+      "apiKeyOrder": "afterChatgpt",
+      "defaultCooldownSeconds": 60,
+      "autoSwitch": true
+    }
+  },
+  "note": "書いた値をそのまま返す。thresholdPercent は 0-100。"
+}

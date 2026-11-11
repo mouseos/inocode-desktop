@@ -1,0 +1,39 @@
+{
+  "method": "inocode/team/updated",
+  "request": {
+    "threadId": "thr_01HZX"
+  },
+  "response": {
+    "agents": [
+      {
+        "id": "agent-003",
+        "name": "試験担当",
+        "ownedPaths": [
+          "codex-rs/app-server/tests/"
+        ],
+        "state": "blocked",
+        "tokens": 2310,
+        "startedAt": "2026-11-11T01:20:00Z"
+      }
+    ],
+    "estimate": {
+      "speedup": 1.8,
+      "costMultiplier": 2.1,
+      "decision": "multi",
+      "reason": "独立した2つのパス(app-server と GUI)に分かれ、重なるファイルが無い",
+      "tasks": [
+        {
+          "name": "app-server の API",
+          "estSeconds": 600,
+          "writePaths": []
+        },
+        {
+          "name": "GUI のタブ",
+          "estSeconds": 600,
+          "writePaths": []
+        }
+      ]
+    }
+  },
+  "note": "通知(サーバーからクライアントへ、応答なし)。request は通知の params の例ではなく購読側の識別用、response が通知の params 本文の例。差分は変わった agent だけ。"
+}

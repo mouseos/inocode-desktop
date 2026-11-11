@@ -1,0 +1,35 @@
+{
+  "method": "inocode/metrics/history",
+  "request": {
+    "since": "2026-11-10T00:00:00Z",
+    "bucket": "hour"
+  },
+  "response": {
+    "buckets": [
+      {
+        "startMs": 1762822800000,
+        "counters": {
+          "wallClockMs": 1200000,
+          "tokensIn": 120000,
+          "tokensOut": 18000,
+          "waitAgentCalls": 2,
+          "clarifications": 0,
+          "falsePositives": 0,
+          "stallsDetected": 0
+        }
+      },
+      {
+        "startMs": 1762826400000,
+        "counters": {
+          "wallClockMs": 2400000,
+          "tokensIn": 292330,
+          "tokensOut": 40120,
+          "waitAgentCalls": 5,
+          "clarifications": 2,
+          "falsePositives": 1,
+          "stallsDetected": 2
+        }
+      }
+    ]
+  }
+}

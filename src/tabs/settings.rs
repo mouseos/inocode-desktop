@@ -314,7 +314,7 @@ mod tests {
     use super::*;
 
     fn fixture(name: &str) -> Value {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ref/contract-fixtures").join(name);
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract").join(name);
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
     }
 

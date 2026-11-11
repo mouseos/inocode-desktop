@@ -1,0 +1,35 @@
+{
+  "method": "inocode/advisor/events",
+  "request": {
+    "limit": 50
+  },
+  "response": {
+    "events": [
+      {
+        "tsMs": 1762826900000,
+        "threadId": "thr_01HZX",
+        "kind": "advice",
+        "model": "gpt-5.6-luna",
+        "text": "テストの失敗は lock 待ちが原因です。cargo のプロセスを止めてから再実行してください。"
+      },
+      {
+        "tsMs": 1762826800000,
+        "threadId": "thr_01HZX",
+        "kind": "stall",
+        "trigger": "same_failure",
+        "signature": "cargo test: could not acquire lock",
+        "recentActions": [
+          "cargo test",
+          "cargo test",
+          "cargo test"
+        ]
+      },
+      {
+        "tsMs": 1762826000000,
+        "threadId": "thr_01HZY",
+        "kind": "error",
+        "text": "助言が返りませんでした(中断)"
+      }
+    ]
+  }
+}

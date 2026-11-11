@@ -1,0 +1,7 @@
+{
+  "method": "inocode/accounts/login/cancel",
+  "request": {
+    "loginId": "3b1f6c2e-0000-4000-8000-000000000000"
+  },
+  "response": {}
+}

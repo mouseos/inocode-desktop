@@ -1,0 +1,15 @@
+{
+  "method": "inocode/accounts/policy/read",
+  "request": {},
+  "response": {
+    "policy": {
+      "thresholdPercent": 90.0,
+      "window": "both",
+      "selection": "quota",
+      "apiKeyOrder": "afterChatgpt",
+      "defaultCooldownSeconds": 60,
+      "autoSwitch": true
+    }
+  },
+  "note": "window: fiveHour / weekly / both。selection: quota / roundRobin / fillFirst。apiKeyOrder: afterChatgpt(ChatGPT が全部しきい値を超えたとき、または冷却中のときに使う) / beforeChatgpt / mixed。既定は例のとおり。"
+}

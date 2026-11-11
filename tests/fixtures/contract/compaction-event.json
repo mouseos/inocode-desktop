@@ -1,0 +1,14 @@
+{
+  "method": "inocode/compaction/event",
+  "request": {},
+  "response": {
+    "threadId": "thr_01HZX",
+    "kind": "completed",
+    "auto": true,
+    "reason": "ContextLimit",
+    "reattachedFiles": ["src/main.rs", "Cargo.toml"],
+    "pinnedRuleIds": ["rule-no-force-push"],
+    "consecutiveFailures": 0
+  },
+  "note": "通知(サーバーからクライアントへ、応答なし)。kind は completed / failed / breakerTripped。自動圧縮が連続で失敗して止まると failed のあとに breakerTripped が続く。止まったあとの自動圧縮の試みも breakerTripped で通知される。"
+}

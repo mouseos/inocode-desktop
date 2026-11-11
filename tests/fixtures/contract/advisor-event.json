@@ -1,0 +1,13 @@
+{
+  "method": "inocode/advisor/event",
+  "request": {},
+  "response": {
+    "tsMs": 1762826800000,
+    "threadId": "thr_01HZX",
+    "kind": "stall",
+    "trigger": "same_failure",
+    "signature": "cargo test: could not acquire lock",
+    "recentActions": ["cargo test", "cargo test", "cargo test"]
+  },
+  "note": "通知(サーバーからクライアントへ、応答なし)。response が通知の params 本文の例。kind は stall(検出時)、advice(助言の到着時、text に本文)、error(失敗時、text にエラー本文)の 3 種で、1 件ごとに 1 通知。"
+}

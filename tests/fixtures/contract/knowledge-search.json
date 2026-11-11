@@ -1,0 +1,23 @@
+{
+  "method": "inocode/knowledge/search",
+  "request": {
+    "cwd": "D:\\work\\demo-project",
+    "query": "sqlite lock",
+    "limit": 20
+  },
+  "response": {
+    "records": [
+      {
+        "id": "failure-sqlite-lock-001",
+        "kind": "failure_case",
+        "title": "SQLite の並行書き込みでロック失敗",
+        "summary": "複数プロセスから index.sqlite に同時書き込みすると database is locked",
+        "scope": "project",
+        "status": "verified",
+        "confidence": "medium",
+        "updatedAt": "2026-11-09T18:40:00Z"
+      }
+    ]
+  },
+  "note": "list と同じ形。scope を省略すると project と global の両方。"
+}

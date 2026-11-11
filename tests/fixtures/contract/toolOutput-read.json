@@ -1,0 +1,13 @@
+{
+  "method": "inocode/toolOutput/read",
+  "request": {
+    "id": "out-0001",
+    "limit": 20000
+  },
+  "response": {
+    "id": "out-0001",
+    "bytes": 182340,
+    "text": "   Compiling codex-core v0.0.0\n   Compiling inocode v0.0.0\nwarning: unused import\nFinished dev profile",
+    "truncated": true
+  }
+}

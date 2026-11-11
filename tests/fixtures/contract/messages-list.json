@@ -1,0 +1,73 @@
+{
+  "method": "inocode/messages/list",
+  "request": {
+    "threadId": "thr_01HZX",
+    "limit": 100
+  },
+  "response": {
+    "messages": [
+      {
+        "tsMs": 1762826100000,
+        "threadId": "thr_01HZX",
+        "from": "/root",
+        "to": "/root/app-server",
+        "delivery": "followup_task",
+        "text": "RESULT summary=done conf:high",
+        "parsed": {
+          "kind": "RESULT",
+          "conf": "high",
+          "fields": [
+            {
+              "key": "summary",
+              "value": "done"
+            }
+          ]
+        }
+      },
+      {
+        "tsMs": 1762826200000,
+        "threadId": "thr_01HZX",
+        "from": "/root/app-server",
+        "to": "/root/flags",
+        "delivery": "send_message",
+        "text": "ASK q=which key format? conf:med",
+        "parsed": {
+          "kind": "ASK",
+          "conf": "med",
+          "fields": [
+            {
+              "key": "q",
+              "value": "which key format?"
+            }
+          ]
+        }
+      },
+      {
+        "tsMs": 1762826300000,
+        "threadId": "thr_01HZX",
+        "from": "/root/tests",
+        "to": "/root",
+        "delivery": "send_message",
+        "text": "BLOCKED reason=fixture missing conf:high",
+        "parsed": {
+          "kind": "BLOCKED",
+          "conf": "high",
+          "fields": [
+            {
+              "key": "reason",
+              "value": "fixture missing"
+            }
+          ]
+        }
+      },
+      {
+        "tsMs": 1762826400000,
+        "threadId": "thr_01HZX",
+        "from": "/root/flags",
+        "to": "/root/app-server",
+        "delivery": "send_message",
+        "text": "free text without a kind"
+      }
+    ]
+  }
+}

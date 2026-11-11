@@ -1,0 +1,8 @@
+{
+  "method": "inocode/accounts/remove",
+  "request": {
+    "id": "apikey-3f9c1a"
+  },
+  "response": {},
+  "note": "auth.json の既定のアカウントも消せるが、その場合は従来どおりログアウトと同じ。"
+}

@@ -1,0 +1,40 @@
+{
+  "method": "inocode/evidence/verifyDocument",
+  "request": {
+    "cwd": "D:\\work\\demo-project",
+    "text": "被告人は殺人罪(刑法第199条)に加え強盗致死罪にも該当し、被害額は300万円である。",
+    "sourceIds": [
+      "src-criminal-code-199",
+      "src-complaint-2026-0042"
+    ]
+  },
+  "response": {
+    "findings": [
+      {
+        "kind": "novel_term",
+        "text": "強盗致死罪",
+        "position": {
+          "start": 22,
+          "end": 27
+        }
+      },
+      {
+        "kind": "novel_term",
+        "text": "300万円",
+        "position": {
+          "start": 35,
+          "end": 40
+        }
+      },
+      {
+        "kind": "uncited",
+        "text": "被告人は殺人罪(刑法第199条)に加え強盗致死罪にも該当し",
+        "position": {
+          "start": 0,
+          "end": 30
+        }
+      }
+    ]
+  },
+  "note": "検出して知らせるだけ。出力は止めない。position は text 内の文字オフセット(start 含む、end 含まない)。kind: quote_missing / uncited / novel_term。"
+}

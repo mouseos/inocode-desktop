@@ -37,9 +37,11 @@ fn fixture_dir() -> Option<PathBuf> {
     starts.extend(std::env::current_dir().ok());
     for start in starts {
         for dir in start.ancestors() {
-            let candidate = dir.join("ref").join("contract-fixtures");
-            if candidate.is_dir() {
-                return Some(candidate);
+            for rel in [["ref", "contract-fixtures"], ["tests/fixtures", "contract"]] {
+                let candidate = dir.join(rel[0]).join(rel[1]);
+                if candidate.is_dir() {
+                    return Some(candidate);
+                }
             }
         }
     }

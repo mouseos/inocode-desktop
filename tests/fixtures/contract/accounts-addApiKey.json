@@ -1,0 +1,24 @@
+{
+  "method": "inocode/accounts/addApiKey",
+  "request": {
+    "alias": "予備キー",
+    "apiKey": "sk-test-FAKE",
+    "priority": 0
+  },
+  "response": {
+    "account": {
+      "id": "apikey-3f9c1a",
+      "kind": "apiKey",
+      "alias": "予備キー",
+      "plan": null,
+      "usage": null,
+      "state": "active",
+      "cooldownUntil": null,
+      "priority": 0,
+      "lastUsedAt": null,
+      "inUse": false,
+      "isDefault": false
+    }
+  },
+  "note": "キーは保存されるだけで、応答にも通知にもログにも出さない。"
+}

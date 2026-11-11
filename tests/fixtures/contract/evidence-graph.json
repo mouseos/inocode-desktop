@@ -1,0 +1,87 @@
+{
+  "method": "inocode/evidence/graph",
+  "request": {
+    "cwd": "D:\\work\\demo-project"
+  },
+  "response": {
+    "nodes": [
+      {
+        "id": "claim-001",
+        "kind": "claim",
+        "label": "被告人は刑法第199条に該当する行為をした",
+        "status": "supported",
+        "supported": true
+      },
+      {
+        "id": "claim-002",
+        "kind": "claim",
+        "label": "被害者は2026年3月1日に死亡した",
+        "status": "supported",
+        "supported": true
+      },
+      {
+        "id": "claim-003",
+        "kind": "claim",
+        "label": "被告人は強盗致死罪にも該当する",
+        "status": "unsupported",
+        "supported": false
+      },
+      {
+        "id": "span-001",
+        "kind": "span",
+        "label": "第百九十九条 人を殺した者は…",
+        "status": "verified",
+        "supported": true
+      },
+      {
+        "id": "span-002",
+        "kind": "span",
+        "label": "令和8年3月1日 死亡を確認",
+        "status": "verified",
+        "supported": true
+      },
+      {
+        "id": "src-criminal-code-199",
+        "kind": "source",
+        "label": "刑法 第199条(殺人)",
+        "status": "verified",
+        "supported": true
+      },
+      {
+        "id": "src-complaint-2026-0042",
+        "kind": "source",
+        "label": "告訴状(2026-0042)",
+        "status": "verified",
+        "supported": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "claim-001",
+        "to": "span-001",
+        "kind": "supports"
+      },
+      {
+        "from": "claim-002",
+        "to": "span-002",
+        "kind": "supports"
+      },
+      {
+        "from": "claim-001",
+        "to": "claim-002",
+        "kind": "premise"
+      },
+      {
+        "from": "span-001",
+        "to": "src-criminal-code-199",
+        "kind": "cites"
+      },
+      {
+        "from": "span-002",
+        "to": "src-complaint-2026-0042",
+        "kind": "cites"
+      }
+    ]
+  },
+  "note": "supported:false(claim-003)が根拠のないノード。GUI は赤で表示。rootClaimId は省略可。"
+}

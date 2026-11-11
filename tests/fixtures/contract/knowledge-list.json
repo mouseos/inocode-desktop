@@ -1,0 +1,33 @@
+{
+  "method": "inocode/knowledge/list",
+  "request": {
+    "scope": "project",
+    "cwd": "D:\\work\\demo-project",
+    "limit": 50
+  },
+  "response": {
+    "records": [
+      {
+        "id": "rule-no-force-push",
+        "kind": "rule",
+        "title": "main への force push 禁止",
+        "summary": "main ブランチへの force push は行わない",
+        "scope": "project",
+        "status": "verified",
+        "confidence": "high",
+        "updatedAt": "2026-11-10T09:12:00Z"
+      },
+      {
+        "id": "failure-sqlite-lock-001",
+        "kind": "failure_case",
+        "title": "SQLite の並行書き込みでロック失敗",
+        "summary": "複数プロセスから index.sqlite に同時書き込みすると database is locked",
+        "scope": "project",
+        "status": "verified",
+        "confidence": "medium",
+        "updatedAt": "2026-11-09T18:40:00Z"
+      }
+    ]
+  },
+  "note": "scope=project の例。kind/status/query/cursor は省略可。nextCursor は続きがあるときだけ付く。"
+}

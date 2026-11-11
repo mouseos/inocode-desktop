@@ -1,0 +1,9 @@
+{
+  "method": "inocode/accounts/setPriority",
+  "request": {
+    "id": "chatgpt-91be77aa02c4d5e6",
+    "priority": 20
+  },
+  "response": {},
+  "note": "大きいほど先に使う。"
+}

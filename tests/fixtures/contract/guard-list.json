@@ -1,0 +1,28 @@
+{
+  "method": "inocode/guard/list",
+  "request": {
+    "cwd": "D:/work/proj",
+    "threadId": "thr_01HZX",
+    "limit": 50
+  },
+  "response": {
+    "events": [
+      {
+        "tsMs": 1762850000000,
+        "threadId": "thr_01HZX",
+        "turnId": "turn_7",
+        "toolUseId": "call_abc123",
+        "tool": "shell",
+        "target": "git push --force origin main",
+        "severity": "block",
+        "result": "blocked",
+        "ruleId": "rule-0001",
+        "ruleTitle": "force push 禁止",
+        "reason": "履歴が消える",
+        "scope": "project"
+      }
+    ],
+    "nextCursor": null
+  },
+  "note": "新しい順。cursor は読み飛ばす件数の文字列。cwd と threadId は省略可(省略時は絞り込まない)。nextCursor は無ければ省略。result は blocked / warned。"
+}

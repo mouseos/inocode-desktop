@@ -1,0 +1,21 @@
+{
+  "method": "inocode/messages/appended",
+  "request": {},
+  "response": {
+    "threadId": "thr_01HZX",
+    "message": {
+      "tsMs": 1762826200000,
+      "threadId": "thr_01HZX",
+      "from": "/root/app-server",
+      "to": "/root/flags",
+      "delivery": "send_message",
+      "text": "ASK\nq: which key format?\nconf: med",
+      "parsed": {
+        "kind": "ASK",
+        "conf": "med",
+        "fields": [{ "key": "q", "value": "which key format?" }]
+      }
+    }
+  },
+  "note": "通知(サーバーからクライアントへ、応答なし)。threadId は会話のルートのスレッド。delivery は send_message / followup_task / spawn / final。parsed は電報文として読めたときだけ付く。"
+}

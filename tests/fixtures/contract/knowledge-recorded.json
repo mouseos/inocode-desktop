@@ -1,0 +1,11 @@
+{
+  "method": "inocode/knowledge/recorded",
+  "request": {},
+  "response": {
+    "id": "failure_case-0003",
+    "kind": "failure_case",
+    "scope": "project",
+    "title": "失敗: same_failure:cargo test"
+  },
+  "note": "通知(応答なし)。停滞の検出で失敗例が自動記録されたとき。同じ署名の失敗例が既にある場合も、その ID で通知する。"
+}

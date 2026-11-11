@@ -1,0 +1,17 @@
+{
+  "method": "inocode/evidence/addClaim",
+  "request": {
+    "text": "この法律の目的が定められている",
+    "type": "fact",
+    "confidence": "high",
+    "spanIds": [
+      "span-0001"
+    ],
+    "premiseIds": [],
+    "createdBy": "user"
+  },
+  "response": {
+    "id": "claim-0001"
+  },
+  "note": "type は fact / interpretation / inference / opinion。状態は unverified で作られる。存在しない spanIds / premiseIds は JSON-RPC エラー。"
+}

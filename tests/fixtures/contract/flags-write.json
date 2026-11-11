@@ -1,0 +1,9 @@
+{
+  "method": "inocode/flags/write",
+  "request": {
+    "key": "advisor.enabled",
+    "value": false
+  },
+  "response": {},
+  "note": "契約書 2 章のキーだけ。未知のキーは JSON-RPC エラー(invalid params, -32602)。"
+}

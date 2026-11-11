@@ -1,0 +1,30 @@
+{
+  "method": "inocode/knowledge/write",
+  "request": {
+    "scope": "project",
+    "cwd": "D:\\work\\demo-project",
+    "record": {
+      "id": "failure-sqlite-lock-001",
+      "kind": "failure_case",
+      "title": "SQLite の並行書き込みでロック失敗",
+      "scope": "project",
+      "status": "unverified",
+      "source": "session thr_01HZX",
+      "confidence": "medium",
+      "createdBy": "gpt-5.6-luna",
+      "signature": "sqlite:database is locked",
+      "symptom": "index.sqlite への書き込みが database is locked で失敗",
+      "rootCause": "WAL を使わず複数プロセスが同時に書いた",
+      "doNot": "リトライ無しで同時に書き込まない",
+      "whatWorked": "WAL モード + busy_timeout 5000ms",
+      "evidence": [
+        "log: thr_01HZX turn 14"
+      ],
+      "body": "再現手順と対処のメモ。"
+    }
+  },
+  "response": {
+    "id": "failure-sqlite-lock-001"
+  },
+  "note": "record.id を省略すると採番して返す。付けると同じ id の上書き。書き込んだ rule はすぐ有効。"
+}

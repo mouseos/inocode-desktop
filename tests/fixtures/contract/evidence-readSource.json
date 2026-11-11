@@ -1,0 +1,19 @@
+{
+  "method": "inocode/evidence/readSource",
+  "request": {
+    "id": "src-criminal-code-199",
+    "cwd": "D:\\work\\demo-project"
+  },
+  "response": {
+    "source": {
+      "id": "src-criminal-code-199",
+      "title": "刑法 第199条(殺人)",
+      "kind": "statute",
+      "hash": "sha256:9f2c1ab07e3d5c4488a1d1f0c6b7a2e55f3a3b0c8a8d4e61b2d7f9a0c3e4b5d6",
+      "retrievedAt": "2026-11-10T10:00:00Z",
+      "version": "令和7年6月1日施行"
+    },
+    "text": "第百九十九条 人を殺した者は、死刑又は無期若しくは五年以上の懲役に処する。"
+  },
+  "note": "text は原文のまま(変更しない)。"
+}

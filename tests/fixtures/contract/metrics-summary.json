@@ -1,0 +1,44 @@
+{
+  "method": "inocode/metrics/summary",
+  "request": {
+    "since": "2026-11-11T00:00:00Z"
+  },
+  "response": {
+    "counters": {
+      "wallClockMs": 3640000,
+      "tokensIn": 412330,
+      "tokensOut": 58120,
+      "waitAgentCalls": 7,
+      "clarifications": 2,
+      "falsePositives": 1,
+      "stallsDetected": 2
+    },
+    "perThread": [
+      {
+        "threadId": "thr_01HZX",
+        "counters": {
+          "wallClockMs": 2100000,
+          "tokensIn": 250100,
+          "tokensOut": 31000,
+          "waitAgentCalls": 4,
+          "clarifications": 1,
+          "falsePositives": 0,
+          "stallsDetected": 1
+        }
+      },
+      {
+        "threadId": "thr_01HZY",
+        "counters": {
+          "wallClockMs": 1540000,
+          "tokensIn": 162230,
+          "tokensOut": 27120,
+          "waitAgentCalls": 3,
+          "clarifications": 1,
+          "falsePositives": 1,
+          "stallsDetected": 1
+        }
+      }
+    ]
+  },
+  "note": "since は RFC3339 の時刻。perThread は省略可。"
+}

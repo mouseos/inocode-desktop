@@ -1,0 +1,20 @@
+{
+  "method": "inocode/flags/read",
+  "request": {},
+  "response": {
+    "flags": {
+      "metrics.enabled": true,
+      "wait.event_driven": true,
+      "knowledge.enabled": true,
+      "knowledge.pinned_rules": true,
+      "knowledge.guard": true,
+      "protocol.enabled": true,
+      "peer_messaging.enabled": true,
+      "advisor.enabled": false,
+      "compaction.persist_large_output": true,
+      "team.auto_select": true,
+      "evidence.enabled": true
+    }
+  },
+  "note": "config.toml に無いキーは true。"
+}

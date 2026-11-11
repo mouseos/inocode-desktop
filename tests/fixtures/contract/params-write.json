@@ -1,0 +1,9 @@
+{
+  "method": "inocode/params/write",
+  "request": {
+    "key": "advisor.same_failure_k",
+    "value": 5
+  },
+  "response": {},
+  "note": "value に null を渡すとキーを消して既定に戻す。整数のキーに小数や負数、enum のキーに options 以外の値、未知のキーは JSON-RPC エラー(invalid params, -32602)。値は使う時点で読まれるので、実行中のスレッドの検出器には反映されない。"
+}

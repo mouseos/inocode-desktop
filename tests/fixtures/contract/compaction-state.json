@@ -1,0 +1,25 @@
+{
+  "method": "inocode/compaction/state",
+  "request": {
+    "threadId": "thr_01HZX"
+  },
+  "response": {
+    "consecutiveFailures": 1,
+    "maxFailures": 3,
+    "breakerTripped": false,
+    "lastEvent": {
+      "threadId": "thr_01HZX",
+      "kind": "completed",
+      "auto": true,
+      "reason": "context window",
+      "reattachedFiles": [
+        "src/main.rs",
+        "Cargo.toml"
+      ],
+      "pinnedRuleIds": [
+        "rule-no-force-push"
+      ],
+      "consecutiveFailures": 0
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "method": "inocode/team/status",
+  "request": {
+    "threadId": "thr_01HZX"
+  },
+  "response": {
+    "agents": [
+      {
+        "id": "agent-001",
+        "name": "app-server 担当",
+        "ownedPaths": [
+          "codex-rs/app-server/src/inocode/"
+        ],
+        "state": "running",
+        "tokens": 18240,
+        "startedAt": "2026-11-11T01:10:00Z"
+      },
+      {
+        "id": "agent-002",
+        "name": "フラグ担当",
+        "ownedPaths": [
+          "codex-rs/ext/inocode-flags/"
+        ],
+        "state": "done",
+        "tokens": 6120,
+        "startedAt": "2026-11-11T01:10:05Z"
+      },
+      {
+        "id": "agent-003",
+        "name": "試験担当",
+        "ownedPaths": [
+          "codex-rs/app-server/tests/"
+        ],
+        "state": "blocked",
+        "tokens": 2310,
+        "startedAt": "2026-11-11T01:20:00Z"
+      }
+    ],
+    "estimate": {
+      "speedup": 1.8,
+      "costMultiplier": 2.1,
+      "decision": "multi",
+      "reason": "独立した2つのパス(app-server と GUI)に分かれ、重なるファイルが無い",
+      "tasks": [
+        {
+          "name": "app-server の追加",
+          "estSeconds": 600,
+          "writePaths": [
+            "codex-rs/app-server/src/inocode/"
+          ]
+        },
+        {
+          "name": "GUI のタブ",
+          "estSeconds": 600,
+          "writePaths": [
+            "gui/inocode-desktop/ui/tabs/"
+          ]
+        }
+      ]
+    }
+  },
+  "note": "state: running / waiting / blocked / done。"
+}

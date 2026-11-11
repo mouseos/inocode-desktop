@@ -1,0 +1,11 @@
+{
+  "method": "inocode/knowledge/handoffPreview",
+  "request": {
+    "cwd": "D:/work/proj",
+    "task": "認証の不具合を直す"
+  },
+  "response": {
+    "text": "# 引き継ぎパック\n\n## 禁止事項\n禁止事項(常に守る):\n- [rule-0001] force push 禁止 (理由: 履歴が消える)\n"
+  },
+  "note": "build_handoff_pack の出力そのもの(Markdown)。knowledge.enabled が false なら空文字列。モデルが切り替わったターンの最初に、同じ文面がユーザーのメッセージとして入る。"
+}

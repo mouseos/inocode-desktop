@@ -1,0 +1,9 @@
+{
+  "method": "inocode/evidence/setClaimStatus",
+  "request": {
+    "id": "claim-0001",
+    "status": "verified"
+  },
+  "response": {},
+  "note": "status は verified / reported / speculative / unverified / disputed / refuted。"
+}

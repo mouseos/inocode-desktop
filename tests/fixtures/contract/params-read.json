@@ -1,0 +1,97 @@
+{
+  "method": "inocode/params/read",
+  "request": {},
+  "response": {
+    "params": [
+      {
+        "key": "advisor.model",
+        "kind": "string",
+        "value": "",
+        "default": ""
+      },
+      {
+        "key": "advisor.same_failure_k",
+        "kind": "int",
+        "value": 3,
+        "default": 3
+      },
+      {
+        "key": "advisor.repeat_n",
+        "kind": "int",
+        "value": 3,
+        "default": 3
+      },
+      {
+        "key": "advisor.no_progress_turns",
+        "kind": "int",
+        "value": 8,
+        "default": 8
+      },
+      {
+        "key": "advisor.alternation_len",
+        "kind": "int",
+        "value": 4,
+        "default": 4
+      },
+      {
+        "key": "compaction.reattach_files",
+        "kind": "int",
+        "value": 5,
+        "default": 5
+      },
+      {
+        "key": "compaction.reattach_tokens",
+        "kind": "int",
+        "value": 50000,
+        "default": 50000
+      },
+      {
+        "key": "compaction.max_consecutive_failures",
+        "kind": "int",
+        "value": 3,
+        "default": 3
+      },
+      {
+        "key": "compaction.preview_bytes",
+        "kind": "int",
+        "value": 2000,
+        "default": 2000
+      },
+      {
+        "key": "team.speedup_threshold",
+        "kind": "float",
+        "value": 1.3,
+        "default": 1.3
+      },
+      {
+        "key": "team.split_overhead_secs",
+        "kind": "float",
+        "value": 60,
+        "default": 60
+      },
+      {
+        "key": "team.integrate_overhead_secs",
+        "kind": "float",
+        "value": 60,
+        "default": 60
+      },
+      {
+        "key": "team.task_secs",
+        "kind": "float",
+        "value": 600,
+        "default": 600
+      },
+      {
+        "key": "team.fork_turns_default",
+        "kind": "enum",
+        "value": "none",
+        "default": "none",
+        "options": [
+          "none",
+          "all"
+        ]
+      }
+    ]
+  },
+  "note": "設定されていないキーは value = default。advisor.model の空文字列は「現在のターンのモデル」。float の値は整数で返ることがある(60 など)。"
+}

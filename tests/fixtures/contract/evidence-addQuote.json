@@ -1,0 +1,11 @@
+{
+  "method": "inocode/evidence/addQuote",
+  "request": {
+    "sourceId": "src-0001",
+    "quote": "この法律は"
+  },
+  "response": {
+    "spanId": "span-0001"
+  },
+  "note": "quote(原文に一字一句ある文字列)か、start と end(文字オフセット、end は含まない)のどちらか。原文に無い quote は JSON-RPC エラー。"
+}

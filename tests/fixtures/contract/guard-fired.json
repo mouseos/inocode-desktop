@@ -1,0 +1,19 @@
+{
+  "method": "inocode/guard/fired",
+  "request": {},
+  "response": {
+    "tsMs": 1762850000000,
+    "threadId": "thr_01HZX",
+    "turnId": "turn_7",
+    "toolUseId": "call_abc123",
+    "tool": "shell",
+    "target": "git push --force origin main",
+    "severity": "block",
+    "result": "blocked",
+    "ruleId": "rule-0001",
+    "ruleTitle": "force push 禁止",
+    "reason": "履歴が消える",
+    "scope": "project"
+  },
+  "note": "通知(サーバーからクライアントへ、応答なし)。response が通知の params 本文の例。規則 1 件ごとに 1 通。toolUseId はツール行(項目)の id と同じ呼び出し ID。warn の場合は severity が warn、result が warned。"
+}

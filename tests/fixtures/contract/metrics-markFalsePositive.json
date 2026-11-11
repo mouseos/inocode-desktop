@@ -1,0 +1,8 @@
+{
+  "method": "inocode/metrics/markFalsePositive",
+  "request": {
+    "threadId": "thr_01HZX",
+    "source": "guard"
+  },
+  "response": {}
+}

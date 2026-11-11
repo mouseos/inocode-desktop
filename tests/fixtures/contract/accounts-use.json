@@ -1,0 +1,9 @@
+{
+  "method": "inocode/accounts/use",
+  "request": {
+    "id": "chatgpt-91be77aa02c4d5e6",
+    "threadId": "thr_01HZX"
+  },
+  "response": {},
+  "note": "手動の切り替え。成功すると通知 inocode/accounts/switched(reason: manual)と inocode/accounts/updated が出る。"
+}

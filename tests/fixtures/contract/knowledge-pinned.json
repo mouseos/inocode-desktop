@@ -1,0 +1,19 @@
+{
+  "method": "inocode/knowledge/pinned",
+  "request": {
+    "cwd": "D:/work/proj"
+  },
+  "response": {
+    "rules": [
+      {
+        "id": "rule-0001",
+        "title": "force push 禁止",
+        "reason": "履歴が消える",
+        "scope": "project",
+        "status": "unverified"
+      }
+    ],
+    "text": "禁止事項(常に守る):\n- [rule-0001] force push 禁止 (理由: 履歴が消える)"
+  },
+  "note": "圧縮後とモデル切り替え後に再注入される、有効で重大度が block の規則。text は再注入される文面の元(先頭に「Pinned rules (always apply):」が付く)。knowledge.enabled / pinned_rules が false でも rules は返し、text は空文字列。"
+}

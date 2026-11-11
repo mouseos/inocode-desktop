@@ -1,0 +1,10 @@
+{
+  "method": "inocode/knowledge/setStatus",
+  "request": {
+    "id": "failure-sqlite-lock-001",
+    "scope": "project",
+    "cwd": "D:\\work\\demo-project",
+    "status": "verified"
+  },
+  "response": {}
+}

@@ -1,0 +1,9 @@
+{
+  "method": "inocode/accounts/rename",
+  "request": {
+    "id": "chatgpt-91be77aa02c4d5e6",
+    "alias": "サブ2"
+  },
+  "response": {},
+  "note": "別名は一意でなくてもよい。"
+}

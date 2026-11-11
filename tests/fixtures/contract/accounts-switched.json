@@ -1,0 +1,13 @@
+{
+  "method": "inocode/accounts/switched",
+  "request": {
+    "threadId": "thr_01HZX"
+  },
+  "response": {
+    "fromAlias": "メイン",
+    "toAlias": "サブ",
+    "reason": "threshold",
+    "threadId": "thr_01HZX"
+  },
+  "note": "通知。reason: threshold(しきい値を超えそうだったため) / limitReached(上限に当たったため) / manual。fromAlias は元が無いとき null。会話には『メイン → サブ に切り替えました(しきい値)』のような 1 行を GUI が出す。切り替えたスレッドは全文で再送される。"
+}

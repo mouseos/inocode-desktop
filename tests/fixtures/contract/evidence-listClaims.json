@@ -1,0 +1,48 @@
+{
+  "method": "inocode/evidence/listClaims",
+  "request": {
+    "cwd": "D:\\work\\demo-project",
+    "limit": 50
+  },
+  "response": {
+    "claims": [
+      {
+        "id": "claim-001",
+        "text": "被告人は刑法第199条に該当する行為をした",
+        "type": "legal",
+        "status": "supported",
+        "confidence": "high",
+        "spanIds": [
+          "span-001"
+        ],
+        "premiseIds": [
+          "claim-002"
+        ],
+        "createdBy": "gpt-5.6-luna"
+      },
+      {
+        "id": "claim-002",
+        "text": "被害者は2026年3月1日に死亡した",
+        "type": "fact",
+        "status": "supported",
+        "confidence": "medium",
+        "spanIds": [
+          "span-002"
+        ],
+        "premiseIds": [],
+        "createdBy": "gpt-5.6-luna"
+      },
+      {
+        "id": "claim-003",
+        "text": "被告人は強盗致死罪にも該当する",
+        "type": "legal",
+        "status": "unsupported",
+        "confidence": "low",
+        "spanIds": [],
+        "premiseIds": [],
+        "createdBy": "gpt-5.6-luna"
+      }
+    ]
+  },
+  "note": "status は supported / unsupported / retracted。"
+}

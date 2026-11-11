@@ -1,0 +1,26 @@
+{
+  "method": "inocode/toolOutput/list",
+  "request": {
+    "limit": 50
+  },
+  "response": {
+    "items": [
+      {
+        "id": "out-0001",
+        "tsMs": 1762826000000,
+        "bytes": 182340,
+        "approxTokens": 45585,
+        "tool": "shell",
+        "threadId": "thr_01HZX",
+        "callId": "call_7"
+      },
+      {
+        "id": "out-0002",
+        "tsMs": 1762826600000,
+        "bytes": 64120,
+        "approxTokens": 16030,
+        "tool": "read_file"
+      }
+    ]
+  }
+}

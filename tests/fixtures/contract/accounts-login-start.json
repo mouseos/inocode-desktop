@@ -1,0 +1,14 @@
+{
+  "method": "inocode/accounts/login/start",
+  "request": {
+    "alias": "サブ2",
+    "method": "browser"
+  },
+  "response": {
+    "loginId": "3b1f6c2e-0000-4000-8000-000000000000",
+    "authUrl": "https://auth.example/authorize?FAKE",
+    "verificationUrl": null,
+    "userCode": null
+  },
+  "note": "既存のログインを置き換えず、追加する。method: deviceCode のときは verificationUrl と userCode が入る。完了は通知 inocode/accounts/loginCompleted。"
+}
