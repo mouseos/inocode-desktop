@@ -161,10 +161,37 @@ pub fn approval_info(method: &str, params: &Value, changes: Option<&Value>) -> O
     Some(info)
 }
 
+/// A call of a tool that the client is to run (item/tool/call). This app registers none, so the
+/// call is answered as a failure the model can read; the screen shows a row about it.
+/// Returns (the response, the row's text, the row's body).
+pub fn dynamic_tool_failure(params: &Value) -> (Value, String, String) {
+    let tool = text(params, "tool").unwrap_or("?");
+    let name = match text(params, "namespace") {
+        Some(ns) => format!("{ns}.{tool}"),
+        None => tool.to_string(),
+    };
+    let message = format!("InoCode Desktop は動的ツール「{name}」を実行できません");
+    let result = serde_json::json!({ "contentItems": [{ "type": "inputText", "text": message }], "success": false });
+    let args = params.get("arguments").filter(|a| !a.is_null()).map(|a| format!("引数: {a}")).unwrap_or_default();
+    (result, format!("{message}(失敗として返しました)"), args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_dynamic_tool_call_is_answered_as_a_failure_and_shown() {
+        let p = json!({ "threadId": "t", "callId": "c1", "namespace": "ide", "tool": "openFile", "arguments": { "path": "a.rs" } });
+        let (result, row, body) = dynamic_tool_failure(&p);
+        assert_eq!(result["success"], false);
+        assert_eq!(result["contentItems"][0]["type"], "inputText");
+        assert!(result["contentItems"][0]["text"].as_str().unwrap().contains("ide.openFile"));
+        assert!(row.contains("失敗として返しました"));
+        assert!(body.contains("a.rs"));
+        assert_eq!(dynamic_tool_failure(&json!({})).2, "");
+    }
 
     #[test]
     fn command_card_has_the_whole_command_and_where_it_runs() {

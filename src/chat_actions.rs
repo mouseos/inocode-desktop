@@ -21,6 +21,22 @@ struct Pending {
 thread_local! {
     static HANDLE: RefCell<Option<Rc<client::Handle>>> = const { RefCell::new(None) };
     static PENDING: RefCell<Option<Pending>> = const { RefCell::new(None) };
+    /// A message to send again as soon as the shortened history is on the screen (regenerate).
+    static RESEND: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// The text of the user message that starts the turn of the message at `index`.
+fn user_text_before(model: &ModelRc<Message>, index: usize) -> Option<String> {
+    (0..=index).rev().find_map(|i| model.row_data(i).filter(|m| m.role == "user").map(|m| m.text.to_string()))
+}
+
+/// Called when the history of the thread was put on the screen: sends what is waiting to be
+/// sent again.
+pub(crate) fn after_history(app: &AppWindow) {
+    let Some(text) = RESEND.with(|r| r.borrow_mut().take()) else { return };
+    if let Some(h) = HANDLE.with(|c| c.borrow().clone()) {
+        crate::prompts::submit(app, &h, text);
+    }
 }
 
 fn status(app: &AppWindow, text: &str, level: i32) {
@@ -59,9 +75,12 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             return;
         }
         let Some(thread) = STATE.with(|s| Some(s.borrow().active.clone()).filter(|a| !a.is_empty())) else { return };
-        PENDING.with(|p| {
-            *p.borrow_mut() = Some(Pending { kind: kind.to_string(), ordinal: users - 1, text: msg.text.to_string() })
-        });
+        // Regenerate: the question of this answer is asked again once the turn is taken out.
+        let text = if kind == "regenerate" { user_text_before(&model, index as usize).unwrap_or_default() } else { msg.text.to_string() };
+        if kind == "regenerate" && text.is_empty() {
+            return;
+        }
+        PENDING.with(|p| *p.borrow_mut() = Some(Pending { kind: kind.to_string(), ordinal: users - 1, text }));
         h.send(Command::Rpc {
             tag: "chat.turns".into(),
             method: "thread/read".into(),
@@ -121,6 +140,9 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
         _ => {
             // chat.revert: reload the shortened history; an edit puts the text back in the composer.
             let p = PENDING.with(|p| p.borrow_mut().take());
+            if let Some(p) = p.as_ref().filter(|p| p.kind == "regenerate") {
+                RESEND.with(|r| *r.borrow_mut() = Some(p.text.clone()));
+            }
             h.send(Command::OpenThread(active));
             if let Some(p) = p.filter(|p| p.kind == "edit") {
                 app.set_prompt(p.text.into());

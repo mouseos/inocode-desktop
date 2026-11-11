@@ -107,6 +107,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             crate::chat_md::reset();
             app.global::<AppState>().set_messages(ModelRc::from(Rc::new(VecModel::from(rows))));
             app.invoke_scroll_bottom();
+            crate::chat_actions::after_history(app);
         }
         Event::AssistantStart => {
             // The answer before is final now; a new one starts.

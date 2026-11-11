@@ -198,6 +198,10 @@ component Composer inherits VerticalLayout {
                     root.submit(root.text);
                     return accept;
                 }
+                // A picture on the clipboard is attached; text is pasted by the text field.
+                if (event.text.to-lowercase() == "v" && event.modifiers.control && !event.modifiers.shift && AttachState.paste-image()) {
+                    return accept;
+                }
                 // Ctrl+Shift+M opens the model picker.
                 if (event.text.to-lowercase() == ShortcutState.model-key && event.modifiers.control == ShortcutState.model-ctrl
                     && event.modifiers.shift == ShortcutState.model-shift && event.modifiers.alt == ShortcutState.model-alt) {
@@ -292,6 +296,8 @@ component ActionRow inherits HorizontalLayout {
     in property <int> index;
     // The answer is shown as plain text that can be selected.
     in property <bool> selecting;
+    // The last message of the conversation: only its answer can be made again.
+    in property <bool> last;
     callback toggle-select;
     // Copy shows a check mark for 1.2 s, as in Claude Desktop.
     property <bool> copied: false;
@@ -314,6 +320,7 @@ component ActionRow inherits HorizontalLayout {
     }
     if root.user: IconButton { glyph: Glyph.edit-note; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("edit", root.index); } }
     if root.user: IconButton { glyph: Glyph.replay; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("rewind", root.index); } }
+    if root.last && !root.user: IconButton { glyph: "\u{e5d5}"; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("regenerate", root.index); } }
     if !root.user: IconButton { glyph: Glyph.branch; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("fork", root.index); } }
     if !root.user: IconButton { glyph: "\u{e162}"; selected: root.selecting; box-size: 24px; icon-size: 14px; clicked => { root.toggle-select(); } }
 }
@@ -381,6 +388,7 @@ component ChatView inherits Rectangle {
                         user: m.role == "user";
                         index: mi;
                         selecting: select-mode;
+                        last: mi == root.messages.length - 1;
                         toggle-select => { select-mode = !select-mode; }
                     }
                     // Tokens and speed of the turn, under the last answer.
@@ -404,6 +412,15 @@ export component Home inherits Rectangle {
     public function scroll-bottom() { chat.scroll-bottom(); }
 
     background: Theme.surface;
+
+    // Files dragged onto the window are attached.
+    DropArea {
+        can-drop(event) => { DragAction.copy }
+        dropped(event) => {
+            AttachState.files-dropped(event.data);
+            DragAction.copy
+        }
+    }
 
     VerticalLayout {
         padding-bottom: root.chat-active ? 12px : 120px;

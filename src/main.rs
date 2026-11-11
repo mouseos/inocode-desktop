@@ -9,6 +9,7 @@ mod attach;
 mod callbacks;
 mod discovery;
 mod errmsg;
+mod git_panel;
 mod gui_prefs;
 mod highlight;
 mod markdown;

@@ -34,12 +34,29 @@ thread_local! {
     static DATA: RefCell<Data> = RefCell::new(Data::default());
 }
 
-const SLASH: [(&str, &str); 4] = [
+/// The commands of the composer. The names are Codex's own slash commands; only the ones that the
+/// app-server (or this window) can carry out are here.
+const SLASH: [(&str, &str); 16] = [
+    ("/review", "変更をレビューして問題を見つける(続けて指示も書ける)"),
+    ("/diff", "git の差分と、ステージ・コミット・ブランチ"),
+    ("/init", "AGENTS.md を作る"),
     ("/compact", "このセッションのコンテキストを圧縮"),
+    ("/status", "このセッションの設定とトークンの使用量"),
+    ("/new", "新規セッションを開始"),
+    ("/clear", "新規セッションを開始"),
+    ("/fork", "このセッションを分岐"),
     ("/rename", "このセッションの名前を変更"),
     ("/archive", "このセッションをアーカイブ"),
-    ("/new", "新規セッションを開始"),
+    ("/copy", "最後の回答をコピー"),
+    ("/export", "会話を Markdown のファイルに書き出す"),
+    ("/mention", "ファイルを @ で指定する"),
+    ("/cd", "作業フォルダを変える"),
+    ("/pwd", "作業フォルダを表示"),
+    ("/stop", "バックグラウンドのターミナルをすべて止める"),
 ];
+
+/// What /init sends (the same task as Codex's /init).
+const INIT_PROMPT: &str = "Generate a file named AGENTS.md that serves as a contributor guide for this repository. Your goal is to produce a clear, concise, and well-structured document with descriptive headings and actionable explanations for each section. Follow the outline below, but adapt as needed: add sections if relevant, and omit those that do not apply. Target 200-400 words; use Markdown headings. Cover: project structure and module organization; build, test and development commands; coding style and naming conventions; testing guidelines; commit and pull request guidelines. Keep the document specific to this repository.";
 
 const IMAGE_EXT: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
@@ -74,16 +91,61 @@ fn active_cwd() -> String {
     STATE.with(|s| s.borrow().active_cwd.clone())
 }
 
+/// A file to send along: an image goes as a picture, anything else as a mention.
+fn attach_file(app: &AppWindow, f: &std::path::Path) {
+    let path = f.to_string_lossy().to_string();
+    let name = f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
+    let ext = f.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if IMAGE_EXT.contains(&ext.as_str()) {
+        add(app, name, "image", json!({ "type": "localImage", "path": path }));
+    } else {
+        add(app, name.clone(), "file", json!({ "type": "mention", "name": name, "path": path }));
+    }
+}
+
 fn pick_files(app: &AppWindow) {
     let Some(files) = rfd::FileDialog::new().set_title("ファイルまたは写真を追加").pick_files() else { return };
     for f in files {
-        let path = f.to_string_lossy().to_string();
-        let name = f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
-        let ext = f.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-        if IMAGE_EXT.contains(&ext.as_str()) {
-            add(app, name, "image", json!({ "type": "localImage", "path": path }));
-        } else {
-            add(app, name.clone(), "file", json!({ "type": "mention", "name": name, "path": path }));
+        attach_file(app, &f);
+    }
+}
+
+/// An RGBA picture (what the clipboard gives) as PNG bytes.
+fn rgba_to_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, String> {
+    if rgba.len() as u64 != width as u64 * height as u64 * 4 || width == 0 || height == 0 {
+        return Err("画像の大きさが合いません".into());
+    }
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, width, height);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut w = enc.write_header().map_err(|e| e.to_string())?;
+        w.write_image_data(rgba).map_err(|e| e.to_string())?;
+    }
+    Ok(out)
+}
+
+/// The picture on the clipboard becomes an attachment (a PNG file in the temp folder).
+/// False when the clipboard holds no picture: the paste is then left to the text field.
+fn paste_image(app: &AppWindow) -> bool {
+    let Ok(mut clip) = arboard::Clipboard::new() else { return false };
+    let Ok(img) = clip.get_image() else { return false };
+    match rgba_to_png(img.width as u32, img.height as u32, &img.bytes) {
+        Ok(png) => {
+            let dir = std::env::temp_dir().join("inocode-desktop-paste");
+            let _ = std::fs::create_dir_all(&dir);
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+            let path = dir.join(format!("paste-{stamp}.png"));
+            match std::fs::write(&path, png) {
+                Ok(()) => add(app, "貼り付けた画像".to_string(), "image", json!({ "type": "localImage", "path": path.to_string_lossy() })),
+                Err(e) => app.global::<AppState>().set_status(format!("画像を保存できません: {e}").into()),
+            }
+            true
+        }
+        Err(e) => {
+            app.global::<AppState>().set_status(format!("画像を貼り付けられません: {e}").into());
+            true
         }
     }
 }
@@ -92,6 +154,11 @@ fn pick_files(app: &AppWindow) {
 pub(crate) fn menu_pick(app: &AppWindow, action: &str) -> bool {
     match action {
         "plus:file" => pick_files(app),
+        "plus:paste" => {
+            if !paste_image(app) {
+                app.global::<AppState>().set_status("クリップボードに画像がありません".into());
+            }
+        }
         "plus:slash" => {
             app.set_prompt("/".into());
             on_text(app, "/");
@@ -114,6 +181,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         let Some(app) = weak.upgrade() else { return };
         let mut items = vec![
             menus::simple_item("plus:file", "ファイルまたは写真を追加", "\u{e145}"),
+            menus::simple_item("plus:paste", "クリップボードの画像を貼り付け", "\u{e14f}"),
             menus::simple_item("plus:slash", "スラッシュコマンド", "\u{e86f}"),
         ];
         let skills = DATA.with(|d| d.borrow().skills.clone());
@@ -140,6 +208,17 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             app.global::<AppState>().invoke_new_chat_in(dir.to_string_lossy().to_string().into());
             // A folder that was just added: ask whether to trust it.
             crate::sidebar::ask_trust(&app, &dir.to_string_lossy());
+        }
+    });
+    let weak = app.as_weak();
+    app.global::<AttachState>().on_paste_image(move || weak.upgrade().map(|app| paste_image(&app)).unwrap_or(false));
+    let weak = app.as_weak();
+    app.global::<AttachState>().on_files_dropped(move |data| {
+        let Some(app) = weak.upgrade() else { return };
+        if let Ok(paths) = data.file_paths() {
+            for p in paths {
+                attach_file(&app, p);
+            }
         }
     });
     let weak = app.as_weak();
@@ -272,10 +351,105 @@ pub(crate) fn take_inputs(app: &AppWindow) -> Vec<Value> {
     items.into_iter().map(|a| a.input).collect()
 }
 
+/// A row in the chat that tells something (no server involved).
+fn say(app: &AppWindow, id: &str, text: &str, detail: &str) {
+    crate::view::messages_with(app, |m| crate::view::upsert_tool(m, id, text, Some(detail)));
+    app.invoke_scroll_bottom();
+}
+
+/// The conversation as a Markdown file: who spoke, and what was run.
+pub(crate) fn export_markdown(rows: &[(String, String, String)]) -> String {
+    let mut out = String::from("# 会話\n");
+    for (role, text, detail) in rows {
+        match role.as_str() {
+            "user" => out.push_str(&format!("\n## ユーザー\n\n{text}\n")),
+            "assistant" => out.push_str(&format!("\n## アシスタント\n\n{text}\n")),
+            _ => {
+                out.push_str(&format!("\n> {text}\n"));
+                if !detail.trim().is_empty() {
+                    out.push_str(&format!("\n```\n{}\n```\n", detail.trim_end()));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// "/status": what this session runs with.
+fn status_text(st: &State) -> String {
+    let perm = match crate::state::current_perm(st) {
+        Perm::Ask => "承認を依頼",
+        Perm::Guardian => "代わりに承認",
+        Perm::Full => "フルアクセス",
+        Perm::Server => "カスタム",
+    };
+    let model = if st.settings.model.is_some() { st.settings.model.clone().unwrap_or_default() } else { st.applied_model.clone() };
+    let effort = st.settings.effort.clone().unwrap_or_else(|| st.applied_effort.clone());
+    let mut lines = vec![format!("モデル: {model}"), format!("思考量: {effort}"), format!("権限: {perm}"), format!("作業フォルダ: {}", st.active_cwd)];
+    if !st.branch.is_empty() {
+        lines.push(format!("ブランチ: {}", st.branch));
+    }
+    lines.join("\n")
+}
+
 fn run_slash(app: &AppWindow, h: &client::Handle, cmd: &str, arg: &str) -> bool {
     let tid = STATE.with(|s| Some(s.borrow().active.clone()).filter(|a| !a.is_empty()));
     let rpc = |tag: String, method: &str, params: Value| h.send(Command::Rpc { tag, method: method.to_string(), params });
     match (cmd, tid) {
+        ("/review", Some(t)) => {
+            let target = if arg.is_empty() { json!({ "type": "uncommittedChanges" }) } else { json!({ "type": "custom", "instructions": arg }) };
+            rpc("slash.review".into(), "review/start", json!({ "threadId": t, "target": target }));
+        }
+        ("/diff", _) => crate::git_panel::open(app),
+        ("/init", Some(_)) => h.send(Command::Prompt(INIT_PROMPT.to_string())),
+        ("/status", _) => {
+            let mut text = STATE.with(|s| status_text(&s.borrow()));
+            let usage = app.global::<AppState>().get_usage_text().to_string();
+            if !usage.is_empty() {
+                text.push_str(&format!("
+コンテキスト: {usage}"));
+            }
+            say(app, "slash:status", "セッションの状態", &text);
+        }
+        ("/clear", _) => h.send(Command::NewThread),
+        ("/fork", Some(_)) => {
+            let n = app.global::<AppState>().get_messages().row_count();
+            if n > 0 {
+                app.global::<MessageActions>().invoke_act("fork".into(), (n - 1) as i32);
+            }
+        }
+        ("/copy", _) => {
+            let model = app.global::<AppState>().get_messages();
+            if let Some(i) = (0..model.row_count()).rev().find(|i| model.row_data(*i).map(|m| m.role == "assistant").unwrap_or(false)) {
+                app.global::<MessageActions>().invoke_act("copy".into(), i as i32);
+            }
+        }
+        ("/export", _) => {
+            let model = app.global::<AppState>().get_messages();
+            let rows: Vec<(String, String, String)> = (0..model.row_count())
+                .filter_map(|i| model.row_data(i))
+                .map(|m| (m.role.to_string(), m.text.to_string(), m.detail.to_string()))
+                .collect();
+            if rows.is_empty() {
+                return false;
+            }
+            if let Some(path) = rfd::FileDialog::new().set_title("会話を書き出す").set_file_name("conversation.md").add_filter("Markdown", &["md"]).save_file() {
+                if let Err(e) = std::fs::write(&path, export_markdown(&rows)) {
+                    app.global::<AppState>().set_status(format!("書き出せません: {e}").into());
+                }
+            }
+        }
+        ("/mention", _) => {
+            let t = app.get_prompt().to_string();
+            let t = t.trim_end_matches(|c: char| c == '/' || c.is_alphabetic()).to_string();
+            app.set_prompt(format!("{t}@").into());
+        }
+        ("/cd", _) => app.global::<AttachState>().invoke_choose_folder(),
+        ("/pwd", _) => {
+            let cwd = active_cwd();
+            say(app, "slash:pwd", "作業フォルダ", &cwd);
+        }
+        ("/stop", Some(t)) => rpc("slash.stop".into(), "thread/backgroundTerminals/clean", json!({ "threadId": t })),
         ("/compact", Some(t)) => rpc("prompt.compact".into(), "thread/compact/start", json!({ "threadId": t })),
         ("/rename", Some(t)) if !arg.is_empty() => {
             rpc(format!("chat.rename|{t}|{arg}"), "thread/name/set", json!({ "threadId": t, "name": arg }))
@@ -298,4 +472,25 @@ pub(crate) fn try_slash(app: &AppWindow, h: &client::Handle, text: &str) -> bool
         return false;
     }
     run_slash(app, h, cmd, arg.trim())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_clipboard_picture_becomes_a_png() {
+        let rgba: Vec<u8> = (0..2 * 3 * 4).map(|i| i as u8).collect();
+        let png = rgba_to_png(2, 3, &rgba).unwrap();
+        assert_eq!(&png[..8], &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]);
+        // and back: the same pixels
+        let mut r = png::Decoder::new(std::io::Cursor::new(&png)).read_info().unwrap();
+        let mut buf = vec![0; r.output_buffer_size().unwrap()];
+        let info = r.next_frame(&mut buf).unwrap();
+        assert_eq!((info.width, info.height), (2, 3));
+        assert_eq!(&buf[..rgba.len()], &rgba[..]);
+        // a size that does not fit the bytes is refused
+        assert!(rgba_to_png(2, 2, &rgba).is_err());
+        assert!(rgba_to_png(0, 0, &[]).is_err());
+    }
 }

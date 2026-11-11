@@ -30,6 +30,12 @@ impl<F: Fn(Event)> Session<'_, F> {
             (self.on_event)(Event::Questions { key, items });
             return Ok(());
         }
+        if method == "item/tool/call" {
+            let (result, row, body) = approval::dynamic_tool_failure(&params);
+            let call = params.get("callId").and_then(Value::as_str).unwrap_or("").to_string();
+            (self.on_event)(Event::Note { id: format!("dynamic-tool:{call}"), text: row, detail: body });
+            return self.conn.send(json!({ "id": id, "result": result }));
+        }
         let changes = params.get("itemId").and_then(Value::as_str).and_then(|i| self.file_changes.get(i)).cloned();
         let Some(mut info) = approval::approval_info(method, &params, changes.as_ref()) else {
             return self.conn.send(json!({

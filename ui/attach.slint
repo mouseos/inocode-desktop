@@ -30,6 +30,10 @@ export global AttachState {
     callback open-plus(length, length);
     // "別のフォルダを選択…" in the work-place chip.
     callback choose-folder;
+    // Ctrl+V: true when the clipboard held a picture and it was attached.
+    callback paste-image() -> bool;
+    // Files dropped on the window.
+    callback files-dropped(data-transfer);
 }
 
 export component AttachChips inherits HorizontalLayout {
