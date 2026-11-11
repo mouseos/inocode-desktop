@@ -209,9 +209,23 @@ pub(crate) fn begin(app: &AppWindow, kind: &str) {
     }
 }
 
+/// Open the reset-credit history of an account and ask for it.
+pub(crate) fn open_history_modal(app: &AppWindow, id: &str) {
+    let st = app.global::<AccountsState>();
+    st.set_history(ModelRc::default());
+    st.set_history_error("".into());
+    st.set_history_loading(true);
+    st.set_history_open(true);
+    rpc("acct.history", "inocode/accounts/resetCredit/history", json!({ "id": id }));
+}
+
+pub(crate) fn close_history_modal(app: &AppWindow) {
+    app.global::<AccountsState>().set_history_open(false);
+}
+
 fn visit(app: &AppWindow) {
     let st = app.global::<AccountsState>();
-    crate::nav::visit(app, crate::nav::Entry::Account(st.get_provider_id().to_string(), st.get_account_id().to_string()));
+    crate::nav::dialog_visit(app, crate::nav::Entry::Account(st.get_provider_id().to_string(), st.get_account_id().to_string()));
 }
 
 /// Open a provider's screen.
@@ -916,13 +930,20 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     let weak = app.as_weak();
     st.on_open_history(move |id| {
         if let Some(app) = weak.upgrade() {
+            open_history_modal(&app, &id);
             let st = app.global::<AccountsState>();
-            st.set_history(ModelRc::default());
-            st.set_history_error("".into());
-            st.set_history_loading(true);
-            st.set_history_open(true);
+            crate::nav::dialog_visit(&app, crate::nav::Entry::Modal(st.get_provider_id().to_string(), st.get_account_id().to_string()));
         }
-        rpc("acct.history", "inocode/accounts/resetCredit/history", json!({ "id": id.to_string() }));
+    });
+    let weak = app.as_weak();
+    st.on_close_history(move || {
+        let Some(app) = weak.upgrade() else { return };
+        // The modal is a step of the dialog's history: closing it steps back.
+        if crate::nav::dialog_at_modal() {
+            crate::nav::dialog_go(&app, true);
+        } else {
+            close_history_modal(&app);
+        }
     });
     let weak = app.as_weak();
     st.on_make_default(move || {

@@ -15,6 +15,8 @@ pub(crate) enum Entry {
     Settings(i32),
     /// A screen of the account section: (provider, account), empty strings for the levels above.
     Account(String, String),
+    /// The reset-credit history of an account (a modal over its screen): (provider, account).
+    Modal(String, String),
 }
 
 #[derive(Default)]
@@ -73,6 +75,65 @@ impl History {
 thread_local! {
     static HANDLE: RefCell<Option<Rc<client::Handle>>> = const { RefCell::new(None) };
     static HISTORY: RefCell<History> = RefCell::new(History::default());
+    /// The history inside the settings dialog (items, levels, the modal); it does not touch HISTORY.
+    static DIALOG: RefCell<History> = RefCell::new(History::default());
+}
+
+fn dialog_flags(app: &AppWindow) {
+    let (b, f) = DIALOG.with(|h| {
+        let h = h.borrow();
+        (h.can_back(), h.can_forward())
+    });
+    let s = app.global::<SettingsPageState>();
+    s.set_can_back(b);
+    s.set_can_forward(f);
+}
+
+/// The dialog was opened: a history of its own starts.
+pub(crate) fn dialog_reset(app: &AppWindow) {
+    DIALOG.with(|h| *h.borrow_mut() = History::default());
+    dialog_flags(app);
+}
+
+pub(crate) fn dialog_visit(app: &AppWindow, e: Entry) {
+    if DIALOG.with(|h| h.borrow_mut().visit(e)) {
+        dialog_flags(app);
+    }
+}
+
+/// The step the dialog is at is the modal of the history.
+pub(crate) fn dialog_at_modal() -> bool {
+    DIALOG.with(|h| matches!(h.borrow().entries.get(h.borrow().idx), Some(Entry::Modal(..))))
+}
+
+pub(crate) fn dialog_go(app: &AppWindow, back: bool) {
+    let Some(e) = DIALOG.with(|h| {
+        let mut h = h.borrow_mut();
+        let e = h.step(back);
+        if e.is_some() {
+            h.navigating = true;
+        }
+        e
+    }) else {
+        return;
+    };
+    match &e {
+        Entry::Settings(section) => {
+            crate::accounts_page::close_history_modal(app);
+            crate::settings_page::show_section(app, (*section).max(0));
+        }
+        Entry::Account(provider, account) => {
+            crate::accounts_page::close_history_modal(app);
+            crate::accounts_page::show_at(app, provider, account);
+        }
+        Entry::Modal(provider, account) => {
+            crate::accounts_page::show_at(app, provider, account);
+            crate::accounts_page::open_history_modal(app, account);
+        }
+        _ => {}
+    }
+    DIALOG.with(|h| h.borrow_mut().navigating = false);
+    dialog_flags(app);
 }
 
 fn flags(app: &AppWindow) {
@@ -115,6 +176,7 @@ fn go(app: &AppWindow, back: bool) {
             s.set_open(false);
             app.global::<Tabs>().invoke_select(*i);
         }
+        Entry::Modal(..) => {}
         Entry::Account(provider, account) => {
             app.global::<Tabs>().set_current(0);
             s.set_open(true);

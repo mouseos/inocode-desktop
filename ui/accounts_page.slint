@@ -171,13 +171,14 @@ export global AccountsState {
     callback make-default;
     callback use-credit(string, string);
     callback open-history(string);
+    callback close-history;
     callback add-compatible;
 }
 
 // The history of the reset credits of one account, newest first.
 component HistoryDialog inherits Rectangle {
     background: #00000066;
-    TouchArea { clicked => { AccountsState.history-open = false; } }
+    TouchArea { clicked => { AccountsState.close-history(); } }
     Rectangle {
         width: min(560px, root.width - 32px);
         height: min(520px, root.height - 48px);
@@ -194,7 +195,7 @@ component HistoryDialog inherits Rectangle {
             HorizontalLayout {
                 spacing: 8px;
                 Text { text: "リセット券の履歴"; color: Theme.fg; font-size: 16px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
-                IconButton { glyph: Glyph.close; clicked => { AccountsState.history-open = false; } }
+                IconButton { glyph: Glyph.close; clicked => { AccountsState.close-history(); } }
             }
             if AccountsState.history-loading: Text { text: "読み込み中…"; color: Theme.fg-tertiary; font-size: 13px; }
             if !AccountsState.history-loading && AccountsState.history-error != "": Text { text: AccountsState.history-error; color: Theme.fg-secondary; font-size: 13px; wrap: word-wrap; }
@@ -222,7 +223,7 @@ component HistoryDialog inherits Rectangle {
             }
             HorizontalLayout {
                 alignment: end;
-                Chip { label: "閉じる"; clicked => { AccountsState.history-open = false; } }
+                Chip { label: "閉じる"; clicked => { AccountsState.close-history(); } }
             }
         }
     }
@@ -447,7 +448,7 @@ export component AccountsView inherits Rectangle {
             // Level 2: the accounts of one provider
             if AccountsState.provider-id != "" && AccountsState.account-id == "": VerticalLayout {
                 spacing: 10px;
-                ScreenHead { back-label: "アカウント"; title: AccountsState.provider-name; back => { AccountsState.back(); } }
+                ScreenHead { title: AccountsState.provider-name; }
                 if AccountsState.total.length > 0: Group {
                     Row { label: "全体の使用量"; bars: AccountsState.total; clickable: false; separator: false; }
                 }
@@ -541,7 +542,7 @@ export component AccountsView inherits Rectangle {
             // Level 3: one account
             if AccountsState.account-id != "": VerticalLayout {
                 spacing: 10px;
-                ScreenHead { back-label: AccountsState.provider-name; title: AccountsState.cur.alias; back => { AccountsState.back(); } }
+                ScreenHead { title: AccountsState.cur.alias; }
                 Group {
                     Row {
                         label: "別名";

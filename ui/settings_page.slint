@@ -78,6 +78,11 @@ export global SettingsPageState {
     in property <string> transport;
 
     callback open-page;
+    // The history inside the dialog
+    in property <bool> can-back: false;
+    in property <bool> can-forward: false;
+    callback go-back;
+    callback go-forward;
     callback nav-search-changed(string);
     callback open-section(int);
     callback open-providers;
@@ -191,8 +196,17 @@ export component SettingsPage inherits Rectangle {
                 VerticalLayout {
                     HorizontalLayout {
                         height: 52px;
-                        padding-left: 20px;
+                        padding-left: 12px;
                         padding-right: 12px;
+                        spacing: 4px;
+                        VerticalLayout {
+                            alignment: center;
+                            IconButton { glyph: Glyph.arrow-back; box-size: 30px; enabled: SettingsPageState.can-back; clicked => { SettingsPageState.go-back(); } }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            IconButton { glyph: Glyph.arrow-forward; box-size: 30px; enabled: SettingsPageState.can-forward; clicked => { SettingsPageState.go-forward(); } }
+                        }
                         Text { text: "設定"; color: Theme.fg; font-size: 15px; font-weight: 700; vertical-alignment: center; horizontal-stretch: 1; }
                         VerticalLayout {
                             alignment: center;

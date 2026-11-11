@@ -234,17 +234,26 @@ pub(crate) fn open(app: &AppWindow) {
     show_home(app);
 }
 
+/// Open the dialog; one that was closed starts a history of its own.
+fn begin_dialog(app: &AppWindow) {
+    let s = app.global::<SettingsPageState>();
+    if !s.get_open() {
+        crate::nav::dialog_reset(app);
+    }
+    s.set_open(true);
+}
+
 /// The list of the sections (the first screen of the settings).
 pub(crate) fn show_home(app: &AppWindow) {
     let s = app.global::<SettingsPageState>();
-    s.set_open(true);
+    begin_dialog(app);
     let cur = s.get_section();
     load(app, if cur <= 0 { index_of(S::General) } else { cur });
 }
 
 /// The usage is on the providers' screens (the bars of each level).
 pub(crate) fn open_usage(app: &AppWindow) {
-    app.global::<SettingsPageState>().set_open(true);
+    begin_dialog(app);
     load(app, index_of(S::Account));
 }
 
@@ -375,7 +384,7 @@ fn load(app: &AppWindow, section: i32) {
         idx += 1;
     }
     DATA.with(|d| d.borrow_mut().section = idx);
-    crate::nav::visit(app, crate::nav::Entry::Settings(idx as i32));
+    crate::nav::dialog_visit(app, crate::nav::Entry::Settings(idx as i32));
     s.set_section(idx as i32);
     s.set_title(list[idx].1.into());
     s.set_recording_id("".into());
@@ -460,6 +469,18 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     });
 
     let weak = app.as_weak();
+    st.on_go_back(move || {
+        if let Some(app) = weak.upgrade() {
+            crate::nav::dialog_go(&app, true);
+        }
+    });
+    let weak = app.as_weak();
+    st.on_go_forward(move || {
+        if let Some(app) = weak.upgrade() {
+            crate::nav::dialog_go(&app, false);
+        }
+    });
+    let weak = app.as_weak();
     st.on_open_page(move || {
         if let Some(app) = weak.upgrade() {
             open(&app);
@@ -468,7 +489,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     let weak = app.as_weak();
     st.on_open_section(move |i| {
         if let Some(app) = weak.upgrade() {
-            app.global::<SettingsPageState>().set_open(true);
+            begin_dialog(&app);
             load(&app, i);
         }
     });
