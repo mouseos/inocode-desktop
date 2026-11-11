@@ -21,6 +21,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             st.settings.programs = list.clone();
             st.models = list;
             st.models_loaded = true;
+            crate::settings_page::boot();
             refresh_pickers(app, &st);
             // Discovery runs once the main app-server has its own list.
             let first = !st.discovery_started;

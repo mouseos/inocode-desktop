@@ -168,6 +168,7 @@ mod Glyph {
     pub fn close() -> &'static str { "\u{e5cd}" }
     pub fn settings() -> &'static str { "\u{e8b8}" }
     pub fn account() -> &'static str { "\u{e853}" }
+    pub fn bar_chart() -> &'static str { "\u{e26b}" }
 }
 
 fn rpc(h: &client::Handle, tag: String, method: &str, params: Value) {
@@ -222,6 +223,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
                 let logged_in = app.global::<AppState>().get_logged_in();
                 let items = vec![
                     item("settings", "設定", Glyph::settings(), false, false),
+                    item("usage", "使用量", Glyph::bar_chart(), false, false),
                     item("switch", "アカウントを切り替え", Glyph::account(), false, false),
                     separator(),
                     if logged_in {
@@ -305,6 +307,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
                 );
             }
             "settings" => crate::settings_page::open(&app),
+            "usage" => crate::settings_page::open_usage(&app),
             "login" => app.global::<AppState>().invoke_login(),
             "switch" => rpc(&h, "chat.account.pool".into(), "inocode/accounts/list", json!({ "refresh": false })),
             "logout" => confirm(

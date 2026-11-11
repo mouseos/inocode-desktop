@@ -120,7 +120,6 @@ export component TaskPanel inherits Rectangle {
             ca := TouchArea { enabled: !PromptState.compacting; mouse-cursor: pointer; clicked => { PromptState.compact(); } }
         }
         Rectangle { height: 6px; }
-        SectionTitle { label: "使用量"; trailing: root.rate-text == "" ? "—" : root.rate-text; }
         conn := SectionTitle { label: "コネクタ"; open: false; trailing: PanelState.mcp-summary; }
         if conn.open: VerticalLayout {
             for m in PanelState.mcp: PanelRow { glyph: Glyph.extension; label: m.name; detail: m.status; }

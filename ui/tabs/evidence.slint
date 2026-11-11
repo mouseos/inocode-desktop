@@ -19,9 +19,9 @@ export struct EClaim {
     status: string,
     status-label: string,
     confidence-label: string,
-    spans: int,
-    model: string,
-    selected: bool,
+    // 根拠の引用(原資料名「引用の頭」を 1 行 1 件)
+    evidence: string,
+    author: string,
 }
 
 // マインドマップのノード。位置と大きさは Rust 側で決める。
@@ -101,15 +101,23 @@ export global EvidenceState {
     in property <string> quote-note;
     in-out property <bool> adding-claim: false;
     in-out property <string> new-claim-text;
-    in-out property <string> new-claim-spans;
     in-out property <int> new-claim-type: 0;
     in-out property <int> new-claim-confidence: 1;
     out property <[string]> claim-types: ["事実", "法的主張", "推論", "仮説"];
-    out property <[string]> claim-confidences: ["高", "中", "低"];
+    out property <[string]> claim-confidences: ["確実", "たぶん", "未確認"];
     out property <[string]> claim-statuses: ["根拠あり", "根拠なし", "撤回"];
     in property <[VSource]> premise-options;
-    in property <string> selected-claim;
-    in property <int> selected-claim-status: -1;
+    in property <[VSource]> span-options;
+    in-out property <string> span-query;
+    in-out property <string> premise-query;
+    // 主張の絞り込み: 0 = 根拠なし、1 = 根拠あり、2 = 撤回、3 = すべて(件数つきの文字は Rust が作る)
+    in-out property <int> claim-filter: 0;
+    in property <[string]> claim-tags;
+    in property <string> claims-empty;
+    callback claim-filter-changed(int);
+    callback claim-set-status(string, int);
+    callback toggle-span(int);
+    callback form-filter-changed();
     callback add-source();
     callback save-source();
     callback cancel-source();
@@ -118,12 +126,10 @@ export global EvidenceState {
     callback save-claim();
     callback cancel-claim();
     callback toggle-premise(int);
-    callback set-claim-status(int);
 
     callback refresh();
     callback tab-changed(int);
     callback select-source(string);
-    callback select-claim(string);
     callback select-node(string);
     callback toggle-verify-source(int);
     callback verify();
@@ -148,16 +154,14 @@ component SourceRow inherits Rectangle {
 
 component ClaimRow inherits Rectangle {
     in property <EClaim> item;
-    callback clicked;
+    callback set-status(int);
     height: c.preferred-height + 4px;
     border-radius: Theme.radius-row;
-    background: root.item.selected ? Theme.selected : ta.has-hover ? Theme.hover : transparent;
-    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
     c := VerticalLayout {
         padding: 9px;
         padding-left: 10px;
         padding-right: 10px;
-        spacing: 4px;
+        spacing: 5px;
         HorizontalLayout {
             spacing: 10px;
             Text {
@@ -170,12 +174,49 @@ component ClaimRow inherits Rectangle {
             StatusLabel { y: 0px; status: root.item.status; label: root.item.status-label; }
         }
         Text {
-            text: root.item.type-label + " · 確度 " + root.item.confidence-label + " · 引用 " + root.item.spans + " 件 · " + root.item.model;
+            text: root.item.type-label + " · " + root.item.confidence-label + (root.item.author != "" ? " · " + root.item.author : "");
             color: Theme.fg-tertiary;
             font-size: 11px;
             overflow: elide;
         }
+        if root.item.evidence != "": Text {
+            text: root.item.evidence;
+            color: Theme.fg-secondary;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            if root.item.status != "supported": Button { label: "根拠あり"; clicked => { root.set-status(0); } }
+            if root.item.status != "unsupported": Button { label: "根拠なし"; clicked => { root.set-status(1); } }
+            if root.item.status != "retracted": Button { label: "撤回"; clicked => { root.set-status(2); } }
+        }
     }
+}
+
+component CheckRow inherits Rectangle {
+    in property <VSource> item;
+    callback toggled;
+    height: 26px;
+    border-radius: 6px;
+    background: pa.has-hover ? Theme.hover : transparent;
+    HorizontalLayout {
+        padding-left: 6px;
+        spacing: 8px;
+        Rectangle {
+            width: 14px;
+            height: 14px;
+            y: 6px;
+            border-radius: 3px;
+            border-width: 1px;
+            border-color: Theme.fg-tertiary;
+            background: root.item.checked ? Theme.accent : transparent;
+            Text { text: root.item.checked ? "✓" : ""; color: #ffffff; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+        }
+        Text { text: root.item.title; color: Theme.fg; font-size: 12px; vertical-alignment: center; overflow: elide; }
+    }
+    pa := TouchArea { mouse-cursor: pointer; clicked => { root.toggled(); } }
 }
 
 component SourcesView inherits Rectangle {
@@ -283,34 +324,24 @@ component ClaimsView inherits Rectangle {
             padding-bottom: 6px;
             spacing: 6px;
             height: 42px;
-            Button { label: "主張を追加"; clicked => { EvidenceState.add-claim(); } }
-            if EvidenceState.selected-claim != "": Text {
-                text: "  選択中: " + EvidenceState.selected-claim;
-                color: Theme.fg-secondary;
-                font-size: 12px;
-                vertical-alignment: center;
-                overflow: elide;
-                max-width: 320px;
-            }
-            if EvidenceState.selected-claim != "": HorizontalLayout {
-                spacing: 6px;
-                for s[i] in EvidenceState.claim-statuses: Tag {
-                    label: s;
-                    selected: EvidenceState.selected-claim-status == i;
-                    clicked => { EvidenceState.set-claim-status(i); }
-                }
+            for t[i] in EvidenceState.claim-tags: Tag {
+                label: t;
+                selected: EvidenceState.claim-filter == i;
+                clicked => { EvidenceState.claim-filter = i; EvidenceState.claim-filter-changed(i); }
             }
             Rectangle { horizontal-stretch: 1; }
+            Button { label: "主張を追加"; clicked => { EvidenceState.add-claim(); } }
         }
         if !EvidenceState.adding-claim: Flickable {
             content-height: list.preferred-height + 16px;
             list := VerticalLayout {
                 padding: 12px;
-                spacing: 2px;
+                spacing: 6px;
                 alignment: start;
+                if EvidenceState.claims-empty != "": Text { text: EvidenceState.claims-empty; color: Theme.fg-tertiary; font-size: 13px; }
                 for c in EvidenceState.claims: ClaimRow {
                     item: c;
-                    clicked => { EvidenceState.select-claim(c.id); }
+                    set-status(i) => { EvidenceState.claim-set-status(c.id, i); }
                 }
             }
         }
@@ -343,30 +374,12 @@ component ClaimsView inherits Rectangle {
                         clicked => { EvidenceState.new-claim-confidence = i; }
                     }
                 }
-                Text { text: "引用箇所の ID(カンマ区切り。引用にしたものは自動で入ります)"; color: Theme.fg-tertiary; font-size: 11px; }
-                LineEdit { text <=> EvidenceState.new-claim-spans; }
+                Text { text: "根拠にする引用"; color: Theme.fg-tertiary; font-size: 11px; }
+                LineEdit { text <=> EvidenceState.span-query; edited(t) => { EvidenceState.form-filter-changed(); } }
+                for p[i] in EvidenceState.span-options: CheckRow { item: p; toggled => { EvidenceState.toggle-span(i); } }
                 Text { text: "前提にする主張"; color: Theme.fg-tertiary; font-size: 11px; }
-                for p[i] in EvidenceState.premise-options: Rectangle {
-                    height: 26px;
-                    border-radius: 6px;
-                    background: pa.has-hover ? Theme.hover : transparent;
-                    HorizontalLayout {
-                        padding-left: 6px;
-                        spacing: 8px;
-                        Rectangle {
-                            width: 14px;
-                            height: 14px;
-                            y: 6px;
-                            border-radius: 3px;
-                            border-width: 1px;
-                            border-color: Theme.fg-tertiary;
-                            background: p.checked ? Theme.accent : transparent;
-                            Text { text: p.checked ? "✓" : ""; color: #ffffff; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
-                        }
-                        Text { text: p.title; color: Theme.fg; font-size: 12px; vertical-alignment: center; overflow: elide; }
-                    }
-                    pa := TouchArea { mouse-cursor: pointer; clicked => { EvidenceState.toggle-premise(i); } }
-                }
+                LineEdit { text <=> EvidenceState.premise-query; edited(t) => { EvidenceState.form-filter-changed(); } }
+                for p[i] in EvidenceState.premise-options: CheckRow { item: p; toggled => { EvidenceState.toggle-premise(i); } }
                 if EvidenceState.write-note != "": Text { text: EvidenceState.write-note; color: Theme.danger; font-size: 12px; wrap: word-wrap; }
                 HorizontalLayout {
                     spacing: 8px;

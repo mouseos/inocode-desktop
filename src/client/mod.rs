@@ -24,7 +24,7 @@ use session::supervise;
 use std::sync::mpsc;
 use std::time::Duration;
 
-pub use parse::{window_label as rate_window_label, history_from_thread, parse_account, parse_models, parse_threads, rate_limit_text, tool_detail, tool_text};
+pub use parse::{history_from_thread, parse_account, parse_models, parse_threads, rate_limit_text, tool_detail, tool_text};
 pub use transport::{base_client_version, find_inocode, probe_models};
 pub use types::*;
 

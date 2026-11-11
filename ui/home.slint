@@ -362,8 +362,8 @@ export component Home inherits Rectangle {
                     alignment: center;
                     spacing: 8px;
                     ApprovalButton { label: "ChatGPT でログイン"; primary: true; clicked => { AppState.login(); } }
-                    ApprovalButton { label: "API キーを入力"; clicked => { SettingsPageState.open-section(14); } }
-                    ApprovalButton { label: "プロバイダを追加"; clicked => { SettingsPageState.open-section(7); } }
+                    ApprovalButton { label: "API キーを入力"; clicked => { SettingsPageState.open-signin(); } }
+                    ApprovalButton { label: "プロバイダを追加"; clicked => { SettingsPageState.open-providers(); } }
                 }
 
                 HorizontalLayout {

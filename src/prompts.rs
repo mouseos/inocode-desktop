@@ -23,6 +23,8 @@ struct Data {
 }
 
 thread_local! {
+    /// Codex: follow-up behavior "steer" (desktop.followUpQueueMode); the default is the queue.
+    static FOLLOW_STEER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static HANDLE: RefCell<Option<Rc<client::Handle>>> = const { RefCell::new(None) };
     static DATA: RefCell<Data> = RefCell::new(Data::default());
 }
@@ -113,11 +115,19 @@ pub(crate) fn show_banner(app: &AppWindow, text: &str, level: i32) {
     s.set_banner_level(level);
 }
 
+pub(crate) fn set_follow_steer(on: bool) {
+    FOLLOW_STEER.with(|f| f.set(on));
+}
+
 /// Called by the composer: send now, or queue behind the running turn.
 pub(crate) fn submit(app: &AppWindow, h: &client::Handle, text: String) {
     DATA.with(|d| d.borrow_mut().last_prompt = text.clone());
     let extra = crate::attach::take_inputs(app);
-    if app.global::<AppState>().get_busy() {
+    if app.global::<AppState>().get_busy() && FOLLOW_STEER.with(|f| f.get()) && extra.is_empty() {
+        // Steer: the message goes into the running turn at once.
+        crate::view::messages_with(app, |m| crate::view::push(m, "", "user", &text));
+        h.send(Command::Steer(text));
+    } else if app.global::<AppState>().get_busy() {
         if let Some(tid) = active() {
             let mut inputs = input(&text);
             if let Some(a) = inputs.as_array_mut() {
