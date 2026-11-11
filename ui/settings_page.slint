@@ -8,34 +8,55 @@ export struct SRow {
     title: string,
     desc: string,
     value: string,
-    // 0 text, 1 switch, 2 button (label = value), 3 choice (opts, current = value), 4 shortcut
+    // 0 text, 1 switch, 2 button (label = value), 3 choice (opts, current = value), 4 shortcut, 5 text input
     kind: int,
     on: bool,
     opts: [string],
 }
 
-// Full-page settings opened from the gear and the account menu (src/settings_page.rs).
-// Sections 3 (InoCode) and 4 (account) embed the pages of the InoCode feature settings and the
-// account pool; the other sections are generic rows filled from the server.
+// The one settings page (gear and account menu), src/settings_page.rs.
+// `layout` picks what the right side shows: 0 rows, 1 InoCode, 2 account, 3 providers, 4 config.toml.
 export global SettingsPageState {
     in-out property <bool> open: false;
     in-out property <int> section: 0;
+    in property <int> layout: 0;
     in property <[string]> sections;
     in property <string> title;
     in property <[SRow]> rows;
     in property <bool> loading: false;
+    in-out property <string> search;
     // The shortcut being recorded ("" when none).
     in-out property <string> recording-id;
-    // Plan label and the log-out button of the account section.
     in property <string> plan;
+    // Sign-in
+    in-out property <string> key-alias;
+    in-out property <string> key-value;
+    in-out property <bool> show-key: false;
+    in property <string> login-note;
+    // New model provider
+    in-out property <string> prov-name;
+    in-out property <string> prov-url;
+    in-out property <string> prov-env;
+    in-out property <string> prov-key;
+    // config.toml
+    in-out property <string> raw-text;
+    in property <string> raw-note;
 
     callback open-page;
+    callback open-section(int);
     callback select(int);
+    callback do-search(string);
     callback row-action(string);
     callback row-toggle(string, bool);
     callback row-choose(string, int);
+    callback row-text(string, string);
     // id, lower-case key text, ctrl, shift, alt
     callback record(string, string, bool, bool, bool);
+    callback login-chatgpt;
+    callback login-key;
+    callback add-provider;
+    callback save-raw;
+    callback reload-raw;
 }
 
 component Chip inherits Rectangle {
@@ -54,6 +75,116 @@ component Chip inherits Rectangle {
         vertical-alignment: center;
     }
     ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component Field inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> secret: false;
+    callback accepted(string);
+    callback edited(string);
+    height: 30px;
+    border-radius: Theme.radius-row;
+    background: Theme.composer;
+    border-width: 1px;
+    border-color: ti.has-focus ? Theme.accent : Theme.border;
+    ti := TextInput {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        text <=> root.text;
+        font-size: 13px;
+        color: Theme.fg;
+        vertical-alignment: center;
+        single-line: true;
+        input-type: root.secret ? InputType.password : InputType.text;
+        accepted => { root.accepted(self.text); }
+        edited => { root.edited(self.text); }
+    }
+    if root.text == "" && !ti.has-focus: Text {
+        x: 10px;
+        width: parent.width - 18px;
+        height: parent.height;
+        text: root.placeholder;
+        color: Theme.fg-tertiary;
+        font-size: 13px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component Rows inherits VerticalLayout {
+    callback record-start(string);
+    for r in SettingsPageState.rows: Rectangle {
+        height: max(44px, c.preferred-height + 12px);
+        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        c := HorizontalLayout {
+            padding-top: 6px;
+            padding-bottom: 6px;
+            spacing: 12px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Text { text: r.title; color: Theme.fg; font-size: 13px; wrap: word-wrap; }
+                if r.desc != "": Text { text: r.desc; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
+            }
+            if r.kind == 0: Text {
+                text: r.value;
+                color: Theme.fg-secondary;
+                font-size: 13px;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                overflow: elide;
+                max-width: 320px;
+            }
+            if r.kind == 1: Rectangle {
+                width: 28px;
+                Switch {
+                    y: (parent.height - self.height) / 2;
+                    on: r.on;
+                    toggled(v) => { SettingsPageState.row-toggle(r.id, v); }
+                }
+            }
+            if r.kind == 2: VerticalLayout {
+                alignment: center;
+                Chip { label: r.value; clicked => { SettingsPageState.row-action(r.id); } }
+            }
+            if r.kind == 3: VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    spacing: 4px;
+                    alignment: end;
+                    for o[i] in r.opts: Chip {
+                        label: o;
+                        active: o == r.value;
+                        clicked => { SettingsPageState.row-choose(r.id, i); }
+                    }
+                }
+            }
+            if r.kind == 4: HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: SettingsPageState.recording-id == r.id ? "キーを押してください…" : r.value;
+                    color: SettingsPageState.recording-id == r.id ? Theme.accent : Theme.fg-secondary;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Chip { label: "変更"; clicked => { root.record-start(r.id); } }
+                }
+            }
+            if r.kind == 5: VerticalLayout {
+                alignment: center;
+                Field {
+                    width: 280px;
+                    placeholder: "既定";
+                    text: r.value;
+                    accepted(t) => { SettingsPageState.row-text(r.id, t); }
+                }
+            }
+        }
+    }
 }
 
 export component SettingsPage inherits Rectangle {
@@ -77,14 +208,13 @@ export component SettingsPage inherits Rectangle {
                 reject
             }
             HorizontalLayout {
-                // Left: back arrow, title and the section list
+                // Left: back arrow, title, search and the section list
                 Rectangle {
-                    width: 240px;
+                    width: 250px;
                     background: Theme.sidebar;
                     VerticalLayout {
                         padding: 8px;
                         spacing: 2px;
-                        alignment: start;
                         HorizontalLayout {
                             height: 36px;
                             spacing: 4px;
@@ -95,38 +225,113 @@ export component SettingsPage inherits Rectangle {
                             }
                             Text { text: "設定"; color: Theme.fg; font-size: 15px; font-weight: 600; vertical-alignment: center; }
                         }
-                        for name[i] in SettingsPageState.sections: Rectangle {
-                            height: 28px;
-                            border-radius: Theme.radius-row;
-                            background: i == SettingsPageState.section ? Theme.selected : na.has-hover ? Theme.hover : transparent;
-                            Text { x: 10px; text: name; color: Theme.fg; font-size: 13px; vertical-alignment: center; }
-                            na := TouchArea { mouse-cursor: pointer; clicked => { SettingsPageState.select(i); } }
+                        Field {
+                            placeholder: "設定を検索";
+                            text <=> SettingsPageState.search;
+                            edited(t) => { SettingsPageState.do-search(t); }
+                            accepted(t) => { SettingsPageState.do-search(t); }
+                        }
+                        Rectangle { height: 4px; }
+                        Flickable {
+                            content-height: nav.preferred-height;
+                            nav := VerticalLayout {
+                                spacing: 2px;
+                                alignment: start;
+                                for name[i] in SettingsPageState.sections: Rectangle {
+                                    height: 28px;
+                                    border-radius: Theme.radius-row;
+                                    background: i == SettingsPageState.section && SettingsPageState.search == "" ? Theme.selected : na.has-hover ? Theme.hover : transparent;
+                                    Text { x: 10px; text: name; color: Theme.fg; font-size: 13px; vertical-alignment: center; }
+                                    na := TouchArea { mouse-cursor: pointer; clicked => { SettingsPageState.select(i); } }
+                                }
+                            }
                         }
                     }
                 }
                 // Right: the section
                 Rectangle {
                     horizontal-stretch: 1;
-                    if SettingsPageState.section == 3: Rectangle {
-                        InocodePage { }
+                    if SettingsPageState.layout == 1 && SettingsPageState.search == "": InocodePage { }
+                    if SettingsPageState.layout == 2 && SettingsPageState.search == "": Flickable {
+                        content-height: acc.preferred-height;
+                        acc := VerticalLayout {
+                            padding: 24px;
+                            padding-left: 40px;
+                            padding-right: 40px;
+                            spacing: 8px;
+                            alignment: start;
+                            Text { text: "アカウント"; color: Theme.fg; font-size: 20px; font-weight: 600; height: 40px; vertical-alignment: center; }
+                            HorizontalLayout {
+                                height: 36px;
+                                spacing: 12px;
+                                Text { text: "プラン"; color: Theme.fg; font-size: 13px; vertical-alignment: center; }
+                                Text { text: SettingsPageState.plan; color: Theme.fg-secondary; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; }
+                                VerticalLayout {
+                                    alignment: center;
+                                    Chip { label: "ログアウト"; clicked => { SettingsPageState.row-action("logout"); } }
+                                }
+                            }
+                            Text { text: "サインイン"; color: Theme.fg; font-size: 14px; font-weight: 600; height: 32px; vertical-alignment: center; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Chip { label: "ChatGPT でログイン"; clicked => { SettingsPageState.login-chatgpt(); } }
+                                Chip { label: "プロバイダを追加"; clicked => { SettingsPageState.open-section(7); } }
+                            }
+                            Text { text: "OpenAI の API キーで使う"; color: Theme.fg-secondary; font-size: 12px; }
+                            Field { placeholder: "別名(任意。入れるとアカウントプールに追加)"; text <=> SettingsPageState.key-alias; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Field {
+                                    horizontal-stretch: 1;
+                                    placeholder: "API キー";
+                                    secret: !SettingsPageState.show-key;
+                                    text <=> SettingsPageState.key-value;
+                                    accepted(t) => { SettingsPageState.login-key(); }
+                                }
+                                Chip { label: SettingsPageState.show-key ? "隠す" : "表示"; clicked => { SettingsPageState.show-key = !SettingsPageState.show-key; } }
+                                Chip { label: "使う"; active: true; clicked => { SettingsPageState.login-key(); } }
+                            }
+                            if SettingsPageState.login-note != "": Text { text: SettingsPageState.login-note; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
+                            Text { text: "アカウントプール"; color: Theme.fg; font-size: 14px; font-weight: 600; height: 32px; vertical-alignment: center; }
+                            AccountsPage { height: 640px; }
+                        }
                     }
-                    if SettingsPageState.section == 4: VerticalLayout {
-                        HorizontalLayout {
-                            height: 52px;
-                            padding-left: 24px;
-                            padding-right: 24px;
-                            padding-top: 12px;
-                            spacing: 12px;
-                            Text { text: "プラン"; color: Theme.fg; font-size: 13px; vertical-alignment: center; }
-                            Text { text: SettingsPageState.plan; color: Theme.fg-secondary; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; }
-                            VerticalLayout {
-                                alignment: center;
-                                Chip { label: "ログアウト"; clicked => { SettingsPageState.row-action("logout"); } }
+                    if SettingsPageState.layout == 4 && SettingsPageState.search == "": VerticalLayout {
+                        padding: 24px;
+                        padding-left: 40px;
+                        padding-right: 40px;
+                        spacing: 8px;
+                        Text { text: SettingsPageState.title; color: Theme.fg; font-size: 20px; font-weight: 600; height: 40px; vertical-alignment: center; }
+                        Rectangle {
+                            vertical-stretch: 1;
+                            border-radius: Theme.radius-row;
+                            background: Theme.composer;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            Flickable {
+                                TextInput {
+                                    x: 10px;
+                                    y: 8px;
+                                    width: parent.width - 20px;
+                                    height: max(parent.height - 16px, self.preferred-height);
+                                    text <=> SettingsPageState.raw-text;
+                                    font-family: "Consolas";
+                                    font-size: 12px;
+                                    color: Theme.fg;
+                                    wrap: no-wrap;
+                                    single-line: false;
+                                }
                             }
                         }
-                        AccountsPage { vertical-stretch: 1; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: SettingsPageState.raw-note; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                            Chip { label: "再読み込み"; clicked => { SettingsPageState.reload-raw(); } }
+                            Chip { label: "保存"; active: true; clicked => { SettingsPageState.save-raw(); } }
+                        }
                     }
-                    if SettingsPageState.section != 3 && SettingsPageState.section != 4: Flickable {
+                    if SettingsPageState.layout == 0 || SettingsPageState.layout == 3 || SettingsPageState.search != "": Flickable {
                         content-height: body.preferred-height;
                         body := VerticalLayout {
                             padding: 24px;
@@ -134,74 +339,44 @@ export component SettingsPage inherits Rectangle {
                             padding-right: 40px;
                             spacing: 4px;
                             alignment: start;
-                            Text { text: SettingsPageState.title; color: Theme.fg; font-size: 20px; font-weight: 600; height: 40px; vertical-alignment: center; }
+                            Text {
+                                text: SettingsPageState.search != "" ? "検索結果" : SettingsPageState.title;
+                                color: Theme.fg;
+                                font-size: 20px;
+                                font-weight: 600;
+                                height: 40px;
+                                vertical-alignment: center;
+                            }
                             if SettingsPageState.loading: Text { text: "読み込み中…"; color: Theme.fg-tertiary; font-size: 13px; }
-                            for r in SettingsPageState.rows: Rectangle {
-                                height: max(44px, c.preferred-height + 12px);
-                                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
-                                c := HorizontalLayout {
-                                    padding-top: 6px;
-                                    padding-bottom: 6px;
-                                    spacing: 12px;
-                                    VerticalLayout {
-                                        horizontal-stretch: 1;
-                                        alignment: center;
-                                        Text { text: r.title; color: Theme.fg; font-size: 13px; wrap: word-wrap; }
-                                        if r.desc != "": Text { text: r.desc; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
-                                    }
-                                    if r.kind == 0: Text {
-                                        text: r.value;
-                                        color: Theme.fg-secondary;
-                                        font-size: 13px;
-                                        vertical-alignment: center;
-                                        horizontal-alignment: right;
-                                        overflow: elide;
-                                        max-width: 320px;
-                                    }
-                                    if r.kind == 1: Rectangle {
-                                        width: 28px;
-                                        Switch {
-                                            y: (parent.height - self.height) / 2;
-                                            on: r.on;
-                                            toggled(v) => { SettingsPageState.row-toggle(r.id, v); }
-                                        }
-                                    }
-                                    if r.kind == 2: VerticalLayout {
-                                        alignment: center;
-                                        Chip { label: r.value; clicked => { SettingsPageState.row-action(r.id); } }
-                                    }
-                                    if r.kind == 3: VerticalLayout {
-                                        alignment: center;
-                                        HorizontalLayout {
-                                            spacing: 4px;
-                                            alignment: end;
-                                            for o[i] in r.opts: Chip {
-                                                label: o;
-                                                active: o == r.value;
-                                                clicked => { SettingsPageState.row-choose(r.id, i); }
-                                            }
-                                        }
-                                    }
-                                    if r.kind == 4: HorizontalLayout {
-                                        spacing: 8px;
-                                        Text {
-                                            text: SettingsPageState.recording-id == r.id ? "キーを押してください…" : r.value;
-                                            color: SettingsPageState.recording-id == r.id ? Theme.accent : Theme.fg-secondary;
-                                            font-size: 13px;
-                                            vertical-alignment: center;
-                                        }
-                                        VerticalLayout {
-                                            alignment: center;
-                                            Chip {
-                                                label: "変更";
-                                                clicked => {
-                                                    SettingsPageState.recording-id = r.id;
-                                                    fs.focus();
-                                                }
-                                            }
-                                        }
-                                    }
+                            if SettingsPageState.rows.length == 0 && !SettingsPageState.loading && SettingsPageState.search != "": Text { text: "一致する設定はありません"; color: Theme.fg-tertiary; font-size: 13px; }
+                            Rows {
+                                record-start(id) => {
+                                    SettingsPageState.recording-id = id;
+                                    fs.focus();
                                 }
+                            }
+                            if SettingsPageState.layout == 3 && SettingsPageState.search == "": VerticalLayout {
+                                spacing: 8px;
+                                padding-top: 16px;
+                                Text { text: "プロバイダを追加"; color: Theme.fg; font-size: 14px; font-weight: 600; }
+                                Field { placeholder: "名前"; text <=> SettingsPageState.prov-name; }
+                                Field { placeholder: "base URL(OpenAI 互換のエンドポイント)"; text <=> SettingsPageState.prov-url; }
+                                Field { placeholder: "API キーの環境変数名"; text <=> SettingsPageState.prov-env; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Field {
+                                        horizontal-stretch: 1;
+                                        placeholder: "API キーの値(環境変数名と、どちらか)";
+                                        secret: !SettingsPageState.show-key;
+                                        text <=> SettingsPageState.prov-key;
+                                    }
+                                    Chip { label: SettingsPageState.show-key ? "隠す" : "表示"; clicked => { SettingsPageState.show-key = !SettingsPageState.show-key; } }
+                                }
+                                HorizontalLayout {
+                                    alignment: end;
+                                    Chip { label: "追加"; active: true; clicked => { SettingsPageState.add-provider(); } }
+                                }
+                                if SettingsPageState.login-note != "": Text { text: SettingsPageState.login-note; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
                             }
                         }
                     }
