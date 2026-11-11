@@ -13,6 +13,7 @@ mod accounts;
 mod evidence;
 mod knowledge;
 mod settings;
+mod stats;
 mod team;
 mod team_log;
 
@@ -55,6 +56,7 @@ pub fn install(app: &AppWindow, host: &Host) {
     for tab in &TABS {
         (tab.install)(app, host);
     }
+    stats::install(app, host);
     let weak = app.as_weak();
     let host = host.clone();
     app.global::<crate::Tabs>().on_opened(move |i| {
@@ -72,4 +74,5 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
     for tab in &TABS {
         (tab.event)(app, host, event);
     }
+    stats::event(app, host, event);
 }

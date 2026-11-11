@@ -1,0 +1,132 @@
+{
+  "method": "inocode/stats/hourly",
+  "request": {
+    "days": 7,
+    "model": null
+  },
+  "response": {
+    "hours": [
+      {
+        "hour": 0,
+        "avgTokensPerSecond": null,
+        "samples": 0
+      },
+      {
+        "hour": 1,
+        "avgTokensPerSecond": null,
+        "samples": 0
+      },
+      {
+        "hour": 2,
+        "avgTokensPerSecond": null,
+        "samples": 0
+      },
+      {
+        "hour": 3,
+        "avgTokensPerSecond": null,
+        "samples": 0
+      },
+      {
+        "hour": 4,
+        "avgTokensPerSecond": null,
+        "samples": 0
+      },
+      {
+        "hour": 5,
+        "avgTokensPerSecond": null,
+        "samples": 0
+      },
+      {
+        "hour": 6,
+        "avgTokensPerSecond": null,
+        "samples": 0
+      },
+      {
+        "hour": 7,
+        "avgTokensPerSecond": 58.5,
+        "samples": 2
+      },
+      {
+        "hour": 8,
+        "avgTokensPerSecond": 70.0,
+        "samples": 5
+      },
+      {
+        "hour": 9,
+        "avgTokensPerSecond": 68.0,
+        "samples": 18
+      },
+      {
+        "hour": 10,
+        "avgTokensPerSecond": 44.5,
+        "samples": 40
+      },
+      {
+        "hour": 11,
+        "avgTokensPerSecond": 56.0,
+        "samples": 52
+      },
+      {
+        "hour": 12,
+        "avgTokensPerSecond": 54.0,
+        "samples": 30
+      },
+      {
+        "hour": 13,
+        "avgTokensPerSecond": 65.5,
+        "samples": 12
+      },
+      {
+        "hour": 14,
+        "avgTokensPerSecond": 77.0,
+        "samples": 44
+      },
+      {
+        "hour": 15,
+        "avgTokensPerSecond": 40.0,
+        "samples": 60
+      },
+      {
+        "hour": 16,
+        "avgTokensPerSecond": 51.5,
+        "samples": 55
+      },
+      {
+        "hour": 17,
+        "avgTokensPerSecond": 63.0,
+        "samples": 38
+      },
+      {
+        "hour": 18,
+        "avgTokensPerSecond": 61.0,
+        "samples": 25
+      },
+      {
+        "hour": 19,
+        "avgTokensPerSecond": 72.5,
+        "samples": 9
+      },
+      {
+        "hour": 20,
+        "avgTokensPerSecond": 49.0,
+        "samples": 3
+      },
+      {
+        "hour": 21,
+        "avgTokensPerSecond": 47.0,
+        "samples": 1
+      },
+      {
+        "hour": 22,
+        "avgTokensPerSecond": 58.5,
+        "samples": 4
+      },
+      {
+        "hour": 23,
+        "avgTokensPerSecond": 70.0,
+        "samples": 22
+      }
+    ]
+  },
+  "note": "仮。samples が 0 の時間は avg が null。"
+}

@@ -1,0 +1,12 @@
+{
+  "method": "inocode/stats/seedProgress",
+  "request": {},
+  "response": {
+    "jobId": "seed-1",
+    "filesDone": 120,
+    "filesTotal": 340,
+    "samplesAdded": 2210,
+    "done": false
+  },
+  "note": "仮。通知のパラメータ。完了時に done: true。"
+}

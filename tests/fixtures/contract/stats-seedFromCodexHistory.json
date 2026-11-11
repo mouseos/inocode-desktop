@@ -1,0 +1,10 @@
+{
+  "method": "inocode/stats/seedFromCodexHistory",
+  "request": {
+    "path": null
+  },
+  "response": {
+    "jobId": "seed-1"
+  },
+  "note": "仮。進行は通知 inocode/stats/seedProgress。"
+}

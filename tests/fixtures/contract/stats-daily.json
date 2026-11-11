@@ -1,0 +1,67 @@
+{
+  "method": "inocode/stats/daily",
+  "request": {
+    "days": 14
+  },
+  "response": {
+    "days": [
+      {
+        "date": "2026-11-05",
+        "requests": 30,
+        "tokens": 800000,
+        "quotaPrimaryPercent": 6.4,
+        "quotaSecondaryPercent": 1.2,
+        "avgTokensPerSecond": 48.3
+      },
+      {
+        "date": "2026-11-06",
+        "requests": 39,
+        "tokens": 1110000,
+        "quotaPrimaryPercent": 11.4,
+        "quotaSecondaryPercent": 4.2,
+        "avgTokensPerSecond": 59.3
+      },
+      {
+        "date": "2026-11-07",
+        "requests": 48,
+        "tokens": 1420000,
+        "quotaPrimaryPercent": 16.4,
+        "quotaSecondaryPercent": 2.2,
+        "avgTokensPerSecond": 70.3
+      },
+      {
+        "date": "2026-11-08",
+        "requests": 57,
+        "tokens": 830000,
+        "quotaPrimaryPercent": 21.4,
+        "quotaSecondaryPercent": 5.2,
+        "avgTokensPerSecond": 57.3
+      },
+      {
+        "date": "2026-11-09",
+        "requests": 66,
+        "tokens": 1140000,
+        "quotaPrimaryPercent": 9.4,
+        "quotaSecondaryPercent": 3.2,
+        "avgTokensPerSecond": 68.3
+      },
+      {
+        "date": "2026-11-10",
+        "requests": 35,
+        "tokens": 1450000,
+        "quotaPrimaryPercent": 14.4,
+        "quotaSecondaryPercent": 1.2,
+        "avgTokensPerSecond": 55.3
+      },
+      {
+        "date": "2026-11-11",
+        "requests": 44,
+        "tokens": 860000,
+        "quotaPrimaryPercent": 19.4,
+        "quotaSecondaryPercent": 4.2,
+        "avgTokensPerSecond": 66.3
+      }
+    ]
+  },
+  "note": "仮。古い日から新しい日の順。"
+}

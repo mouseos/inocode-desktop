@@ -1,0 +1,94 @@
+{
+  "method": "inocode/stats/summary",
+  "request": {
+    "days": 3,
+    "model": null,
+    "provider": null
+  },
+  "response": {
+    "days": 3,
+    "models": [
+      {
+        "model": "gpt-5.6-luna",
+        "provider": "openai",
+        "requests": 120,
+        "tokens": {
+          "uncachedInput": 1200000,
+          "cachedInput": 9100000,
+          "output": 280000,
+          "reasoning": 90000
+        },
+        "quotaUsed": {
+          "primaryPercent": 18.4,
+          "secondaryPercent": 4.6
+        },
+        "quotaPerMillion": {
+          "uncachedInput": {
+            "primaryPercent": 2.4,
+            "secondaryPercent": 0.6
+          },
+          "cachedInput": {
+            "primaryPercent": 0.2,
+            "secondaryPercent": 0.05
+          },
+          "output": {
+            "primaryPercent": 9.8,
+            "secondaryPercent": 2.5
+          }
+        },
+        "avgTokensPerSecond": 62.4,
+        "insufficient": false
+      },
+      {
+        "model": "gpt-5.6-sol",
+        "provider": "openai",
+        "requests": 14,
+        "tokens": {
+          "uncachedInput": 310000,
+          "cachedInput": 0,
+          "output": 22000,
+          "reasoning": 8000
+        },
+        "quotaUsed": {
+          "primaryPercent": 9.1,
+          "secondaryPercent": 2.2
+        },
+        "quotaPerMillion": null,
+        "avgTokensPerSecond": 38.0,
+        "insufficient": true
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "provider": "anthropic",
+        "requests": 41,
+        "tokens": {
+          "uncachedInput": 520000,
+          "cachedInput": 3300000,
+          "output": 96000,
+          "reasoning": 0
+        },
+        "quotaUsed": {
+          "primaryPercent": 6.0,
+          "secondaryPercent": 1.5
+        },
+        "quotaPerMillion": {
+          "uncachedInput": {
+            "primaryPercent": 3.1,
+            "secondaryPercent": 0.8
+          },
+          "cachedInput": {
+            "primaryPercent": 0.3,
+            "secondaryPercent": 0.07
+          },
+          "output": {
+            "primaryPercent": 12.5,
+            "secondaryPercent": 3.1
+          }
+        },
+        "avgTokensPerSecond": 71.9,
+        "insufficient": false
+      }
+    ]
+  },
+  "note": "仮。正は ref/docs/24-stats-rpc.md。insufficient の行は quotaPerMillion が null。"
+}
