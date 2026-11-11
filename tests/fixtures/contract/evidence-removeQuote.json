@@ -1,0 +1,9 @@
+{
+  "method": "inocode/evidence/removeQuote",
+  "request": {
+    "spanId": "span-003",
+    "cwd": "D:\\work\\demo-project"
+  },
+  "response": {},
+  "note": "引用を捨てる。その引用を根拠にしていた主張は、根拠なし(unsupported)に戻る。"
+}

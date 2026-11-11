@@ -7,7 +7,7 @@
 
 use super::Host;
 use crate::client::Event;
-use crate::{AppWindow, ESource, EClaim, EvidenceState, Finding, GEdge, GNode, VSource};
+use crate::{AppWindow, ESource, ESpan, EClaim, EvidenceState, Finding, GEdge, GNode, VSource};
 use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, VecModel};
 use std::cell::RefCell;
@@ -178,6 +178,18 @@ fn evidence_lines(claim: &ClaimData, spans: &[SpanData], sources: &[SourceData])
         .map(|sp| span_label(sp, sources))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// 原文の中でドラッグした範囲(UTF-8 のバイト位置 2 つ。逆向きでもよい)->
+/// (開始の文字位置, 終了の文字位置, 選んだ文字列)。範囲が空、空白だけ、文字の途中のとき None。
+fn selection_to_quote(text: &str, a: i32, b: i32) -> Option<(usize, usize, String)> {
+    let (lo, hi) = (a.min(b).max(0) as usize, a.max(b).max(0) as usize);
+    let picked = text.get(lo..hi)?;
+    if picked.trim().is_empty() {
+        return None;
+    }
+    let start = text[..lo].chars().count();
+    Some((start, start + picked.chars().count(), picked.to_string()))
 }
 
 fn claim_filter(all: &[ClaimData], index: i32) -> Vec<ClaimData> {
@@ -506,17 +518,20 @@ fn install_write(app: &AppWindow, host: &Host) {
         }
     });
     let (weak, h) = (app.as_weak(), host.clone());
-    st.on_add_quote(move || {
+    st.on_add_selection(move |a, c| {
         let Some(app) = weak.upgrade() else { return };
         let st = app.global::<EvidenceState>();
         let Some(source) = E.with(|e| e.borrow().selected_source.clone()) else { return };
-        match nonempty(&st.get_quote_text()) {
-            Some(quote) => {
-                st.set_quote_note("".into());
-                h.rpc("evidence.w.quote", "inocode/evidence/addQuote", json!({ "sourceId": source, "quote": quote, "cwd": cwd(&app) }));
-            }
-            None => st.set_quote_note("引用にする文字列を入力してください".into()),
+        let text = E.with(|e| e.borrow().source_text.clone());
+        if let Some((start, end, _)) = selection_to_quote(&text, a, c) {
+            st.set_quote_note("".into());
+            h.rpc("evidence.w.quote", "inocode/evidence/addQuote", json!({ "sourceId": source, "start": start, "end": end, "cwd": cwd(&app) }));
         }
+    });
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_remove_quote(move |id| {
+        let Some(app) = weak.upgrade() else { return };
+        h.rpc("evidence.w.rmquote", "inocode/evidence/removeQuote", json!({ "spanId": id.to_string(), "cwd": cwd(&app) }));
     });
 
     let weak = app.as_weak();
@@ -627,6 +642,8 @@ struct E {
     last_spans: Vec<String>,
     /// 引用箇所の一覧(全原資料)
     spans: Vec<SpanData>,
+    /// いま開いている原資料の原文
+    source_text: String,
     /// 主張の追加フォームでチェックされた引用の ID・前提の主張の ID
     span_checked: HashSet<String>,
     premise_checked: HashSet<String>,
@@ -674,6 +691,20 @@ fn push_sources(app: &AppWindow) {
                 .map(|(i, x)| VSource { id: x.id.as_str().into(), title: x.title.as_str().into(), checked: checked(i) })
                 .collect(),
         ));
+    });
+}
+
+/// 開いている原資料の引用の一覧
+fn push_source_spans(app: &AppWindow) {
+    E.with(|e| {
+        let e = e.borrow();
+        let rows: Vec<ESpan> = e
+            .spans
+            .iter()
+            .filter(|x| e.selected_source.as_deref() == Some(x.source_id.as_str()))
+            .map(|x| ESpan { id: x.id.as_str().into(), text: x.quote.chars().take(60).collect::<String>().into() })
+            .collect();
+        app.global::<EvidenceState>().set_source_spans(model(rows));
     });
 }
 
@@ -805,7 +836,10 @@ fn show_node_detail(app: &AppWindow) {
 fn request_for_tab(app: &AppWindow, host: &Host, tab: i32) {
     let cwd = cwd(app);
     match tab {
-        0 | 3 => host.rpc("evidence.sources", "inocode/evidence/listSources", json!({ "cwd": cwd, "limit": 100 })),
+        0 | 3 => {
+            host.rpc("evidence.sources", "inocode/evidence/listSources", json!({ "cwd": cwd, "limit": 100 }));
+            host.rpc("evidence.spans", "inocode/evidence/listSpans", json!({ "cwd": cwd }));
+        }
         1 => {
             host.rpc("evidence.sources", "inocode/evidence/listSources", json!({ "cwd": cwd, "limit": 100 }));
             host.rpc("evidence.spans", "inocode/evidence/listSpans", json!({ "cwd": cwd }));
@@ -913,6 +947,7 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
         }
         ("evidence.spans", Ok(v)) => {
             E.with(|e| e.borrow_mut().spans = parse_spans(v));
+            push_source_spans(app);
             push_claims(app);
             push_claim_form(app);
         }
@@ -927,7 +962,9 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
             }
             st.set_source_meta(meta.into());
             st.set_source_text(s(p, "text").into());
+            E.with(|e| e.borrow_mut().source_text = s(p, "text"));
             st.set_has_source(true);
+            push_source_spans(app);
         }
         ("evidence.claims", Ok(v)) => {
             st.set_note("".into());
@@ -975,12 +1012,17 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
         ("evidence.w.source", Err(e)) => st.set_write_note(e.as_str().into()),
         ("evidence.w.quote", Ok(v)) => {
             let span = s(payload(v), "spanId");
-            st.set_quote_text("".into());
-            st.set_quote_note(format!("引用を追加しました ({span})").into());
+            st.set_quote_note("".into());
             E.with(|e| e.borrow_mut().last_spans.push(span));
             host.rpc("evidence.spans", "inocode/evidence/listSpans", json!({ "cwd": cwd(app) }));
         }
         ("evidence.w.quote", Err(e)) => st.set_quote_note(e.as_str().into()),
+        // 引用を捨てた: 引用の一覧と、それを根拠にしていた主張(根拠なしに戻る)を読み直す
+        ("evidence.w.rmquote", Ok(_)) => {
+            host.rpc("evidence.spans", "inocode/evidence/listSpans", json!({ "cwd": cwd(app) }));
+            host.rpc("evidence.claims", "inocode/evidence/listClaims", json!({ "cwd": cwd(app), "limit": 100 }));
+        }
+        ("evidence.w.rmquote", Err(e)) => st.set_quote_note(e.as_str().into()),
         ("evidence.w.claim", Ok(_)) => {
             st.set_adding_claim(false);
             E.with(|e| e.borrow_mut().last_spans.clear());
@@ -1036,6 +1078,23 @@ mod tests {
         let labels = claim_filter_labels(&claims);
         assert_eq!(labels.len(), 4);
         assert!(labels[0].starts_with("根拠なし ") && labels[3] == "すべて");
+    }
+
+    #[test]
+    fn drag_selection_becomes_character_offsets() {
+        let text = "第百九十九条 人を殺した者は、死刑";
+        // "第百九十九条 " は 6 文字 = 18 + 1 バイト
+        let lo = "第百九十九条 ".len() as i32;
+        let hi = lo + "人を殺した者は".len() as i32;
+        let (s, e, q) = selection_to_quote(text, lo, hi).unwrap();
+        assert_eq!((s, e, q.as_str()), (7, 14, "人を殺した者は"));
+        // 逆向きにドラッグしても同じ
+        assert_eq!(selection_to_quote(text, hi, lo).unwrap().2, "人を殺した者は");
+        // 空、空白だけ、文字の途中は引用にしない
+        assert!(selection_to_quote(text, 5, 5).is_none());
+        assert!(selection_to_quote(text, 18, 19).is_none());
+        assert!(selection_to_quote(text, 1, 4).is_none());
+        assert!(selection_to_quote(text, 0, 9999).is_none());
     }
 
     #[test]
