@@ -493,6 +493,11 @@ fn items<'a>(v: &'a Value, key: &str) -> Vec<Value> {
     payload(v).get(key).and_then(Value::as_array).cloned().unwrap_or_default()
 }
 
+/// The messages of this thread (for the graph).
+pub fn messages_snapshot() -> Vec<Value> {
+    L.with(|l| l.borrow().messages.clone())
+}
+
 pub fn event(app: &AppWindow, host: &Host, event: &Event) {
     match event {
         Event::ThreadActive { id, .. } => {
@@ -504,6 +509,7 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
                 }
             });
             render_messages(app);
+            super::team_graph::render(app);
         }
         Event::Rpc { tag, result } if tag == TAG_ADVISOR => {
             if let Ok(v) = result {
@@ -519,6 +525,7 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
                 list.sort_by_key(|m| m.get("tsMs").and_then(Value::as_i64).unwrap_or(0));
                 L.with(|l| l.borrow_mut().messages = list);
                 render_messages(app);
+                super::team_graph::render(app);
             }
         }
         Event::Rpc { tag, result } if tag == TAG_COMPACTION => {
@@ -571,6 +578,7 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
                         }
                     });
                     render_messages(app);
+                    super::team_graph::render(app);
                     // 通知の id は、まだ無いことが多い: 一覧を読み直すと付く
                     host.rpc(TAG_MESSAGES, "inocode/messages/list", json!({ "threadId": tid, "limit": 200 }));
                 }

@@ -13,6 +13,29 @@ export struct AgentRow {
     started: string,
 }
 
+// A point of the graph: x, y are 0..1 in the drawing; dy shifts it down (px); span is the width of its place (0..1).
+export struct GraphNode {
+    label: string,
+    detail: string,
+    state: string,
+    main: bool,
+    x: float,
+    y: float,
+    dy: float,
+    span: float,
+}
+
+export struct GraphEdge {
+    x1: float,
+    y1: float,
+    dy1: float,
+    x2: float,
+    y2: float,
+    dy2: float,
+    // an instruction is being passed: a dot runs from the first point to the second
+    active: bool,
+}
+
 export struct MetricRow {
     label: string,
     value: string,
@@ -48,6 +71,10 @@ export global TeamState {
     callback message-action(int);
     callback message-filter-changed(int);
     callback output-toggled(int);
+    in property <[GraphNode]> graph-nodes;
+    in property <[GraphEdge]> graph-edges;
+    in property <float> graph-height: 0;
+    callback graph-tick;
     in property <[AgentRow]> agents;
     // The same agents in groups: those that wait for a decision, those at work, those that are done.
     in property <[AgentRow]> attention;
@@ -95,6 +122,82 @@ component Cell inherits Rectangle {
         : Theme.fg-tertiary.transparentize(0.55);
     opacity: root.state == "running" && root.pulse ? 0.72 : 1.0;
     animate opacity { duration: 1400ms; easing: ease-in-out; }
+}
+
+// The relations of the agents as points and lines. Lines that carry a message now have dots running on them.
+component TeamGraph inherits Rectangle {
+    property <int> hover: -1;
+    property <float> phase: mod(animation-tick() / 1800ms, 1.0);
+    height: TeamState.graph-height * 1px;
+    pure function px(v: float) -> length { 40px + v * (root.width - 80px) }
+    pure function py(v: float, dy: float) -> length { 18px + v * (root.height - 70px) + dy * 1px }
+
+    for e in TeamState.graph-edges: Path {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        viewbox-width: self.width / 1px;
+        viewbox-height: self.height / 1px;
+        stroke: e.active ? Theme.accent : Theme.border;
+        stroke-width: e.active ? 1.5px : 1px;
+        MoveTo { x: root.px(e.x1) / 1px; y: root.py(e.y1, e.dy1) / 1px; }
+        LineTo { x: root.px(e.x2) / 1px; y: root.py(e.y2, e.dy2) / 1px; }
+    }
+    for e in TeamState.graph-edges: Rectangle {
+        // three dots, a third of a turn apart
+        visible: e.active;
+        for k in 3: Rectangle {
+            property <float> t: mod(root.phase + k / 3.0, 1.0);
+            width: 5px;
+            height: 5px;
+            border-radius: 2.5px;
+            background: Theme.accent;
+            x: root.px(e.x1) + (root.px(e.x2) - root.px(e.x1)) * self.t - 2.5px;
+            y: root.py(e.y1, e.dy1) + (root.py(e.y2, e.dy2) - root.py(e.y1, e.dy1)) * self.t - 2.5px;
+        }
+    }
+    for n[i] in TeamState.graph-nodes: Rectangle {
+        property <length> r: n.main ? 7px : 6px;
+        x: root.px(n.x) - self.r;
+        y: root.py(n.y, n.dy) - self.r;
+        width: self.r * 2;
+        height: self.r * 2;
+        border-radius: self.r;
+        background: n.main ? Theme.fg-secondary
+            : n.state == "running" ? Theme.accent
+            : n.state == "waiting" ? Theme.warning
+            : n.state == "blocked" ? Theme.danger
+            : Theme.fg-tertiary.transparentize(0.55);
+        TouchArea {
+            changed has-hover => {
+                if (self.has-hover) {
+                    root.hover = i;
+                } else if (root.hover == i) {
+                    root.hover = -1;
+                }
+            }
+        }
+    }
+    for n in TeamState.graph-nodes: Text {
+        text: n.label;
+        x: root.px(n.x) - self.width / 2;
+        y: root.py(n.y, n.dy) + 10px;
+        width: max(48px, n.span * (root.width - 80px));
+        horizontal-alignment: center;
+        color: Theme.fg-secondary;
+        font-size: 10px;
+        overflow: elide;
+    }
+    Text {
+        x: 12px;
+        y: root.height - 16px;
+        width: root.width - 24px;
+        text: root.hover >= 0 && root.hover < TeamState.graph-nodes.length ? TeamState.graph-nodes[root.hover].detail : "";
+        color: Theme.fg-tertiary;
+        font-size: 11px;
+        overflow: elide;
+    }
 }
 
 // An agent in a list: the state at the left, the name and what it owns, and when it started.
@@ -296,6 +399,12 @@ export component TeamTab inherits Rectangle {
         running: TeamState.agents.length > 0;
         triggered => { root.pulse = !root.pulse; }
     }
+    // lines that carried a message a while ago stop moving
+    Timer {
+        interval: 5s;
+        running: TeamState.graph-edges.length > 0;
+        triggered => { TeamState.graph-tick(); }
+    }
     Flickable {
         content-height: page.preferred-height;
         page := VerticalLayout {
@@ -305,6 +414,7 @@ export component TeamTab inherits Rectangle {
             padding-top: 16px;
             spacing: 6px;
 
+            if TeamState.graph-edges.length > 0: TeamGraph { }
             if TeamState.error != "": Text {
                 text: TeamState.error;
                 color: Theme.danger;

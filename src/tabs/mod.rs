@@ -15,6 +15,7 @@ mod knowledge;
 mod settings;
 mod stats;
 mod team;
+mod team_graph;
 mod team_log;
 
 /// タブから app-server へ要求を出すための窓口。

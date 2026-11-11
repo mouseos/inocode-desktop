@@ -27,8 +27,22 @@ thread_local! {
     static DATA: RefCell<Data> = RefCell::new(Data::default());
 }
 
+/// The agents as the server sent them (for the graph).
+pub fn agents_snapshot() -> Vec<Value> {
+    DATA.with(|d| d.borrow().agents.clone())
+}
+
 pub fn install(app: &AppWindow, host: &Host) {
     super::team_log::install(app, host);
+    // lines that carried a message a while ago become still: the graph is drawn again now and then
+    app.global::<TeamState>().on_graph_tick({
+        let app = app.as_weak();
+        move || {
+            if let Some(app) = app.upgrade() {
+                super::team_graph::render(&app);
+            }
+        }
+    });
     let h = host.clone();
     app.global::<TeamState>().on_refresh(move || request(&h, 0));
     let h = host.clone();
@@ -193,6 +207,7 @@ fn render(app: &AppWindow) {
         let done = rows.iter().filter(|r| r.state == "done").count();
         ts.set_progress(if rows.is_empty() { String::new() } else { format!("{done}/{}", rows.len()) }.into());
         ts.set_agents(ModelRc::from(Rc::new(VecModel::from(rows))));
+        super::team_graph::render(app);
         match &d.estimate {
             Some(e) if estimate_says_something(e) => {
                 let num = |k: &str| e.get(k).and_then(Value::as_f64);
