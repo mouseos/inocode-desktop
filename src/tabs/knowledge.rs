@@ -60,6 +60,37 @@ struct RowData {
     status_label: String,
     confidence_label: String,
     updated: String,
+    /// 「AI」「自分」。サーバーが作成者を返さないときは空
+    author: String,
+}
+
+/// createdBy -> 画面の言葉
+fn author_label(created_by: &str) -> String {
+    match created_by {
+        "" => "".to_string(),
+        "user" => "自分".to_string(),
+        _ => "AI".to_string(),
+    }
+}
+
+/// 状態の絞り込み: 0 = 未検証、1 = 検証済み、2 = 撤回、3 = すべて
+const STATUS_FILTERS: [(&str, &str); 3] = [("unverified", "未検証"), ("verified", "検証済み"), ("retracted", "撤回")];
+
+fn filter_rows(all: &[RowData], index: i32) -> Vec<RowData> {
+    match STATUS_FILTERS.get(index.max(0) as usize) {
+        Some((wire, _)) => all.iter().filter(|r| r.status == *wire).cloned().collect(),
+        None => all.to_vec(),
+    }
+}
+
+/// 絞り込みのタグの文字(件数つき)
+fn filter_labels(all: &[RowData]) -> Vec<String> {
+    let mut v: Vec<String> = STATUS_FILTERS
+        .iter()
+        .map(|(wire, label)| format!("{} {}", label, all.iter().filter(|r| r.status == *wire).count()))
+        .collect();
+    v.push("すべて".to_string());
+    v
 }
 
 fn parse_rows(result: &Value) -> Vec<RowData> {
@@ -80,6 +111,7 @@ fn parse_rows(result: &Value) -> Vec<RowData> {
                 status_label: label_of(&STATUSES, &s("status")),
                 confidence_label: label_of(&CONFIDENCES, &s("confidence")),
                 updated: short_time(&s("updatedAt")),
+                author: author_label(&s("createdBy")),
             })
         })
         .collect()
@@ -107,6 +139,7 @@ fn parse_pinned(result: &Value) -> (Vec<RowData>, Vec<(String, String)>, String)
             status_label: label_of(&STATUSES, &s("status")),
             confidence_label: "".into(),
             updated: if s("scope") == "global" { "共通" } else { "プロジェクト" }.into(),
+            author: author_label(&s("createdBy")),
         });
     }
     (rows, scopes, p.get("text").and_then(Value::as_str).unwrap_or("").to_string())
@@ -305,6 +338,8 @@ fn build_record(
 
 #[derive(Default)]
 struct K {
+    /// 状態で絞る前の一覧
+    all: Vec<RowData>,
     rows: Vec<RowData>,
     selected: Option<String>,
     raw: Option<Value>,
@@ -344,6 +379,7 @@ fn rows_model(rows: &[RowData], selected: &Option<String>) -> ModelRc<KRow> {
             status_label: r.status_label.as_str().into(),
             confidence_label: r.confidence_label.as_str().into(),
             updated: r.updated.as_str().into(),
+            author: r.author.as_str().into(),
             selected: selected.as_deref() == Some(r.id.as_str()),
         })
         .collect();
@@ -361,6 +397,26 @@ fn field_model(items: &[(String, String, FieldKind, String)]) -> ModelRc<KField>
         })
         .collect();
     ModelRc::from(Rc::new(VecModel::from(v)))
+}
+
+/// 状態の絞り込みを一覧に反映する(サーバーへは問い合わせない)。
+fn apply_filter(app: &AppWindow) {
+    let st = app.global::<KnowledgeState>();
+    let idx = st.get_status_index();
+    K.with(|k| {
+        let mut k = k.borrow_mut();
+        k.rows = filter_rows(&k.all, idx);
+        let labels: Vec<SharedString> = filter_labels(&k.all).into_iter().map(Into::into).collect();
+        st.set_status_tags(ModelRc::from(Rc::new(VecModel::from(labels))));
+        st.set_note(if !k.rows.is_empty() {
+            SharedString::default()
+        } else if k.all.is_empty() {
+            "該当するレコードはありません".into()
+        } else {
+            format!("{}の知識はありません", STATUS_FILTERS.get(idx.max(0) as usize).map(|s| s.1).unwrap_or("該当する")).into()
+        });
+    });
+    refresh_rows(app);
 }
 
 fn request_list(app: &AppWindow, host: &Host) {
@@ -609,6 +665,22 @@ pub fn install(app: &AppWindow, host: &Host) {
         st.set_edit_error("".into());
         h.rpc("knowledge.write", "inocode/knowledge/write", json!({ "scope": scope_wire(&app), "cwd": cwd(&app), "record": record }));
     });
+    let weak = app.as_weak();
+    st.on_status_filter_changed(move |_| {
+        if let Some(app) = weak.upgrade() {
+            apply_filter(&app);
+        }
+    });
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_row_set_status(move |id, i| {
+        let Some(app) = weak.upgrade() else { return };
+        let status = STATUSES[(i.max(0) as usize).min(3)].0;
+        h.rpc(
+            "knowledge.setStatus",
+            "inocode/knowledge/setStatus",
+            json!({ "id": id.as_str(), "scope": scope_wire(&app), "cwd": cwd(&app), "status": status }),
+        );
+    });
     let (weak, h) = (app.as_weak(), host.clone());
     st.on_set_status(move |i| {
         let Some(app) = weak.upgrade() else { return };
@@ -742,14 +814,17 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
             st.set_aside("".into());
             let rows = parse_rows(v);
             st.set_loading(false);
-            st.set_note(if rows.is_empty() { "該当するレコードはありません".into() } else { SharedString::default() });
-            K.with(|k| k.borrow_mut().rows = rows);
-            refresh_rows(app);
+            K.with(|k| k.borrow_mut().all = rows);
+            apply_filter(app);
         }
         ("knowledge.list", Err(e)) => {
             st.set_loading(false);
             st.set_note(e.as_str().into());
-            K.with(|k| k.borrow_mut().rows.clear());
+            K.with(|k| {
+                let mut k = k.borrow_mut();
+                k.all.clear();
+                k.rows.clear();
+            });
             refresh_rows(app);
         }
         ("knowledge.read", Ok(v)) => {
@@ -796,9 +871,26 @@ mod tests {
     }
 
     #[test]
+    fn status_filter_counts_and_author() {
+        let v = json!({ "records": [
+            { "id": "a", "kind": "rule", "status": "unverified", "createdBy": "gpt-5.6-luna" },
+            { "id": "b", "kind": "fact", "status": "unverified", "createdBy": "user" },
+            { "id": "c", "kind": "fact", "status": "verified" },
+            { "id": "d", "kind": "fact", "status": "superseded" }
+        ]});
+        let all = parse_rows(&v);
+        assert_eq!((all[0].author.as_str(), all[1].author.as_str(), all[2].author.as_str()), ("AI", "自分", ""));
+        assert_eq!(filter_labels(&all), vec!["未検証 2", "検証済み 1", "撤回 0", "すべて"]);
+        assert_eq!(filter_rows(&all, 0).len(), 2);
+        assert_eq!(filter_rows(&all, 1)[0].id, "c");
+        assert_eq!(filter_rows(&all, 2).len(), 0);
+        assert_eq!(filter_rows(&all, 3).len(), 4, "すべて includes superseded");
+    }
+
+    #[test]
     fn list_fixture_becomes_rows() {
         let rows = parse_rows(&fixture("knowledge-list.json"));
-        assert_eq!(rows.len(), 2);
+        assert!(rows.len() >= 2);
         assert_eq!(rows[0].id, "rule-no-force-push");
         assert_eq!(rows[0].kind_label, "禁止事項");
         assert_eq!(rows[0].status_label, "検証済み");

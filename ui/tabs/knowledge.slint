@@ -16,6 +16,7 @@ export struct KRow {
     status-label: string,
     confidence-label: string,
     updated: string,
+    author: string,
     selected: bool,
 }
 
@@ -49,6 +50,11 @@ export global KnowledgeState {
     // 種類: 0 = すべて、1.. = kinds の並び
     in-out property <int> kind-index: 0;
     in-out property <string> query;
+    // 状態の絞り込み: 0 = 未検証、1 = 検証済み、2 = 撤回、3 = すべて(件数つきの文字は Rust が作る)
+    in-out property <int> status-index: 0;
+    in property <[string]> status-tags;
+    callback status-filter-changed(int);
+    callback row-set-status(string, int);
     out property <[string]> kinds: ["すべて", "禁止事項", "失敗例", "課題", "決定", "事実", "契約", "手順", "常に有効な禁止リスト"];
     out property <[string]> new-kinds: ["禁止事項", "失敗例", "課題", "決定", "事実", "契約", "手順"];
     out property <[string]> statuses: ["未検証", "検証済み", "置換済み", "撤回"];
@@ -99,7 +105,9 @@ export global KnowledgeState {
 component RowItem inherits Rectangle {
     in property <KRow> item;
     callback clicked;
-    height: 62px;
+    callback approve;
+    callback retract;
+    height: root.item.status == "unverified" ? 96px : 62px;
     border-radius: Theme.radius-row;
     background: root.item.selected ? Theme.selected : ta.has-hover ? Theme.hover : transparent;
     ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
@@ -128,10 +136,17 @@ component RowItem inherits Rectangle {
             overflow: elide;
         }
         Text {
-            text: root.item.kind-label + " · 確度 " + root.item.confidence-label + " · " + root.item.updated;
+            text: root.item.kind-label + " · 確度 " + root.item.confidence-label + " · " + root.item.updated
+                + (root.item.author != "" ? " · " + root.item.author : "");
             color: Theme.fg-tertiary;
             font-size: 11px;
             overflow: elide;
+        }
+        if root.item.status == "unverified": HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            Button { label: "検証済みにする"; clicked => { root.approve(); } }
+            Button { label: "撤回"; clicked => { root.retract(); } }
         }
     }
 }
@@ -207,6 +222,14 @@ component ListPane inherits Rectangle {
                 }
             }
         }
+        if KnowledgeState.mode == 0 && KnowledgeState.kind-index != 8: HorizontalLayout {
+            spacing: 6px;
+            for t[i] in KnowledgeState.status-tags: Tag {
+                label: t;
+                selected: KnowledgeState.status-index == i;
+                clicked => { KnowledgeState.status-index = i; KnowledgeState.status-filter-changed(i); }
+            }
+        }
         if KnowledgeState.note != "": Text {
             text: KnowledgeState.note;
             color: Theme.fg-tertiary;
@@ -222,6 +245,8 @@ component ListPane inherits Rectangle {
                 for r in KnowledgeState.rows: RowItem {
                     item: r;
                     clicked => { KnowledgeState.select(r.id); }
+                    approve => { KnowledgeState.row-set-status(r.id, 1); }
+                    retract => { KnowledgeState.row-set-status(r.id, 3); }
                 }
             }
         }
