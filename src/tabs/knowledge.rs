@@ -28,7 +28,7 @@ const KINDS: [(&str, &str); 7] = [
 ];
 const STATUSES: [(&str, &str); 4] =
     [("unverified", "未検証"), ("verified", "検証済み"), ("superseded", "置換済み"), ("retracted", "撤回")];
-const CONFIDENCES: [(&str, &str); 3] = [("high", "高"), ("medium", "中"), ("low", "低")];
+const CONFIDENCES: [(&str, &str); 3] = [("high", "確実"), ("medium", "たぶん"), ("low", "未確認")];
 
 /// 種類の選択の末尾(kinds の並び)にある「常に有効な禁止リスト」の添字
 const PINNED_INDEX: i32 = 8;
@@ -174,37 +174,65 @@ fn guard_row(e: &Value, thread: &str) -> (String, String, String, i32) {
     (head, meta, detail, if block { 2 } else { 1 })
 }
 
-/// 項目の種類: 1 行 / 複数行 / 1 行 1 要素の配列。
+/// 項目の種類: 1 行 / 複数行 / 1 行 1 要素の配列 / 強さ(止める・警告のみ)。
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FieldKind {
     Line,
     Area,
     Lines,
+    Severity,
 }
 
-/// 種類ごとの編集項目: (キー(`a.b` で入れ子), 画面の名前, 入力の種類)。
-fn field_specs(kind: &str) -> Vec<(&'static str, &'static str, FieldKind)> {
-    let mut v = vec![("source", "出典", FieldKind::Line), ("supersedes", "置き換えた ID", FieldKind::Line)];
+/// 強さの選択肢: (wire, 画面の名前)
+const SEVERITIES: [(&str, &str); 2] = [("block", "止める"), ("warn", "警告のみ")];
+
+/// 種類ごとのひな形。見出しの言葉と、本文の扱い。
+struct Template {
+    title_label: &'static str,
+    /// 本文の見出し。空なら本文を出さない
+    body_label: &'static str,
+    /// 本文を「もっと詳しく」の中に入れる
+    body_advanced: bool,
+}
+
+fn template(kind: &str) -> Template {
+    let (title_label, body_label, body_advanced) = match kind {
+        "rule" => ("やってはいけないこと", "例外・補足", true),
+        "failure_case" => ("タイトル", "メモ", true),
+        "issue" => ("タイトル", "何が問題か", false),
+        "decision" => ("何を決めたか", "理由", false),
+        "fact" => ("タイトル", "事実の内容", false),
+        "contract" => ("タイトル", "取り決めの内容", false),
+        "procedure" => ("タイトル", "手順(1 行に 1 つ)", false),
+        _ => ("タイトル", "本文", false),
+    };
+    Template { title_label, body_label, body_advanced }
+}
+
+/// 種類ごとの編集項目: (キー(`a.b` で入れ子), 画面の名前, 入力の種類, 「もっと詳しく」の中か)。
+/// 内部のキー(署名・適用方法・置き換えた ID・元の失敗例の ID)は画面に出さない。
+fn field_specs(kind: &str) -> Vec<(&'static str, &'static str, FieldKind, bool)> {
+    use FieldKind::*;
     match kind {
-        "rule" => v.extend([
-            ("severity", "重大度 (block / warn)", FieldKind::Line),
-            ("match.paths", "対象のパス (1 行に 1 つ)", FieldKind::Lines),
-            ("match.commands", "対象のコマンド (1 行に 1 つ)", FieldKind::Lines),
-            ("reason", "理由", FieldKind::Area),
-            ("enforcedBy", "適用方法 (prompt / hook / execpolicy)", FieldKind::Line),
-            ("fromFailure", "元の失敗例の ID", FieldKind::Line),
-        ]),
-        "failure_case" => v.extend([
-            ("signature", "署名", FieldKind::Line),
-            ("symptom", "症状", FieldKind::Area),
-            ("rootCause", "根本原因", FieldKind::Area),
-            ("doNot", "やってはいけないこと", FieldKind::Area),
-            ("whatWorked", "うまくいった方法", FieldKind::Area),
-            ("evidence", "根拠 (1 行に 1 つ)", FieldKind::Lines),
-        ]),
-        _ => {}
+        "rule" => vec![
+            ("reason", "理由", Area, false),
+            ("severity", "強さ", Severity, false),
+            ("match.paths", "対象のパス(1 行に 1 つ)", Lines, true),
+            ("match.commands", "対象のコマンド(1 行に 1 つ)", Lines, true),
+            ("source", "出典", Line, true),
+        ],
+        "failure_case" => vec![
+            ("symptom", "何が起きたか", Area, false),
+            ("rootCause", "原因", Area, false),
+            ("doNot", "やってはいけないこと", Area, false),
+            ("whatWorked", "うまくいった方法", Area, true),
+            ("source", "出典", Line, true),
+            ("evidence", "根拠(1 行に 1 つ)", Lines, true),
+        ],
+        "fact" => vec![("source", "出典", Line, false)],
+        "decision" => vec![("rejected", "却下した案", Area, true), ("source", "出典", Line, true)],
+        _ => vec![("source", "出典", Line, true)],
     }
-    v
 }
 
 fn get_path<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
@@ -255,32 +283,37 @@ fn field_label(key: &str) -> String {
         "source" => "出典",
         "createdAt" => "作成日時",
         "createdBy" => "作成者",
-        "supersedes" => "置き換えた ID",
-        "severity" => "重大度",
+        "severity" => "強さ",
         "match" => "対象",
         "reason" => "理由",
-        "enforcedBy" => "適用方法",
-        "fromFailure" => "元の失敗例",
-        "signature" => "署名",
-        "symptom" => "症状",
-        "rootCause" => "根本原因",
+        "symptom" => "何が起きたか",
+        "rootCause" => "原因",
         "doNot" => "やってはいけないこと",
         "whatWorked" => "うまくいった方法",
         "evidence" => "根拠",
+        "rejected" => "却下した案",
         other => other,
     }
     .to_string()
 }
 
-/// 読み取り表示に出す項目 (共通の見出し項目と本文を除く)。
+/// 読み取り表示に出す項目 (共通の見出し項目と本文を除く)。内部のキーは出さない。
 fn display_fields(record: &Value) -> Vec<(String, String)> {
-    const SKIP: [&str; 8] = ["id", "kind", "title", "scope", "status", "confidence", "updatedAt", "body"];
+    const SKIP: [&str; 13] = [
+        "id", "kind", "title", "scope", "status", "confidence", "updatedAt", "body", "signature", "enforcedBy",
+        "supersedes", "fromFailure", "createdAt",
+    ];
     let Some(obj) = record.as_object() else { return Vec::new() };
     obj.iter()
         .filter(|(k, v)| !SKIP.contains(&k.as_str()) && !to_text(v).is_empty())
         .map(|(k, v)| {
             let text = to_text(v);
-            (field_label(k), if k == "createdAt" { short_time(&text) } else { text })
+            let text = match k.as_str() {
+                "createdBy" => author_label(&text),
+                "severity" => label_of(&SEVERITIES, &text),
+                _ => text,
+            };
+            (field_label(k), text)
         })
         .collect()
 }
@@ -289,7 +322,7 @@ fn display_fields(record: &Value) -> Vec<(String, String)> {
 fn edit_fields(kind: &str, record: &Value) -> Vec<(String, String, FieldKind, String)> {
     field_specs(kind)
         .into_iter()
-        .map(|(key, label, fk)| {
+        .map(|(key, label, fk, _)| {
             let value = get_path(record, key).map(to_text).unwrap_or_default();
             (key.to_string(), label.to_string(), fk, value)
         })
@@ -334,10 +367,30 @@ fn build_record(
     rec
 }
 
+/// 失敗例 -> 禁止事項の下書き(題 = やってはいけないこと、理由 = 原因)
+fn rule_seed_from_failure(failure: &Value) -> Value {
+    let text = |key: &str| failure.get(key).and_then(Value::as_str).unwrap_or("").trim().to_string();
+    let do_not = text("doNot");
+    let title = if do_not.is_empty() { text("title") } else { do_not.lines().next().unwrap_or("").trim().to_string() };
+    let mut seed = json!({ "title": title });
+    let reason = [text("rootCause"), text("symptom")].into_iter().find(|t| !t.is_empty()).unwrap_or_default();
+    if !reason.is_empty() {
+        seed["reason"] = json!(reason);
+    }
+    if !text("source").is_empty() {
+        seed["source"] = json!(text("source"));
+    }
+    seed
+}
+
 // ------------------------------------------------------------------ state
 
 #[derive(Default)]
 struct K {
+    /// 「新しい内容で置き換える」で書くとき、置き換わる側の ID
+    replaces: Option<String>,
+    /// 失敗例から禁止事項を作るとき、元の失敗例の ID
+    from_failure: Option<String>,
     /// 状態で絞る前の一覧
     all: Vec<RowData>,
     rows: Vec<RowData>,
@@ -386,18 +439,36 @@ fn rows_model(rows: &[RowData], selected: &Option<String>) -> ModelRc<KRow> {
     ModelRc::from(Rc::new(VecModel::from(v)))
 }
 
-fn field_model(items: &[(String, String, FieldKind, String)]) -> ModelRc<KField> {
+fn field_model(kind: &str, items: &[(String, String, FieldKind, String)]) -> ModelRc<KField> {
+    let specs = field_specs(kind);
     let v: Vec<KField> = items
         .iter()
-        .map(|(key, label, fk, value)| KField {
+        .enumerate()
+        .map(|(i, (key, label, fk, value))| KField {
             key: key.as_str().into(),
             label: label.as_str().into(),
-            value: value.as_str().into(),
-            multiline: *fk != FieldKind::Line,
+            value: if *fk == FieldKind::Severity { label_of(&SEVERITIES, value) } else { value.clone() }.into(),
+            multiline: matches!(fk, FieldKind::Area | FieldKind::Lines),
+            advanced: specs.get(i).map(|s| s.3).unwrap_or(false),
+            options: if *fk == FieldKind::Severity {
+                ModelRc::from(Rc::new(VecModel::from(SEVERITIES.iter().map(|(_, l)| SharedString::from(*l)).collect::<Vec<_>>())))
+            } else {
+                ModelRc::default()
+            },
         })
         .collect();
     ModelRc::from(Rc::new(VecModel::from(v)))
 }
+
+/// 種類のひな形を画面の状態に反映する。
+fn apply_template(st: &KnowledgeState, kind: &str) {
+    let t = template(kind);
+    st.set_edit_title_label(t.title_label.into());
+    st.set_edit_body_label(t.body_label.into());
+    st.set_edit_body_advanced(t.body_advanced);
+    st.set_has_advanced(t.body_advanced || field_specs(kind).iter().any(|f| f.3));
+}
+
 
 /// 状態の絞り込みを一覧に反映する(サーバーへは問い合わせない)。
 fn apply_filter(app: &AppWindow) {
@@ -452,6 +523,7 @@ fn show_record(app: &AppWindow, record: &Value) {
         id: s("id").into(),
         title: s("title").into(),
         kind_label: label_of(&KINDS, &s("kind")).into(),
+        kind: s("kind").into(),
         scope_label: if s("scope") == "global" { "共通" } else { "プロジェクト" }.into(),
         status: s("status").into(),
         status_label: label_of(&STATUSES, &s("status")).into(),
@@ -461,7 +533,7 @@ fn show_record(app: &AppWindow, record: &Value) {
     });
     let items: Vec<KField> = display_fields(record)
         .into_iter()
-        .map(|(label, value)| KField { key: "".into(), label: label.into(), value: value.into(), multiline: false })
+        .map(|(label, value)| KField { key: "".into(), label: label.into(), value: value.into(), multiline: false, advanced: false, options: ModelRc::default() })
         .collect();
     st.set_fields(ModelRc::from(Rc::new(VecModel::from(items))));
     st.set_has_record(true);
@@ -573,14 +645,18 @@ pub fn install(app: &AppWindow, host: &Host) {
             k.raw = None;
             k.kind = KINDS[0].0.to_string();
             k.fields = edit_fields(&k.kind, &json!({}));
-            st.set_edit_fields(field_model(&k.fields));
+            k.replaces = None;
+            k.from_failure = None;
+            st.set_edit_fields(field_model(&k.kind, &k.fields));
+            apply_template(&st, &k.kind);
         });
         st.set_creating(true);
         st.set_edit_kind(0);
         st.set_edit_title("".into());
         st.set_edit_body("".into());
-        st.set_edit_status(0);
-        st.set_edit_confidence(1);
+        st.set_edit_status(1);
+        st.set_edit_confidence(2);
+        st.set_edit_more(false);
         st.set_edit_error("".into());
         st.set_editing(true);
     });
@@ -599,7 +675,9 @@ pub fn install(app: &AppWindow, host: &Host) {
                 }
             }
             k.fields = fresh;
-            app.global::<KnowledgeState>().set_edit_fields(field_model(&k.fields));
+            let st = app.global::<KnowledgeState>();
+            st.set_edit_fields(field_model(&k.kind, &k.fields));
+            apply_template(&st, &k.kind);
         });
     });
     // 編集: 読み込み済みのレコードから
@@ -614,7 +692,11 @@ pub fn install(app: &AppWindow, host: &Host) {
             k.creating = false;
             k.kind = s("kind");
             k.fields = edit_fields(&k.kind, &raw);
-            st.set_edit_fields(field_model(&k.fields));
+            k.replaces = None;
+            k.from_failure = None;
+            st.set_edit_fields(field_model(&k.kind, &k.fields));
+            apply_template(&st, &k.kind);
+            st.set_edit_more(false);
             st.set_edit_title(s("title").into());
             st.set_edit_body(s("body").into());
             st.set_edit_status(STATUSES.iter().position(|(w, _)| *w == s("status")).unwrap_or(0) as i32);
@@ -633,12 +715,26 @@ pub fn install(app: &AppWindow, host: &Host) {
             app.global::<KnowledgeState>().set_editing(false);
         }
     });
+    let weak = app.as_weak();
     st.on_field_edited(move |i, text| {
         K.with(|k| {
             if let Some(f) = k.borrow_mut().fields.get_mut(i as usize) {
-                f.3 = text.to_string();
+                f.3 = if f.2 == FieldKind::Severity {
+                    SEVERITIES.iter().find(|(_, l)| *l == text.as_str()).map(|(w, _)| w.to_string()).unwrap_or_default()
+                } else {
+                    text.to_string()
+                };
             }
         });
+        // 選択肢の項目は、選んだ印を付け直すためにモデルを作り直す
+        if let Some(app) = weak.upgrade() {
+            K.with(|k| {
+                let k = k.borrow();
+                if k.fields.get(i as usize).map(|f| f.2 == FieldKind::Severity).unwrap_or(false) {
+                    app.global::<KnowledgeState>().set_edit_fields(field_model(&k.kind, &k.fields));
+                }
+            });
+        }
     });
     let (weak, h) = (app.as_weak(), host.clone());
     st.on_save(move || {
@@ -651,8 +747,22 @@ pub fn install(app: &AppWindow, host: &Host) {
         }
         let record = K.with(|k| {
             let k = k.borrow();
-            build_record(
-                if k.creating { None } else { k.raw.as_ref() },
+            // 置き換えるときは、古い記録の未知の項目を引き継ぐ(ID と日時は新しく付く)
+            let base = if let (true, Some(_), Some(raw)) = (k.creating, &k.replaces, &k.raw) {
+                let mut b = raw.clone();
+                if let Some(o) = b.as_object_mut() {
+                    for key in ["id", "createdAt", "updatedAt", "supersedes"] {
+                        o.remove(key);
+                    }
+                }
+                Some(b)
+            } else if k.creating {
+                None
+            } else {
+                k.raw.clone()
+            };
+            let mut rec = build_record(
+                base.as_ref(),
                 &k.kind,
                 scope_wire(&app),
                 title.trim(),
@@ -660,10 +770,77 @@ pub fn install(app: &AppWindow, host: &Host) {
                 CONFIDENCES[(st.get_edit_confidence().max(0) as usize).min(2)].0,
                 &st.get_edit_body(),
                 &k.fields,
-            )
+            );
+            if let Some(old) = &k.replaces {
+                rec["supersedes"] = json!(old);
+            }
+            if let Some(f) = &k.from_failure {
+                rec["fromFailure"] = json!(f);
+            }
+            rec
         });
         st.set_edit_error("".into());
         h.rpc("knowledge.write", "inocode/knowledge/write", json!({ "scope": scope_wire(&app), "cwd": cwd(&app), "record": record }));
+    });
+    // 新しい内容で置き換える: いまの内容を入れたフォームを開く。保存すると古い方は「置換済み」になる
+    let weak = app.as_weak();
+    st.on_replace(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<KnowledgeState>();
+        let ok = K.with(|k| {
+            let mut k = k.borrow_mut();
+            let Some(raw) = k.raw.clone() else { return false };
+            let s = |key: &str| raw.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+            k.creating = true;
+            k.kind = s("kind");
+            k.replaces = Some(s("id"));
+            k.from_failure = None;
+            k.fields = edit_fields(&k.kind, &raw);
+            st.set_edit_fields(field_model(&k.kind, &k.fields));
+            apply_template(&st, &k.kind);
+            st.set_edit_title(s("title").into());
+            st.set_edit_body(s("body").into());
+            st.set_edit_confidence(CONFIDENCES.iter().position(|(w, _)| *w == s("confidence")).unwrap_or(2) as i32);
+            true
+        });
+        if ok {
+            st.set_edit_status(1);
+            st.set_creating(true);
+            st.set_edit_more(false);
+            st.set_edit_error("".into());
+            st.set_editing(true);
+        }
+    });
+    // 失敗例から禁止事項を作る: 症状・原因・やってはいけないことを引き継いだフォームを開く
+    let weak = app.as_weak();
+    st.on_make_rule(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<KnowledgeState>();
+        let ok = K.with(|k| {
+            let mut k = k.borrow_mut();
+            let Some(raw) = k.raw.clone() else { return false };
+            let text = |key: &str| raw.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+            let seed = rule_seed_from_failure(&raw);
+            k.creating = true;
+            k.kind = "rule".to_string();
+            k.replaces = None;
+            k.from_failure = Some(text("id"));
+            k.fields = edit_fields("rule", &seed);
+            st.set_edit_fields(field_model("rule", &k.fields));
+            apply_template(&st, "rule");
+            st.set_edit_title(seed.get("title").and_then(Value::as_str).unwrap_or("").into());
+            true
+        });
+        if ok {
+            st.set_edit_kind(0);
+            st.set_edit_body("".into());
+            st.set_edit_status(1);
+            st.set_edit_confidence(1);
+            st.set_creating(true);
+            st.set_edit_more(false);
+            st.set_edit_error("".into());
+            st.set_editing(true);
+        }
     });
     let weak = app.as_weak();
     st.on_status_filter_changed(move |_| {
@@ -837,6 +1014,14 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
         ("knowledge.read", Err(e)) => st.set_note(e.as_str().into()),
         ("knowledge.write", Ok(v)) => {
             st.set_editing(false);
+            if let Some(old) = K.with(|k| k.borrow_mut().replaces.take()) {
+                host.rpc(
+                    "knowledge.setStatus",
+                    "inocode/knowledge/setStatus",
+                    json!({ "id": old, "scope": scope_wire(app), "cwd": cwd(app), "status": "superseded" }),
+                );
+            }
+            K.with(|k| k.borrow_mut().from_failure = None);
             let id = payload(v).get("id").and_then(Value::as_str).map(str::to_string);
             if let Some(id) = id {
                 K.with(|k| k.borrow_mut().selected = Some(id.clone()));
@@ -894,7 +1079,7 @@ mod tests {
         assert_eq!(rows[0].id, "rule-no-force-push");
         assert_eq!(rows[0].kind_label, "禁止事項");
         assert_eq!(rows[0].status_label, "検証済み");
-        assert_eq!(rows[0].confidence_label, "高");
+        assert_eq!(rows[0].confidence_label, "確実");
         assert_eq!(rows[0].updated, "2026-11-10 09:12");
         // search has the same shape; a bare server result works too
         assert_eq!(parse_rows(&fixture("knowledge-search.json")).len(), 1);
@@ -905,7 +1090,7 @@ mod tests {
     fn record_fields_display_and_edit_round_trip() {
         let rec = payload(&fixture("knowledge-read.json")).get("record").cloned().unwrap();
         let shown = display_fields(&rec);
-        assert!(shown.iter().any(|(l, v)| l == "重大度" && v == "block"));
+        assert!(shown.iter().any(|(l, v)| l == "強さ" && v == "止める"));
         assert!(shown.iter().any(|(l, v)| l == "対象" && v.contains("git push --force*")));
         assert!(!shown.iter().any(|(l, _)| l == "本文"));
 
@@ -921,6 +1106,53 @@ mod tests {
         assert!(out.get("reason").is_none(), "an emptied field is removed");
         assert_eq!(out["id"], "rule-no-force-push", "unknown and existing keys stay");
         assert_eq!(out["createdBy"], "user");
+    }
+
+    #[test]
+    fn templates_hide_internal_keys_and_fold_optional_fields() {
+        let keys = |k: &str| field_specs(k).iter().map(|f| f.0).collect::<Vec<_>>();
+        for kind in ["rule", "failure_case", "issue", "decision", "fact", "contract", "procedure"] {
+            for hidden in ["signature", "enforcedBy", "supersedes", "fromFailure"] {
+                assert!(!keys(kind).contains(&hidden), "{kind} shows {hidden}");
+            }
+        }
+        let shown: Vec<_> = field_specs("rule").into_iter().filter(|f| !f.3).map(|f| f.0).collect();
+        assert_eq!(shown, vec!["reason", "severity"]);
+        assert_eq!(template("rule").title_label, "やってはいけないこと");
+        assert_eq!(template("decision").body_label, "理由");
+        assert!(!template("decision").body_advanced && template("rule").body_advanced);
+        // 事実は出典が常に見える。課題は見えない
+        assert!(field_specs("fact").iter().all(|f| !f.3));
+        assert!(field_specs("issue").iter().all(|f| f.3));
+    }
+
+    #[test]
+    fn confidence_words_are_human() {
+        assert_eq!(label_of(&CONFIDENCES, "high"), "確実");
+        assert_eq!(label_of(&CONFIDENCES, "medium"), "たぶん");
+        assert_eq!(label_of(&CONFIDENCES, "low"), "未確認");
+    }
+
+    #[test]
+    fn severity_is_edited_by_words() {
+        let items = edit_fields("rule", &json!({ "severity": "warn" }));
+        let model = field_model("rule", &items);
+        let f = model.row_data(1).unwrap();
+        assert_eq!((f.label.as_str(), f.value.as_str()), ("強さ", "警告のみ"));
+        assert_eq!(f.options.row_count(), 2);
+        assert!(model.row_data(2).unwrap().advanced, "対象のパスは詳細の中");
+    }
+
+    #[test]
+    fn rule_draft_from_failure_case() {
+        let f = json!({ "id": "failure-1", "title": "ロック失敗", "doNot": "同時に書かない\nリトライ無しは禁止", "rootCause": "WAL なし", "source": "thr_1" });
+        let seed = rule_seed_from_failure(&f);
+        assert_eq!(seed["title"], "同時に書かない");
+        assert_eq!(seed["reason"], "WAL なし");
+        let fields = edit_fields("rule", &seed);
+        assert_eq!(fields.iter().find(|x| x.0 == "reason").unwrap().3, "WAL なし");
+        // doNot が無ければ題を使う
+        assert_eq!(rule_seed_from_failure(&json!({ "title": "題" }))["title"], "題");
     }
 
     #[test]

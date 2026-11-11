@@ -26,10 +26,15 @@ export struct KField {
     label: string,
     value: string,
     multiline: bool,
+    // 「もっと詳しく」の中に入れる項目
+    advanced: bool,
+    // 選択肢(あるとき、入力欄の代わりに選ぶ)
+    options: [string],
 }
 
 export struct KRecord {
     id: string,
+    kind: string,
     title: string,
     kind-label: string,
     scope-label: string,
@@ -58,7 +63,7 @@ export global KnowledgeState {
     out property <[string]> kinds: ["すべて", "禁止事項", "失敗例", "課題", "決定", "事実", "契約", "手順", "常に有効な禁止リスト"];
     out property <[string]> new-kinds: ["禁止事項", "失敗例", "課題", "決定", "事実", "契約", "手順"];
     out property <[string]> statuses: ["未検証", "検証済み", "置換済み", "撤回"];
-    out property <[string]> confidences: ["高", "中", "低"];
+    out property <[string]> confidences: ["確実", "たぶん", "未確認"];
     // 表示
     in property <bool> has-record;
     in property <KRecord> record;
@@ -72,6 +77,14 @@ export global KnowledgeState {
     in-out property <int> edit-status;
     in-out property <int> edit-confidence;
     in property <[KField]> edit-fields;
+    // 種類ごとのひな形の見出しと「もっと詳しく」
+    in property <string> edit-title-label: "タイトル";
+    in property <string> edit-body-label: "本文";
+    in property <bool> edit-body-advanced;
+    in property <bool> has-advanced;
+    in-out property <bool> edit-more: false;
+    callback replace();
+    callback make-rule();
     in property <string> edit-error;
 
     // 画面: 0 = 一覧、1 = 発動の記録、2 = 引き継ぎ
@@ -136,7 +149,7 @@ component RowItem inherits Rectangle {
             overflow: elide;
         }
         Text {
-            text: root.item.kind-label + " · 確度 " + root.item.confidence-label + " · " + root.item.updated
+            text: root.item.kind-label + " · " + root.item.confidence-label + " · " + root.item.updated
                 + (root.item.author != "" ? " · " + root.item.author : "");
             color: Theme.fg-tertiary;
             font-size: 11px;
@@ -291,7 +304,7 @@ component DetailView inherits Rectangle {
             }
             Text {
                 text: KnowledgeState.record.kind-label + " · "
-                    + KnowledgeState.record.scope-label + " · 確度 "
+                    + KnowledgeState.record.scope-label + " · "
                     + KnowledgeState.record.confidence-label + " · "
                     + KnowledgeState.record.updated;
                 color: Theme.fg-tertiary;
@@ -308,6 +321,8 @@ component DetailView inherits Rectangle {
                 }
                 Rectangle { width: 12px; }
                 Button { label: "編集"; clicked => { KnowledgeState.start-edit(); } }
+                if KnowledgeState.record.status != "superseded": Button { label: "新しい内容で置き換える"; clicked => { KnowledgeState.replace(); } }
+                if KnowledgeState.record.kind == "failure_case": Button { label: "禁止事項を作る"; clicked => { KnowledgeState.make-rule(); } }
             }
             Rectangle { height: 1px; background: Theme.border; }
             for f in KnowledgeState.fields: VerticalLayout {
@@ -323,6 +338,32 @@ component DetailView inherits Rectangle {
                 wrap: word-wrap;
             }
         }
+    }
+}
+
+// 編集フォームの 1 項目。選択肢があれば選ぶ、なければ入力欄。
+component FieldInput inherits VerticalLayout {
+    in property <int> index;
+    in property <KField> field;
+    spacing: 2px;
+    Text { text: root.field.label; color: Theme.fg-tertiary; font-size: 11px; }
+    if root.field.options.length > 0: HorizontalLayout {
+        spacing: 6px;
+        alignment: start;
+        for o in root.field.options: Tag {
+            label: o;
+            selected: root.field.value == o;
+            clicked => { KnowledgeState.field-edited(root.index, o); }
+        }
+    }
+    if root.field.options.length == 0 && !root.field.multiline: LineEdit {
+        text: root.field.value;
+        edited(t) => { KnowledgeState.field-edited(root.index, t); }
+    }
+    if root.field.options.length == 0 && root.field.multiline: AreaEdit {
+        text: root.field.value;
+        lines-height: 64px;
+        edited(t) => { KnowledgeState.field-edited(root.index, t); }
     }
 }
 
@@ -350,41 +391,43 @@ component EditForm inherits Rectangle {
                     clicked => { KnowledgeState.edit-kind = i; KnowledgeState.edit-kind-changed(i); }
                 }
             }
-            Text { text: "タイトル"; color: Theme.fg-tertiary; font-size: 11px; }
+            Text { text: KnowledgeState.edit-title-label; color: Theme.fg-tertiary; font-size: 11px; }
             LineEdit { text <=> KnowledgeState.edit-title; }
-            Text { text: "状態"; color: Theme.fg-tertiary; font-size: 11px; }
-            HorizontalLayout {
-                spacing: 6px;
-                for s[i] in KnowledgeState.statuses: Tag {
-                    label: s;
-                    selected: KnowledgeState.edit-status == i;
-                    clicked => { KnowledgeState.edit-status = i; }
-                }
+            for f[i] in KnowledgeState.edit-fields: VerticalLayout {
+                spacing: 2px;
+                if !f.advanced: FieldInput { index: i; field: f; }
+            }
+            if !KnowledgeState.edit-body-advanced && KnowledgeState.edit-body-label != "": VerticalLayout {
+                spacing: 2px;
+                Text { text: KnowledgeState.edit-body-label; color: Theme.fg-tertiary; font-size: 11px; }
+                AreaEdit { text <=> KnowledgeState.edit-body; lines-height: 110px; }
             }
             Text { text: "確度"; color: Theme.fg-tertiary; font-size: 11px; }
             HorizontalLayout {
                 spacing: 6px;
+                alignment: start;
                 for c[i] in KnowledgeState.confidences: Tag {
                     label: c;
                     selected: KnowledgeState.edit-confidence == i;
                     clicked => { KnowledgeState.edit-confidence = i; }
                 }
             }
-            for f[i] in KnowledgeState.edit-fields: VerticalLayout {
-                spacing: 2px;
-                Text { text: f.label; color: Theme.fg-tertiary; font-size: 11px; }
-                if !f.multiline: LineEdit {
-                    text: f.value;
-                    edited(t) => { KnowledgeState.field-edited(i, t); }
+            if KnowledgeState.has-advanced: HorizontalLayout {
+                alignment: start;
+                Button { label: KnowledgeState.edit-more ? "閉じる" : "もっと詳しく"; clicked => { KnowledgeState.edit-more = !KnowledgeState.edit-more; } }
+            }
+            if KnowledgeState.edit-more: VerticalLayout {
+                spacing: 10px;
+                for f[i] in KnowledgeState.edit-fields: VerticalLayout {
+                    spacing: 2px;
+                    if f.advanced: FieldInput { index: i; field: f; }
                 }
-                if f.multiline: AreaEdit {
-                    text: f.value;
-                    lines-height: 64px;
-                    edited(t) => { KnowledgeState.field-edited(i, t); }
+                if KnowledgeState.edit-body-advanced && KnowledgeState.edit-body-label != "": VerticalLayout {
+                    spacing: 2px;
+                    Text { text: KnowledgeState.edit-body-label; color: Theme.fg-tertiary; font-size: 11px; }
+                    AreaEdit { text <=> KnowledgeState.edit-body; lines-height: 110px; }
                 }
             }
-            Text { text: "本文"; color: Theme.fg-tertiary; font-size: 11px; }
-            AreaEdit { text <=> KnowledgeState.edit-body; lines-height: 160px; }
             if KnowledgeState.edit-error != "": Text {
                 text: KnowledgeState.edit-error;
                 color: Theme.danger;
