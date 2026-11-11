@@ -78,10 +78,12 @@ if ($srvOld) {
         $failed = $true
     } else {
         Push-Location (Join-Path $srv 'codex-rs')
+        # cargo writes its progress to stderr; that is not an error of the script.
+        $ErrorActionPreference = 'Continue'
         try {
             & cargo build --profile dev-small -p codex-cli -p codex-code-mode-host -p codex-windows-sandbox --bin inocode --bin inocode-code-mode-host --bin inocode-command-runner --bin inocode-windows-sandbox-setup --bin inocode-windows-managed-deny-probe *> $log
             $code = $LASTEXITCODE
-        } finally { Pop-Location }
+        } finally { Pop-Location; $ErrorActionPreference = 'Stop' }
         if ($code -ne 0) { Show-Failure 'サーバー' $log; $failed = $true }
         else { Set-Content -Path (Join-Path $srvOut '.launch-stamp') -Value $srvFp -Encoding ascii }
     }
@@ -91,10 +93,11 @@ if (-not $failed -and $guiOld) {
     $log = Join-Path $logs 'gui-build.log'
     Remove-Item Env:CARGO_TARGET_DIR, Env:CARGO_HOME, Env:CARGO_INCREMENTAL, Env:RUSTY_V8_ARCHIVE, Env:RUSTY_V8_SRC_BINDING_PATH -ErrorAction SilentlyContinue
     Push-Location $gui
+    $ErrorActionPreference = 'Continue'
     try {
         & cargo build *> $log
         $code = $LASTEXITCODE
-    } finally { Pop-Location }
+    } finally { Pop-Location; $ErrorActionPreference = 'Stop' }
     if ($code -ne 0) { Show-Failure 'GUI' $log; $failed = $true }
     else { Set-Content -Path (Join-Path $guiOut '.launch-stamp') -Value $guiFp -Encoding ascii }
 }
