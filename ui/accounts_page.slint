@@ -407,7 +407,7 @@ export component AccountsView inherits Rectangle {
                         clickable: false;
                         Chip { label: AccountsState.reorder ? "完了" : "並べ替える"; clicked => { AccountsState.reorder = !AccountsState.reorder; } }
                     }
-                    if AccountsState.pooled: Row { label: "使用量を更新"; separator: false; clicked => { AccountsState.refresh(); } }
+                    if AccountsState.pooled && AccountsState.cards.length > 0: Row { label: "使用量を更新"; separator: false; clicked => { AccountsState.refresh(); } }
                 }
                 if AccountsState.settings.length > 0: VerticalLayout {
                     spacing: 0px;
