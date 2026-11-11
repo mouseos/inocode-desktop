@@ -10,6 +10,8 @@ export struct RowBar {
     pct: float,
     // "42%"
     text: string,
+    // The share used, whatever the bar shows (it decides the colour)
+    used: float,
 }
 
 // A section's rows.
@@ -105,7 +107,7 @@ component BarLine inherits HorizontalLayout {
             width: parent.width * max(0, min(100, root.b.pct)) / 100;
             x: 0px;
             border-radius: 2.5px;
-            background: root.b.pct >= 99.5 ? Theme.danger : root.b.pct >= 80 ? Theme.warning : #3fb950;
+            background: root.b.used >= 99.5 ? Theme.danger : root.b.used >= 80 ? Theme.warning : #3fb950;
         }
     }
     Text { text: root.b.text; color: Theme.fg-secondary; font-size: 11px; width: 52px; horizontal-alignment: right; vertical-alignment: center; }
@@ -117,6 +119,8 @@ export component Row inherits Rectangle {
     in property <string> value;
     // A thin usage bar under the text; below 0 there is none
     in property <float> pct: -1;
+    // The share used, when the bar shows what is left; -1: the bar is the share used
+    in property <float> used: -1;
     // Usage bars under the text
     in property <[RowBar]> bars;
     // Shows a ">": the row opens a next level
@@ -165,7 +169,7 @@ export component Row inherits Rectangle {
                     width: parent.width * max(0, min(100, root.pct)) / 100;
                     x: 0px;
                     border-radius: 2px;
-                    background: root.pct >= 99.5 ? Theme.danger : root.pct >= 80 ? Theme.warning : #3fb950;
+                    background: (root.used >= 0 ? root.used : root.pct) >= 99.5 ? Theme.danger : (root.used >= 0 ? root.used : root.pct) >= 80 ? Theme.warning : #3fb950;
                 }
             }
             for b in root.bars: BarLine { b: b; }

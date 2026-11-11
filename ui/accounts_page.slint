@@ -6,7 +6,10 @@ import { Group, GroupTitle, Row, ScreenHead, Dropdown, RowBar, ActionButton } fr
 
 export struct AcctBar {
     label: string,
+    // The share used
     pct: float,
+    // Shown as what is left (OpenAI) instead of what is used (Claude)
+    remaining: bool,
     reset: string,
 }
 
@@ -482,7 +485,8 @@ export component AccountsView inherits Rectangle {
                         sub: (c.email != "" ? c.email : c.kind-label) + (c.credit-usable && c.credit-left > 0 ? " · 券 " + c.credit-left : "");
                         value: c.badge;
                         value-color: c.tone == "warn" ? Theme.warning : c.in-use ? Theme.accent : Theme.fg-secondary;
-                        pct: c.bars.length > 0 ? c.bars[0].pct : -1;
+                        pct: c.bars.length > 0 ? (c.bars[0].remaining ? 100 - c.bars[0].pct : c.bars[0].pct) : -1;
+                        used: c.bars.length > 0 ? c.bars[0].pct : -1;
                         chevron: !AccountsState.reorder;
                         separator: i < AccountsState.cards.length - 1;
                         clicked => { if !AccountsState.reorder { AccountsState.open-account(c.id); } }
@@ -573,9 +577,10 @@ export component AccountsView inherits Rectangle {
                     for b[i] in AccountsState.cur.bars: Row {
                         label: b.label == "5時間" ? "5 時間の利用制限" : "週あたりの利用制限";
                         sub: b.reset;
-                        value: b.pct >= 99.5 ? "上限に達しました" : Math.round(b.pct) + "%";
+                        value: b.pct >= 99.5 ? "上限に達しました" : b.remaining ? "残り " + Math.round(100 - b.pct) + "%" : Math.round(b.pct) + "% 使用";
                         value-color: b.pct >= 99.5 ? Theme.danger : Theme.fg-secondary;
-                        pct: b.pct;
+                        pct: b.remaining ? 100 - b.pct : b.pct;
+                        used: b.pct;
                         clickable: false;
                         separator: i < AccountsState.cur.bars.length - 1;
                     }

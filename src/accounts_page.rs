@@ -318,9 +318,15 @@ fn set_rows(app: &AppWindow) {
     app.global::<AccountsState>().set_add_rows(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 
-fn bar(label: &str, w: &Value) -> Option<AcctBar> {
+/// How a provider writes its usage: OpenAI as what is left (Codex Desktop), Claude as what is used
+/// (Claude Desktop).
+fn shows_remaining(provider: &str) -> bool {
+    provider != "claude"
+}
+
+fn bar(label: &str, w: &Value, remaining: bool) -> Option<AcctBar> {
     let pct = w.get("usedPercent").and_then(Value::as_f64)?;
-    Some(AcctBar { label: label.into(), pct: pct as f32, reset: reset_text(w.get("resetsAt").and_then(Value::as_i64)).into() })
+    Some(AcctBar { label: label.into(), pct: pct as f32, remaining, reset: reset_text(w.get("resetsAt").and_then(Value::as_i64)).into() })
 }
 
 /// "1時間20分", "4日8時間", "5分".
@@ -406,11 +412,16 @@ fn provider_of(a: &Value) -> &str {
 }
 
 /// The mean usage of the accounts as two bars (5 hours, week); none when they report none.
-fn mean_bars(accounts: &[Value]) -> Vec<RowBar> {
+fn mean_bars(accounts: &[Value], provider: &str) -> Vec<RowBar> {
     let mut bars = Vec::new();
     for (key, label) in [("fiveHour", "5時間"), ("weekly", "週")] {
         if let Some(n) = mean(accounts, key) {
-            bars.push(RowBar { label: label.into(), pct: n as f32, text: format!("{n}%").into() });
+            let (fill, text) = if shows_remaining(provider) {
+                ((100 - n).clamp(0, 100) as f32, format!("残り {}%", (100 - n).clamp(0, 100)))
+            } else {
+                (n as f32, format!("{n}% 使用"))
+            };
+            bars.push(RowBar { label: label.into(), pct: fill, used: n as f32, text: text.into() });
         }
     }
     bars
@@ -446,7 +457,7 @@ fn render_providers(app: &AppWindow, all: &[Value]) {
                 id: id.as_str().into(),
                 name: name.as_str().into(),
                 count: mine.len() as i32,
-                bars: ModelRc::from(Rc::new(VecModel::from(mean_bars(&mine)))),
+                bars: ModelRc::from(Rc::new(VecModel::from(mean_bars(&mine, id.as_str())))),
                 summary: "".into(),
                 tone: tone.into(),
             }
@@ -593,7 +604,7 @@ fn card(a: &Value, now: i64) -> AcctCard {
     let mut bars = Vec::new();
     if let Some(u) = a.get("usage").filter(|u| u.is_object()) {
         for (key, name) in [("fiveHour", "5時間"), ("weekly", "週")] {
-            if let Some(b) = u.get(key).filter(|w| !w.is_null()).and_then(|w| bar(name, w)) {
+            if let Some(b) = u.get(key).filter(|w| !w.is_null()).and_then(|w| bar(name, w, shows_remaining(provider))) {
                 bars.push(b);
             }
         }
@@ -675,7 +686,7 @@ fn render(app: &AppWindow) {
     }
     st.set_cards(ModelRc::from(Rc::new(VecModel::from(cards))));
     st.set_loading(false);
-    st.set_total(ModelRc::from(Rc::new(VecModel::from(mean_bars(&mine)))));
+    st.set_total(ModelRc::from(Rc::new(VecModel::from(mean_bars(&mine, &pid)))));
 }
 
 fn show_policy(app: &AppWindow) {
