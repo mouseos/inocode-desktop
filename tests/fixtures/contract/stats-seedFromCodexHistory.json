@@ -1,11 +1,12 @@
 {
-  "_doc": "inocode/stats/seedFromCodexHistory (read-only); progress via inocode/stats/seedProgress",
+  "method": "inocode/stats/seedFromCodexHistory",
   "request": {
     "path": null
   },
   "response": {
     "jobId": "seed-1731300000000"
   },
+  "_doc": "inocode/stats/seedFromCodexHistory (read-only); progress via inocode/stats/seedProgress",
   "progressNotification": {
     "jobId": "seed-1731300000000",
     "filesDone": 12,

@@ -1,5 +1,5 @@
 {
-  "_doc": "inocode/stats/hourly: one series per model (all models when model is null); no mixed average",
+  "method": "inocode/stats/hourly",
   "request": {
     "days": 7,
     "model": null
@@ -333,5 +333,6 @@
         ]
       }
     ]
-  }
+  },
+  "_doc": "inocode/stats/hourly: one series per model (all models when model is null); no mixed average"
 }

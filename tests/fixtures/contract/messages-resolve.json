@@ -1,0 +1,24 @@
+{
+  "method": "inocode/messages/resolve",
+  "request": {
+    "threadId": "019db3ea-fe9e-7441-b385-70f80f1ffc50",
+    "id": "#12.3",
+    "maxChars": 200
+  },
+  "alternateRequest": {
+    "threadId": "019db3ea-fe9e-7441-b385-70f80f1ffc50",
+    "turnId": "019db3eb-06b3-7380-9191-ad0254418692",
+    "itemIndex": 2
+  },
+  "response": {
+    "threadId": "019db3ea-fe9e-7441-b385-70f80f1ffc50",
+    "turnNumber": 12,
+    "itemNumber": 3,
+    "turnId": "019db3eb-06b3-7380-9191-ad0254418692",
+    "itemId": "item-3",
+    "role": "assistant",
+    "text": "WAL を使います。",
+    "truncated": false
+  },
+  "_doc": "inocode/messages/resolve. Name the item by `id` ('#<turn>.<item>', both 1-based and file-wide; or a server item id) OR by `turnId` + `itemIndex` (a Turn.id and the 0-based position in that Turn.items of thread/read; the answer carries the file-wide numbers the GUI shows). maxChars cuts `text`. Limit (first version): for a fork that references its parent's history (history_base) only the lines of its own file are numbered; replying to a message of the parent is not supported yet."
+}

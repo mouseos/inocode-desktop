@@ -1,5 +1,5 @@
 {
-  "_doc": "inocode/stats/summary (primary = 5-hour window, secondary = weekly)",
+  "method": "inocode/stats/summary",
   "request": {
     "days": 3,
     "model": null,
@@ -58,5 +58,6 @@
         "insufficient": true
       }
     ]
-  }
+  },
+  "_doc": "inocode/stats/summary (primary = 5-hour window, secondary = weekly)"
 }

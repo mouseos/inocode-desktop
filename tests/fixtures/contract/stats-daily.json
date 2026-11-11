@@ -1,5 +1,5 @@
 {
-  "_doc": "inocode/stats/daily: totals per day plus per-model parts, each with its own speed (no top-level speed)",
+  "method": "inocode/stats/daily",
   "request": {
     "days": 14
   },
@@ -33,5 +33,6 @@
         ]
       }
     ]
-  }
+  },
+  "_doc": "inocode/stats/daily: totals per day plus per-model parts, each with its own speed (no top-level speed)"
 }
