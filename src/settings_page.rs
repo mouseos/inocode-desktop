@@ -23,7 +23,6 @@ enum S {
     Personal,
     Shortcuts,
     Archive,
-    Usage,
     Account,
     Hooks,
     Skills,
@@ -40,7 +39,6 @@ fn nav() -> Vec<(S, &'static str)> {
         (S::Personal, "パーソナライズ"),
         (S::Shortcuts, "キーボードショートカット"),
         (S::Archive, "アーカイブ済みチャット"),
-        (S::Usage, "使用量"),
         (S::Account, "プロバイダー"),
         (S::Head, "このコンピュータ"),
         (S::Hooks, "フック"),
@@ -60,7 +58,6 @@ fn glyph_of(s: S) -> &'static str {
         S::Personal => "\u{e7fd}",
         S::Shortcuts => "\u{e312}",
         S::Archive => "\u{e149}",
-        S::Usage => "\u{e26b}",
         S::Account => "\u{e875}",
         S::Hooks => "\u{e86f}",
         S::Skills => "\u{e87b}",
@@ -117,20 +114,10 @@ pub(crate) const OPENAI_SETTINGS: [(&str, &str, &[(&str, &str)]); 2] = [
 /// Codex: follow-up behavior (desktop.followUpQueueMode).
 const FOLLOW_UP: [(&str, &str); 2] = [("キューに追加", "queue"), ("今すぐ反映", "steer")];
 
-/// Replies of the usage page's three requests.
-#[derive(Default)]
-struct Usage {
-    rate: Option<Value>,
-    pool: Option<Value>,
-    account: Option<Value>,
-    got: u8,
-}
-
 #[derive(Default)]
 struct Data {
     config: Value,
     section: usize,
-    usage: Usage,
     /// An API key typed for the pool, kept only until the answer arrives (fallback to the plain login).
     pending_key: Option<String>,
     /// Providers from inocode/providers/list: (id, name, auth kinds, account count).
@@ -255,9 +242,10 @@ pub(crate) fn show_home(app: &AppWindow) {
     load(app, if cur <= 0 { index_of(S::General) } else { cur });
 }
 
+/// The usage is on the providers' screens (the bars of each level).
 pub(crate) fn open_usage(app: &AppWindow) {
     app.global::<SettingsPageState>().set_open(true);
-    load(app, index_of(S::Usage));
+    load(app, index_of(S::Account));
 }
 
 /// Show a section without recording a history step (used by back / forward).
@@ -405,14 +393,6 @@ fn load(app: &AppWindow, section: i32) {
         }
         S::Shortcuts => set_rows(app, shortcut_rows()),
         S::Archive => rpc("spage.archive", "thread/list", json!({ "limit": 50, "archived": true })),
-        S::Usage => {
-            s.set_layout(5);
-            DATA.with(|d| d.borrow_mut().usage = Usage::default());
-            s.set_usage(ModelRc::from(Rc::new(VecModel::<UsageAccount>::default())));
-            rpc("spage.usage", "account/rateLimits/read", Value::Null);
-            rpc("spage.usage.pool", "inocode/accounts/list", json!({ "refresh": true }));
-            rpc("spage.usage.account", "account/read", json!({ "refreshToken": false }));
-        }
         S::Account => {
             s.set_layout(2);
             s.set_loading(false);
@@ -625,7 +605,6 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                     note(app, &format!("変更できませんでした: {}", crate::errmsg::short(e)));
                 }
                 "spage.account" | "spage.boot" | "spage.feat" => {}
-                "spage.usage" | "spage.usage.pool" | "spage.usage.account" => usage_reply(app, tag, None),
                 _ => set_rows(app, vec![row("", "読み込めませんでした", "", &crate::errmsg::short(e), 0, false)]),
             }
             return;
@@ -772,7 +751,6 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
             load(app, current as i32);
             crate::sidebar::refresh();
         }
-        "spage.usage" | "spage.usage.pool" | "spage.usage.account" => usage_reply(app, tag, Some(v.clone())),
         "spage.account" => {
             let (logged_in, label) = client::parse_account(v);
             if matches!(here, Some(S::Account)) {
@@ -785,138 +763,5 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
         }
         _ => {}
     }
-}
-
-fn window_name(mins: Option<i64>) -> String {
-    match mins {
-        Some(m) if m >= 10_000 => "週".to_string(),
-        Some(m) if m >= 60 && m % 60 == 0 => format!("{} 時間", m / 60),
-        Some(m) => format!("{m} 分"),
-        None => "枠".to_string(),
-    }
-}
-
-/// "3 時間 10 分" for a number of seconds.
-pub(crate) fn span(secs: i64) -> String {
-    let secs = secs.max(0);
-    let (d, h, m) = (secs / 86_400, (secs % 86_400) / 3600, (secs % 3600) / 60);
-    if d > 0 { format!("{d} 日 {h} 時間") } else if h > 0 { format!("{h} 時間 {m} 分") } else { format!("{m} 分") }
-}
-
-/// "あと 3 時間 10 分でリセット" until `resets_at` (Unix seconds).
-pub(crate) fn until(resets_at: Option<i64>) -> String {
-    let Some(at) = resets_at else { return String::new() };
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
-    format!("あと {} でリセット", span(at - now))
-}
-
-fn bar(label: &str, w: &Value) -> Option<UsageBar> {
-    let pct = w.get("usedPercent").and_then(Value::as_f64)?;
-    Some(UsageBar { label: label.into(), pct: pct as f32, reset: until(w.get("resetsAt").and_then(Value::as_i64)).into() })
-}
-
-/// Bars of an `account/rateLimits/read` snapshot.
-fn snapshot_bars(snap: &Value) -> Vec<UsageBar> {
-    ["primary", "secondary"]
-        .iter()
-        .filter_map(|k| snap.get(*k).filter(|w| !w.is_null()))
-        .filter_map(|w| bar(&window_name(w.get("windowDurationMins").and_then(Value::as_i64)), w))
-        .collect()
-}
-
-fn usage_reply(app: &AppWindow, tag: &str, v: Option<Value>) {
-    let done = DATA.with(|d| {
-        let mut d = d.borrow_mut();
-        match tag {
-            "spage.usage" => d.usage.rate = v,
-            "spage.usage.pool" => d.usage.pool = v,
-            _ => d.usage.account = v,
-        }
-        d.usage.got += 1;
-        d.usage.got >= 3
-    });
-    if !done {
-        return;
-    }
-    let (rate, pool, account) = DATA.with(|d| {
-        let d = d.borrow();
-        (d.usage.rate.clone(), d.usage.pool.clone(), d.usage.account.clone())
-    });
-    let snap = rate.as_ref().and_then(|r| r.get("rateLimits")).cloned().unwrap_or(Value::Null);
-    let email = account.as_ref().and_then(|a| a.pointer("/account/email")).and_then(Value::as_str).unwrap_or("").to_string();
-    let plan_now = account.as_ref().and_then(|a| a.pointer("/account/planType")).and_then(Value::as_str).unwrap_or("").to_string();
-    let credits = |snap: &Value| -> String {
-        match snap.get("credits").filter(|c| !c.is_null()) {
-            Some(c) if c.get("unlimited").and_then(Value::as_bool).unwrap_or(false) => "無制限".to_string(),
-            Some(c) if c.get("hasCredits").and_then(Value::as_bool).unwrap_or(false) => c.get("balance").and_then(Value::as_str).unwrap_or("").to_string(),
-            _ => String::new(),
-        }
-    };
-    let banked = rate
-        .as_ref()
-        .and_then(|r| r.pointer("/rateLimitResetCredits/availableCount"))
-        .and_then(Value::as_i64)
-        .filter(|n| *n > 0)
-        .map(|n| format!("{n} 件"))
-        .unwrap_or_default();
-
-    let mut cards: Vec<UsageAccount> = Vec::new();
-    let mut accounts = pool.as_ref().and_then(|p| p.get("accounts")).and_then(Value::as_array).cloned().unwrap_or_default();
-    // Grouped by provider; inside a provider the order is kept.
-    accounts.sort_by_key(|a| a.get("provider").and_then(Value::as_str).unwrap_or("openai") != "openai");
-    for a in &accounts {
-        let in_use = a.get("inUse").and_then(Value::as_bool).unwrap_or(false);
-        let mut bars = Vec::new();
-        if let Some(u) = a.get("usage").filter(|u| !u.is_null()) {
-            for (key, name) in [("fiveHour", "5 時間"), ("weekly", "週")] {
-                if let Some(b) = u.get(key).filter(|w| !w.is_null()).and_then(|w| bar(name, w)) {
-                    bars.push(b);
-                }
-            }
-        }
-        if bars.is_empty() && in_use {
-            bars = snapshot_bars(&snap);
-        }
-        // The server tells the e-mail address only for the signed-in account.
-        let shows_email = a.get("isDefault").and_then(Value::as_bool).unwrap_or(false) || (in_use && accounts.len() == 1);
-        cards.push(UsageAccount {
-            provider: provider_name(a.get("provider").and_then(Value::as_str).unwrap_or("openai")).into(),
-            alias: a.get("alias").and_then(Value::as_str).unwrap_or("").into(),
-            email: match a.get("email").and_then(Value::as_str).filter(|e| !e.is_empty()) {
-                Some(e) => e.into(),
-                None if shows_email => email.as_str().into(),
-                None => "".into(),
-            },
-            plan: a.get("plan").and_then(Value::as_str).unwrap_or("").into(),
-            in_use,
-            bars: ModelRc::from(Rc::new(VecModel::from(bars))),
-            credits: if in_use { credits(&snap).into() } else { "".into() },
-            banked: {
-                let lines = crate::accounts_page::credit_lines(a);
-                if lines.is_empty() {
-                    if in_use { banked.as_str().into() } else { "".into() }
-                } else {
-                    lines.iter().map(|(l, v)| format!("{l} {v}")).collect::<Vec<_>>().join(" · ").into()
-                }
-            },
-        });
-    }
-    if cards.is_empty() {
-        // No pool: the signed-in account only.
-        let (_, label) = account.as_ref().map(client::parse_account).unwrap_or((false, "アカウント".to_string()));
-        cards.push(UsageAccount {
-            provider: provider_name("openai").into(),
-            alias: label.as_str().into(),
-            email: email.as_str().into(),
-            plan: plan_now.as_str().into(),
-            in_use: true,
-            bars: ModelRc::from(Rc::new(VecModel::from(snapshot_bars(&snap)))),
-            credits: credits(&snap).into(),
-            banked: banked.as_str().into(),
-        });
-    }
-    let s = app.global::<SettingsPageState>();
-    s.set_usage(ModelRc::from(Rc::new(VecModel::from(cards))));
-    s.set_loading(false);
 }
 

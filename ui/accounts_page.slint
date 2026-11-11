@@ -37,6 +37,9 @@ export struct AcctCard {
     bars: [AcctBar],
     // The reset credits (Claude), only the values the server sent
     credit: [CreditRow],
+    // A reset credit can be used now, and how many are left
+    credit-usable: bool,
+    credit-left: int,
 }
 
 // A setting of one provider (a choice among a few values).
@@ -101,6 +104,9 @@ export global AccountsState {
     in property <[RowBar]> total;
     in-out property <string> threshold;
     in-out property <string> confirm-id;
+    // Asking whether to use a reset credit (the account's id), and what came of it
+    in-out property <string> credit-confirm-id;
+    in property <string> credit-result;
     in-out property <string> rename-text;
     // The add dialog: 0 closed, 1 list, 2 form
     in-out property <int> add-step: 0;
@@ -143,6 +149,7 @@ export global AccountsState {
     callback back;
     callback choose-setting(string, int);
     callback make-default;
+    callback use-credit(string);
     callback add-compatible;
 }
 
@@ -396,7 +403,7 @@ export component AccountsView inherits Rectangle {
                 if AccountsState.cards.length > 0: Group {
                     for c[i] in AccountsState.cards: Row {
                         label: c.alias;
-                        sub: c.email != "" ? c.email : c.kind-label;
+                        sub: (c.email != "" ? c.email : c.kind-label) + (c.credit-usable && c.credit-left > 0 ? " · 券 " + c.credit-left : "");
                         value: c.badge;
                         value-color: c.tone == "warn" ? Theme.warning : c.in-use ? Theme.accent : Theme.fg-secondary;
                         pct: c.bars.length > 0 ? c.bars[0].pct : -1;
@@ -502,8 +509,28 @@ export component AccountsView inherits Rectangle {
                             label: cr.label;
                             value: cr.value;
                             clickable: false;
-                            separator: i < AccountsState.cur.credit.length - 1;
+                            separator: true;
                         }
+                        if AccountsState.cur.credit-usable && AccountsState.credit-confirm-id != AccountsState.cur.id: Row {
+                            label: "リセット券を使う";
+                            separator: AccountsState.credit-result != "";
+                            clicked => { AccountsState.credit-confirm-id = AccountsState.cur.id; }
+                        }
+                        if AccountsState.credit-confirm-id == AccountsState.cur.id: Row {
+                            label: "5時間と週の使用量が、リセットされます。使いますか？";
+                            clickable: false;
+                        }
+                        if AccountsState.credit-confirm-id == AccountsState.cur.id: Row {
+                            label: "使う";
+                            value-color: Theme.accent;
+                            clicked => { AccountsState.credit-confirm-id = ""; AccountsState.use-credit(AccountsState.cur.id); }
+                        }
+                        if AccountsState.credit-confirm-id == AccountsState.cur.id: Row {
+                            label: "やめる";
+                            separator: AccountsState.credit-result != "";
+                            clicked => { AccountsState.credit-confirm-id = ""; }
+                        }
+                        if AccountsState.credit-result != "": Row { label: AccountsState.credit-result; clickable: false; separator: false; }
                     }
                 }
                 Group {

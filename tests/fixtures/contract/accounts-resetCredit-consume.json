@@ -1,0 +1,8 @@
+{
+  "method": "inocode/accounts/resetCredit/consume",
+  "request": {
+    "id": "claude-5d2a7e0b91c3f4a8"
+  },
+  "response": {},
+  "note": "モックの仮の応答。契約(cli-account-pool が docs/16 に追記)ができたら、その形に合わせる。"
+}

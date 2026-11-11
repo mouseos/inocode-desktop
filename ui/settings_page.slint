@@ -16,24 +16,6 @@ export struct NavItem {
     glyph: string,
 }
 
-export struct UsageBar {
-    label: string,
-    pct: float,
-    reset: string,
-}
-
-export struct UsageAccount {
-    // Human name of the provider (OpenAI, Claude); the cards are grouped by it.
-    provider: string,
-    alias: string,
-    email: string,
-    plan: string,
-    in-use: bool,
-    bars: [UsageBar],
-    credits: string,
-    banked: string,
-}
-
 export struct SRow {
     id: string,
     title: string,
@@ -64,7 +46,6 @@ export global SettingsPageState {
     // The text of the search field above the list of sections
     in-out property <string> nav-search;
     in property <[SGroup]> groups;
-    in property <[UsageAccount]> usage;
     in property <string> title;
     in property <[SRow]> rows;
     in property <bool> loading: false;
@@ -156,27 +137,6 @@ component Rows inherits VerticalLayout {
                     accepted(t) => { SettingsPageState.row-text(r.id, t); }
                 }
             }
-        }
-    }
-}
-
-component UsageCards inherits VerticalLayout {
-    spacing: 4px;
-    for a[ai] in SettingsPageState.usage: VerticalLayout {
-        spacing: 0px;
-        GroupTitle { text: a.provider + " · " + a.alias + (a.plan != "" ? " · " + a.plan : "") + (a.in-use ? " · 使用中" : ""); }
-        Group {
-            if a.email != "": Row { label: "メールアドレス"; value: a.email; clickable: false; }
-            for b[i] in a.bars: Row {
-                label: b.label;
-                sub: b.reset;
-                value: Math.round(b.pct) + "%";
-                pct: b.pct;
-                clickable: false;
-                separator: i < a.bars.length - 1 || a.credits != "" || a.banked != "";
-            }
-            if a.credits != "": Row { label: "クレジット残高"; value: a.credits; clickable: false; separator: a.banked != ""; }
-            if a.banked != "": Row { label: "リセット券"; value: a.banked; clickable: false; separator: false; }
         }
     }
 }
@@ -312,11 +272,6 @@ export component SettingsPage inherits Rectangle {
                                 spacing: 4px;
                                 Text { text: SettingsPageState.title; color: Theme.fg; font-size: 18px; font-weight: 700; height: 40px; vertical-alignment: center; }
                                 StatsPage { vertical-stretch: 1; }
-                            }
-                            if SettingsPageState.layout == 5: Screen {
-                                title: SettingsPageState.title;
-                                if SettingsPageState.loading: Text { text: "読み込み中…"; color: Theme.fg-tertiary; font-size: 13px; }
-                                UsageCards { }
                             }
                             if SettingsPageState.layout == 0 || SettingsPageState.layout == 4: Screen {
                                 title: SettingsPageState.title;

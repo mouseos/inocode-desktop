@@ -486,6 +486,8 @@ fn card(a: &Value, now: i64) -> AcctCard {
         enabled: s(a, "state") != "disabled",
         can_reauth: kind != "apiKey" && !a.get("isDefault").and_then(Value::as_bool).unwrap_or(false),
         bars: ModelRc::from(Rc::new(VecModel::from(bars))),
+        credit_usable: a.get("usage").and_then(|u| u.get("resetCredit")).and_then(|c| c.get("usableNow")).and_then(Value::as_bool).unwrap_or(false),
+        credit_left: a.get("usage").and_then(|u| u.get("resetCredit")).and_then(|c| c.get("resetsLeft")).and_then(Value::as_i64).unwrap_or(0) as i32,
         credit: ModelRc::from(Rc::new(VecModel::from(
             credit_lines(a).into_iter().map(|(l, v)| CreditRow { label: l.into(), value: v.into() }).collect::<Vec<_>>(),
         ))),
@@ -762,6 +764,13 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         visit(&app);
     });
     let weak = app.as_weak();
+    st.on_use_credit(move |id| {
+        if let Some(app) = weak.upgrade() {
+            app.global::<AccountsState>().set_credit_result("".into());
+        }
+        rpc("acct.credit", "inocode/accounts/resetCredit/consume", json!({ "id": id.to_string() }));
+    });
+    let weak = app.as_weak();
     st.on_make_default(move || {
         if let Some(app) = weak.upgrade() {
             let pid = app.global::<AccountsState>().get_provider_id().to_string();
@@ -828,6 +837,9 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                 "acct.login.start" | "acct.login.complete" => login_error(app, e),
                 "acct.login.key" => login_note(app, &format!("できませんでした: {}", crate::errmsg::short(e))),
                 "acct.poll" => {}
+                "acct.credit" => {
+                    st.set_credit_result(format!("リセット券を使えませんでした: {}", crate::errmsg::short(e)).into());
+                }
                 "acct.providers" | "acct.policy" => {}
                 _ => detailed(app, &format!("できませんでした: {}", crate::errmsg::short(e)), e),
             }
@@ -911,6 +923,10 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
             render(app);
         }
         "acct.act" => refresh(false),
+        "acct.credit" => {
+            st.set_credit_result("リセット券を使いました。使用量を更新しています".into());
+            refresh(true);
+        }
         "acct.poll" => {
             let list = v.get("accounts").and_then(Value::as_array).cloned().unwrap_or_default();
             let (new_one, ticks) = DATA.with(|d| {
