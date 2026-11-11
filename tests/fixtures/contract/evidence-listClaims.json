@@ -41,6 +41,16 @@
         "spanIds": [],
         "premiseIds": [],
         "createdBy": "gpt-5.6-luna"
+      },
+      {
+        "id": "claim-004",
+        "text": "被告人は事件当日の午後 9 時に現場にいた",
+        "type": "fact",
+        "status": "unsupported",
+        "confidence": "low",
+        "spanIds": [],
+        "premiseIds": [],
+        "createdBy": "gpt-5.6-luna"
       }
     ]
   },

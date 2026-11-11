@@ -11,7 +11,7 @@ use crate::{AppWindow, ESource, EClaim, EvidenceState, Finding, GEdge, GNode, VS
 use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, VecModel};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 fn payload(result: &Value) -> &Value {
@@ -64,9 +64,9 @@ fn claim_type_label(t: &str) -> String {
 
 fn confidence_label(c: &str) -> String {
     match c {
-        "high" => "高",
-        "medium" => "中",
-        "low" => "低",
+        "high" => "確実",
+        "medium" => "たぶん",
+        "low" => "未確認",
         other => other,
     }
     .to_string()
@@ -127,7 +127,79 @@ struct ClaimData {
     status_label: String,
     confidence_label: String,
     spans: i32,
-    model: String,
+    span_ids: Vec<String>,
+    /// 「AI」「自分」
+    author: String,
+}
+
+/// createdBy -> 画面の言葉
+fn author_label(created_by: &str) -> String {
+    match created_by {
+        "" => "".to_string(),
+        "user" => "自分".to_string(),
+        _ => "AI".to_string(),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SpanData {
+    id: String,
+    source_id: String,
+    quote: String,
+}
+
+fn parse_spans(result: &Value) -> Vec<SpanData> {
+    payload(result)
+        .get("spans")
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter(|x| !s(x, "id").is_empty())
+                .map(|x| SpanData { id: s(x, "id"), source_id: s(x, "sourceId"), quote: s(x, "quote") })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// 引用 1 件の表示: `原資料名「引用の頭」`(長い引用は切る)
+fn span_label(span: &SpanData, sources: &[SourceData]) -> String {
+    let title = sources.iter().find(|x| x.id == span.source_id).map(|x| x.title.as_str()).unwrap_or("");
+    let quote: String = span.quote.chars().take(40).collect();
+    let quote = if span.quote.chars().count() > 40 { format!("{quote}…") } else { quote };
+    if title.is_empty() { format!("「{quote}」") } else { format!("{title}「{quote}」") }
+}
+
+/// 主張の根拠(引用の本文)を 1 行 1 件で。ID は出さない。
+fn evidence_lines(claim: &ClaimData, spans: &[SpanData], sources: &[SourceData]) -> String {
+    claim
+        .span_ids
+        .iter()
+        .filter_map(|id| spans.iter().find(|sp| &sp.id == id))
+        .map(|sp| span_label(sp, sources))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn claim_filter(all: &[ClaimData], index: i32) -> Vec<ClaimData> {
+    match CLAIM_FILTERS.get(index.max(0) as usize) {
+        Some((wire, _)) => all.iter().filter(|c| c.status == *wire).cloned().collect(),
+        None => all.to_vec(),
+    }
+}
+
+fn claim_filter_labels(all: &[ClaimData]) -> Vec<String> {
+    let mut v: Vec<String> = CLAIM_FILTERS
+        .iter()
+        .map(|(wire, label)| format!("{} {}", label, all.iter().filter(|c| c.status == *wire).count()))
+        .collect();
+    v.push("すべて".to_string());
+    v
+}
+
+/// 検索語を含むか(空なら全部)。大文字小文字は区別しない。
+fn matches_query(text: &str, query: &str) -> bool {
+    let q = query.trim().to_lowercase();
+    q.is_empty() || text.to_lowercase().contains(&q)
 }
 
 fn parse_claims(result: &Value) -> Vec<ClaimData> {
@@ -145,7 +217,12 @@ fn parse_claims(result: &Value) -> Vec<ClaimData> {
                     status_label: status_label(&s(c, "status")),
                     confidence_label: confidence_label(&s(c, "confidence")),
                     spans: c.get("spanIds").and_then(Value::as_array).map(|a| a.len() as i32).unwrap_or(0),
-                    model: s(c, "createdBy"),
+                    span_ids: c
+                        .get("spanIds")
+                        .and_then(Value::as_array)
+                        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                        .unwrap_or_default(),
+                    author: author_label(&s(c, "createdBy")),
                 })
                 .collect()
         })
@@ -329,6 +406,8 @@ fn parse_findings(result: &Value) -> Vec<FindingData> {
 const SOURCE_KINDS: [&str; 4] = ["statute", "document", "case", "other"];
 const CLAIM_TYPES: [&str; 4] = ["fact", "legal", "inference", "hypothesis"];
 const CLAIM_CONFIDENCES: [&str; 3] = ["high", "medium", "low"];
+/// 主張の絞り込み: 0 = 根拠なし、1 = 根拠あり、2 = 撤回、3 = すべて
+const CLAIM_FILTERS: [(&str, &str); 3] = [("unsupported", "根拠なし"), ("supported", "根拠あり"), ("retracted", "撤回")];
 const CLAIM_STATUSES: [&str; 3] = ["supported", "unsupported", "retracted"];
 
 fn nonempty(t: &str) -> Option<String> {
@@ -352,9 +431,8 @@ fn import_params(title: &str, kind: i32, version: &str, path: &str, text: &str) 
 }
 
 /// 主張の追加フォーム -> addClaim のパラメータ。
-fn claim_params(text: &str, ty: i32, conf: i32, spans: &str, premises: &[String]) -> Result<Value, String> {
+fn claim_params(text: &str, ty: i32, conf: i32, span_ids: &[String], premises: &[String]) -> Result<Value, String> {
     let text = nonempty(text).ok_or("主張の本文を入力してください")?;
-    let span_ids: Vec<String> = spans.split(|c| c == ',' || c == '、' || c == '\n').filter_map(nonempty).collect();
     Ok(json!({
         "text": text,
         "type": CLAIM_TYPES[(ty.max(0) as usize).min(CLAIM_TYPES.len() - 1)],
@@ -365,18 +443,32 @@ fn claim_params(text: &str, ty: i32, conf: i32, spans: &str, premises: &[String]
     }))
 }
 
-fn push_premises(app: &AppWindow) {
+/// 主張の追加フォームの 2 つのチェック一覧(引用・前提)。絞り込みの語を反映して作り直す。
+fn push_claim_form(app: &AppWindow) {
+    let st = app.global::<EvidenceState>();
+    let (span_q, premise_q) = (st.get_span_query().to_string(), st.get_premise_query().to_string());
     E.with(|e| {
         let mut e = e.borrow_mut();
-        let n = e.claims.len();
-        e.premise_checked.resize(n, false);
-        let rows: Vec<VSource> = e
-            .claims
+        let span_idx: Vec<usize> = (0..e.spans.len()).filter(|i| matches_query(&span_label(&e.spans[*i], &e.sources), &span_q)).collect();
+        let span_rows: Vec<VSource> = span_idx
             .iter()
-            .enumerate()
-            .map(|(i, c)| VSource { id: c.id.as_str().into(), title: c.text.as_str().into(), checked: e.premise_checked[i] })
+            .map(|i| {
+                let sp = &e.spans[*i];
+                VSource { id: sp.id.as_str().into(), title: span_label(sp, &e.sources).into(), checked: e.span_checked.contains(&sp.id) }
+            })
             .collect();
-        app.global::<EvidenceState>().set_premise_options(model(rows));
+        let prem_idx: Vec<usize> = (0..e.claims.len()).filter(|i| matches_query(&e.claims[*i].text, &premise_q)).collect();
+        let prem_rows: Vec<VSource> = prem_idx
+            .iter()
+            .map(|i| {
+                let c = &e.claims[*i];
+                VSource { id: c.id.as_str().into(), title: c.text.as_str().into(), checked: e.premise_checked.contains(&c.id) }
+            })
+            .collect();
+        e.span_view = span_idx;
+        e.premise_view = prem_idx;
+        st.set_span_options(model(span_rows));
+        st.set_premise_options(model(prem_rows));
     });
 }
 
@@ -433,14 +525,16 @@ fn install_write(app: &AppWindow, host: &Host) {
         let st = app.global::<EvidenceState>();
         E.with(|e| {
             let mut e = e.borrow_mut();
-            let n = e.claims.len();
-            e.premise_checked = vec![false; n];
+            e.premise_checked.clear();
+            // 直前に引用にした箇所は、最初からチェックを入れる
+            e.span_checked = e.last_spans.iter().cloned().collect();
         });
-        push_premises(&app);
+        st.set_span_query("".into());
+        st.set_premise_query("".into());
+        push_claim_form(&app);
         st.set_new_claim_text("".into());
         st.set_new_claim_type(0);
         st.set_new_claim_confidence(1);
-        st.set_new_claim_spans(E.with(|e| e.borrow().last_spans.join(", ")).into());
         st.set_write_note("".into());
         st.set_adding_claim(true);
     });
@@ -454,21 +548,52 @@ fn install_write(app: &AppWindow, host: &Host) {
     st.on_toggle_premise(move |i| {
         let Some(app) = weak.upgrade() else { return };
         E.with(|e| {
-            if let Some(c) = e.borrow_mut().premise_checked.get_mut(i as usize) {
-                *c = !*c;
+            let mut e = e.borrow_mut();
+            if let Some(id) = e.premise_view.get(i as usize).and_then(|k| e.claims.get(*k)).map(|c| c.id.clone()) {
+                if !e.premise_checked.remove(&id) {
+                    e.premise_checked.insert(id);
+                }
             }
         });
-        push_premises(&app);
+        push_claim_form(&app);
+    });
+    let weak = app.as_weak();
+    st.on_toggle_span(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        E.with(|e| {
+            let mut e = e.borrow_mut();
+            if let Some(id) = e.span_view.get(i as usize).and_then(|k| e.spans.get(*k)).map(|x| x.id.clone()) {
+                if !e.span_checked.remove(&id) {
+                    e.span_checked.insert(id);
+                }
+            }
+        });
+        push_claim_form(&app);
+    });
+    let weak = app.as_weak();
+    st.on_form_filter_changed(move || {
+        if let Some(app) = weak.upgrade() {
+            push_claim_form(&app);
+        }
+    });
+    let weak = app.as_weak();
+    st.on_claim_filter_changed(move |_| {
+        if let Some(app) = weak.upgrade() {
+            push_claims(&app);
+        }
     });
     let (weak, h) = (app.as_weak(), host.clone());
     st.on_save_claim(move || {
         let Some(app) = weak.upgrade() else { return };
         let st = app.global::<EvidenceState>();
-        let premises: Vec<String> = E.with(|e| {
+        let (premises, spans): (Vec<String>, Vec<String>) = E.with(|e| {
             let e = e.borrow();
-            e.claims.iter().enumerate().filter(|(i, _)| e.premise_checked.get(*i).copied().unwrap_or(false)).map(|(_, c)| c.id.clone()).collect()
+            (
+                e.claims.iter().filter(|c| e.premise_checked.contains(&c.id)).map(|c| c.id.clone()).collect(),
+                e.spans.iter().filter(|x| e.span_checked.contains(&x.id)).map(|x| x.id.clone()).collect(),
+            )
         });
-        match claim_params(&st.get_new_claim_text(), st.get_new_claim_type(), st.get_new_claim_confidence(), &st.get_new_claim_spans(), &premises) {
+        match claim_params(&st.get_new_claim_text(), st.get_new_claim_type(), st.get_new_claim_confidence(), &spans, &premises) {
             Ok(mut p) => {
                 st.set_write_note("".into());
                 p["cwd"] = json!(cwd(&app));
@@ -478,9 +603,9 @@ fn install_write(app: &AppWindow, host: &Host) {
         }
     });
     let (weak, h) = (app.as_weak(), host.clone());
-    st.on_set_claim_status(move |i| {
+    st.on_claim_set_status(move |id, i| {
         let Some(app) = weak.upgrade() else { return };
-        let Some(id) = E.with(|e| e.borrow().selected_claim.clone()) else { return };
+        let id = id.to_string();
         let status = CLAIM_STATUSES[(i.max(0) as usize).min(CLAIM_STATUSES.len() - 1)];
         h.rpc("evidence.w.status", "inocode/evidence/setClaimStatus", json!({ "id": id, "status": status, "cwd": cwd(&app) }));
     });
@@ -493,7 +618,6 @@ struct E {
     sources: Vec<SourceData>,
     selected_source: Option<String>,
     claims: Vec<ClaimData>,
-    selected_claim: Option<String>,
     nodes: Vec<NodeData>,
     edges: Vec<EdgeData>,
     layout: Option<Layout>,
@@ -501,7 +625,14 @@ struct E {
     verify_checked: Vec<bool>,
     /// 追加した引用箇所の ID(主張の追加フォームに自動で入れる)
     last_spans: Vec<String>,
-    premise_checked: Vec<bool>,
+    /// 引用箇所の一覧(全原資料)
+    spans: Vec<SpanData>,
+    /// 主張の追加フォームでチェックされた引用の ID・前提の主張の ID
+    span_checked: HashSet<String>,
+    premise_checked: HashSet<String>,
+    /// 絞り込み後に画面に出ている項目の元の添字
+    span_view: Vec<usize>,
+    premise_view: Vec<usize>,
 }
 
 thread_local! {
@@ -549,14 +680,12 @@ fn push_sources(app: &AppWindow) {
 fn push_claims(app: &AppWindow) {
     E.with(|e| {
         let e = e.borrow();
-        let chosen = e.selected_claim.as_deref().and_then(|id| e.claims.iter().find(|c| c.id == id));
         let st = app.global::<EvidenceState>();
-        st.set_selected_claim(chosen.map(|c| c.text.clone()).unwrap_or_default().into());
-        st.set_selected_claim_status(
-            chosen.and_then(|c| CLAIM_STATUSES.iter().position(|s| *s == c.status)).map(|i| i as i32).unwrap_or(-1),
-        );
-        app.global::<EvidenceState>().set_claims(model(
-            e.claims
+        let shown = claim_filter(&e.claims, st.get_claim_filter());
+        let labels: Vec<slint::SharedString> = claim_filter_labels(&e.claims).into_iter().map(Into::into).collect();
+        st.set_claim_tags(model(labels));
+        st.set_claims(model(
+            shown
                 .iter()
                 .map(|c| EClaim {
                     id: c.id.as_str().into(),
@@ -565,12 +694,16 @@ fn push_claims(app: &AppWindow) {
                     status: c.status.as_str().into(),
                     status_label: c.status_label.as_str().into(),
                     confidence_label: c.confidence_label.as_str().into(),
-                    spans: c.spans,
-                    model: c.model.as_str().into(),
-                    selected: e.selected_claim.as_deref() == Some(c.id.as_str()),
+                    evidence: evidence_lines(c, &e.spans, &e.sources).into(),
+                    author: c.author.as_str().into(),
                 })
                 .collect(),
         ));
+        st.set_claims_empty(if shown.is_empty() {
+            if e.claims.is_empty() { "主張はまだありません".into() } else { "この状態の主張はありません".into() }
+        } else {
+            slint::SharedString::default()
+        });
     });
 }
 
@@ -673,7 +806,11 @@ fn request_for_tab(app: &AppWindow, host: &Host, tab: i32) {
     let cwd = cwd(app);
     match tab {
         0 | 3 => host.rpc("evidence.sources", "inocode/evidence/listSources", json!({ "cwd": cwd, "limit": 100 })),
-        1 => host.rpc("evidence.claims", "inocode/evidence/listClaims", json!({ "cwd": cwd, "limit": 100 })),
+        1 => {
+            host.rpc("evidence.sources", "inocode/evidence/listSources", json!({ "cwd": cwd, "limit": 100 }));
+            host.rpc("evidence.spans", "inocode/evidence/listSpans", json!({ "cwd": cwd }));
+            host.rpc("evidence.claims", "inocode/evidence/listClaims", json!({ "cwd": cwd, "limit": 100 }));
+        }
         2 => host.rpc("evidence.graph", "inocode/evidence/graph", json!({ "cwd": cwd })),
         _ => {}
     }
@@ -704,12 +841,6 @@ pub fn install(app: &AppWindow, host: &Host) {
         E.with(|e| e.borrow_mut().selected_source = Some(id.to_string()));
         push_sources(&app);
         h.rpc("evidence.source", "inocode/evidence/readSource", json!({ "id": id.to_string(), "cwd": cwd(&app) }));
-    });
-    let weak = app.as_weak();
-    st.on_select_claim(move |id| {
-        let Some(app) = weak.upgrade() else { return };
-        E.with(|e| e.borrow_mut().selected_claim = Some(id.to_string()));
-        push_claims(&app);
     });
     let weak = app.as_weak();
     st.on_select_node(move |id| {
@@ -777,6 +908,13 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
                 e.verify_checked.resize(n, true);
             });
             push_sources(app);
+            // 引用の表示に原資料名を使うので、主張の一覧も作り直す
+            push_claims(app);
+        }
+        ("evidence.spans", Ok(v)) => {
+            E.with(|e| e.borrow_mut().spans = parse_spans(v));
+            push_claims(app);
+            push_claim_form(app);
         }
         ("evidence.source", Ok(v)) => {
             let p = payload(v);
@@ -840,6 +978,7 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
             st.set_quote_text("".into());
             st.set_quote_note(format!("引用を追加しました ({span})").into());
             E.with(|e| e.borrow_mut().last_spans.push(span));
+            host.rpc("evidence.spans", "inocode/evidence/listSpans", json!({ "cwd": cwd(app) }));
         }
         ("evidence.w.quote", Err(e)) => st.set_quote_note(e.as_str().into()),
         ("evidence.w.claim", Ok(_)) => {
@@ -877,6 +1016,38 @@ mod tests {
         assert_eq!(claims[0].spans, 1);
         assert_eq!(claims[2].status_label, "根拠なし");
         assert_eq!(claims[2].type_label, "法的主張");
+    }
+
+    #[test]
+    fn claims_are_filtered_by_status_and_show_their_quotes() {
+        let sources = parse_sources(&fixture("evidence-listSources.json"));
+        let spans = parse_spans(&fixture("evidence-listSpans.json"));
+        assert!(spans.len() >= 2);
+        let claims = parse_claims(&fixture("evidence-listClaims.json"));
+        assert_eq!(claims[0].author, "AI");
+        assert_eq!(claims[0].confidence_label, "確実");
+        let first = evidence_lines(&claims[0], &spans, &sources);
+        assert!(first.starts_with("刑法 第199条(殺人)「人を殺した者は"), "{first}");
+        assert!(!first.contains("span-"), "ids are not shown");
+        // 既定は「根拠なし」
+        let unsupported = claim_filter(&claims, 0);
+        assert!(!unsupported.is_empty() && unsupported.iter().all(|c| c.status == "unsupported"));
+        assert_eq!(claim_filter(&claims, 3).len(), claims.len());
+        let labels = claim_filter_labels(&claims);
+        assert_eq!(labels.len(), 4);
+        assert!(labels[0].starts_with("根拠なし ") && labels[3] == "すべて");
+    }
+
+    #[test]
+    fn long_quotes_are_cut_and_lists_filter_by_words() {
+        let long = SpanData { id: "s".into(), source_id: "x".into(), quote: "あ".repeat(60) };
+        let label = span_label(&long, &[]);
+        assert_eq!(label.chars().count(), 40 + 3, "「」と … を含む");
+        assert!(label.ends_with("…」"));
+        assert!(matches_query("刑法 第199条", "199"));
+        assert!(matches_query("Abc", " abc "));
+        assert!(matches_query("何でも", ""));
+        assert!(!matches_query("刑法", "民法"));
     }
 
     #[test]
@@ -938,12 +1109,13 @@ mod tests {
 
     #[test]
     fn claim_params_split_spans_and_carry_premises() {
-        let p = claim_params("被告人は…", 1, 0, "span-1, span-2、span-3", &["claim-001".to_string()]).unwrap();
+        let spans: Vec<String> = ["span-1", "span-2", "span-3"].iter().map(|x| x.to_string()).collect();
+        let p = claim_params("被告人は…", 1, 0, &spans, &["claim-001".to_string()]).unwrap();
         assert_eq!(p["type"], "legal");
         assert_eq!(p["confidence"], "high");
         assert_eq!(p["spanIds"], json!(["span-1", "span-2", "span-3"]));
         assert_eq!(p["premiseIds"], json!(["claim-001"]));
         assert_eq!(p["createdBy"], "user");
-        assert!(claim_params("", 0, 0, "", &[]).is_err());
+        assert!(claim_params("", 0, 0, &[], &[]).is_err());
     }
 }

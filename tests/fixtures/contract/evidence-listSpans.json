@@ -1,0 +1,33 @@
+{
+  "method": "inocode/evidence/listSpans",
+  "request": {
+    "cwd": "D:\\work\\demo-project",
+    "sourceId": "src-criminal-code-199"
+  },
+  "response": {
+    "spans": [
+      {
+        "id": "span-001",
+        "sourceId": "src-criminal-code-199",
+        "quote": "人を殺した者は、死刑又は無期若しくは五年以上の懲役に処する",
+        "start": 6,
+        "end": 36
+      },
+      {
+        "id": "span-002",
+        "sourceId": "src-complaint-2026-0042",
+        "quote": "令和8年3月1日 死亡を確認",
+        "start": 120,
+        "end": 133
+      },
+      {
+        "id": "span-003",
+        "sourceId": "src-complaint-2026-0042",
+        "quote": "被告人は同日午後 9 時ごろ現場にいた",
+        "start": 210,
+        "end": 227
+      }
+    ]
+  },
+  "note": "sourceId を省略すると全原資料の引用箇所。start/end は原文の文字オフセット(end は含まない)。"
+}
