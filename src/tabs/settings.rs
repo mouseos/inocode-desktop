@@ -230,6 +230,7 @@ thread_local! {
 }
 
 pub fn install(app: &AppWindow, host: &Host) {
+    super::accounts::install(app, host);
     install_params(app, host);
     render(app);
     let write_host = host.clone();
@@ -246,7 +247,8 @@ pub fn install(app: &AppWindow, host: &Host) {
     app.global::<SettingsTabState>().on_refresh(move || read(&host));
 }
 
-pub fn opened(_app: &AppWindow, host: &Host) {
+pub fn opened(app: &AppWindow, host: &Host) {
+    super::accounts::opened(app, host);
     read(host);
 }
 
@@ -256,6 +258,7 @@ fn read(host: &Host) {
 }
 
 pub fn event(app: &AppWindow, host: &Host, event: &Event) {
+    super::accounts::event(app, host, event);
     let Event::Rpc { tag, result } = event else { return };
     let state = app.global::<SettingsTabState>();
     match (tag.as_str(), result) {

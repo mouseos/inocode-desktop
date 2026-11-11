@@ -4,6 +4,25 @@ import { IconButton, Switch } from "../widgets.slint";
 import { AppState } from "../state.slint";
 import { Tag, Button, LineEdit } from "g_widgets.slint";
 
+// アカウントの 1 行(inocode/accounts/list)。メールアドレスは持たない。
+export struct AccountRow {
+    id: string,
+    alias: string,
+    kind-label: string,
+    plan: string,
+    has-usage: bool,
+    five-pct: float,
+    five-label: string,
+    weekly-pct: float,
+    weekly-label: string,
+    state: string,
+    state-label: string,
+    cooldown-label: string,
+    priority: int,
+    in-use: bool,
+    enabled: bool,
+}
+
 export struct FlagRow {
     key: string,
     label: string,
@@ -24,6 +43,42 @@ export struct ParamRow {
 }
 
 export global SettingsTabState {
+    // 0 = 全般、1 = アカウント
+    in-out property <int> page: 0;
+    out property <[string]> pages: ["全般", "アカウント"];
+    in property <[AccountRow]> accounts;
+    in property <string> acc-note;
+    in-out property <string> new-alias;
+    in-out property <string> new-key;
+    in property <bool> login-pending;
+    in property <string> login-note;
+    in property <string> renaming-id;
+    in-out property <string> rename-text;
+    in property <string> removing-id;
+    in property <string> removing-alias;
+    in-out property <string> pol-threshold;
+    in-out property <string> pol-cooldown;
+    in-out property <int> pol-window: 2;
+    in-out property <int> pol-selection: 0;
+    in-out property <int> pol-order: 0;
+    in-out property <bool> pol-auto: true;
+    out property <[string]> pol-windows: ["5 時間枠", "週枠", "両方"];
+    out property <[string]> pol-selections: ["使用率", "順番", "先頭から"];
+    out property <[string]> pol-orders: ["ChatGPT の後", "ChatGPT の前", "混在"];
+    callback page-changed(int);
+    callback acc-add-chatgpt();
+    callback acc-cancel-login();
+    callback acc-add-key();
+    callback acc-remove-ask(string);
+    callback acc-remove-confirm();
+    callback acc-remove-cancel();
+    callback acc-rename-start(string);
+    callback acc-rename-save();
+    callback acc-rename-cancel();
+    callback acc-priority(string, int);
+    callback acc-toggle(string, bool);
+    callback acc-use(string);
+    callback pol-save();
     in property <[ParamRow]> params-advisor;
     in property <[ParamRow]> params-compaction;
     in property <[ParamRow]> params-team;
@@ -126,9 +181,202 @@ component ParamLines inherits VerticalLayout {
     }
 }
 
+component SecretEdit inherits Rectangle {
+    in-out property <string> text;
+    height: 28px;
+    border-radius: 6px;
+    background: Theme.hover;
+    ti := TextInput {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        vertical-alignment: center;
+        font-size: 12px;
+        color: Theme.fg;
+        single-line: true;
+        input-type: InputType.password;
+        text <=> root.text;
+    }
+    TouchArea { mouse-cursor: MouseCursor.text; clicked => { ti.focus(); } }
+}
+
+component UsageBar inherits VerticalLayout {
+    in property <string> caption;
+    in property <float> pct;
+    in property <string> label;
+    spacing: 2px;
+    HorizontalLayout {
+        spacing: 8px;
+        Text { text: root.caption; color: Theme.fg-tertiary; font-size: 11px; width: 52px; }
+        Text { text: root.label; color: Theme.fg-secondary; font-size: 11px; overflow: elide; horizontal-stretch: 1; }
+    }
+    Rectangle {
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.hover;
+        Rectangle {
+            x: 0px;
+            width: parent.width * max(0, min(100, root.pct)) / 100;
+            border-radius: 2px;
+            background: root.pct >= 90 ? Theme.danger : root.pct >= 70 ? Theme.warning : Theme.accent;
+        }
+    }
+}
+
+component AccountCard inherits Rectangle {
+    in property <AccountRow> a;
+    height: col.preferred-height;
+    border-radius: Theme.radius-row + 2px;
+    background: Theme.bubble;
+    border-width: root.a.in-use ? 1px : 0px;
+    border-color: Theme.accent;
+    opacity: root.a.state == "disabled" ? 0.6 : 1.0;
+    col := VerticalLayout {
+        padding: 10px;
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: root.a.alias; color: Theme.fg; font-size: 13px; font-weight: 600; vertical-alignment: center; overflow: elide; }
+            Text { text: root.a.kind-label + (root.a.plan != "" ? " · " + root.a.plan : ""); color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+            if root.a.in-use: Text { text: "使用中"; color: Theme.accent; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: root.a.state-label + (root.a.cooldown-label != "" ? " · " + root.a.cooldown-label : "");
+                color: root.a.state == "cooldown" ? Theme.warning : root.a.state == "disabled" ? Theme.fg-tertiary : Theme.fg-secondary;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+        if root.a.has-usage: UsageBar { caption: "5 時間"; pct: root.a.five-pct; label: root.a.five-label; }
+        if root.a.has-usage: UsageBar { caption: "週"; pct: root.a.weekly-pct; label: root.a.weekly-label; }
+        HorizontalLayout {
+            spacing: 6px;
+            height: 28px;
+            Text { text: "優先度"; color: Theme.fg-tertiary; font-size: 12px; vertical-alignment: center; }
+            IconButton { glyph: "\u{e15b}"; clicked => { SettingsTabState.acc-priority(root.a.id, -1); } }
+            Text { text: root.a.priority; color: Theme.fg; font-size: 12px; vertical-alignment: center; }
+            IconButton { glyph: Glyph.add; clicked => { SettingsTabState.acc-priority(root.a.id, 1); } }
+            Rectangle { horizontal-stretch: 1; }
+            Button { label: "今すぐ使う"; clicked => { SettingsTabState.acc-use(root.a.id); } }
+            Button { label: "別名を変更"; clicked => { SettingsTabState.acc-rename-start(root.a.id); } }
+            Button { label: root.a.enabled ? "無効にする" : "有効にする"; clicked => { SettingsTabState.acc-toggle(root.a.id, !root.a.enabled); } }
+            Button { label: "削除"; clicked => { SettingsTabState.acc-remove-ask(root.a.id); } }
+        }
+    }
+}
+
+component AccountsPage inherits Rectangle {
+    Flickable {
+        content-height: pg.preferred-height;
+        pg := VerticalLayout {
+            width: min(parent.width, 760px);
+            alignment: start;
+            padding: 24px;
+            padding-top: 16px;
+            spacing: 6px;
+            if SettingsTabState.acc-note != "": Text { text: SettingsTabState.acc-note; color: Theme.danger; font-size: 12px; wrap: word-wrap; }
+
+            Heading { text: "アカウント"; }
+            for a in SettingsTabState.accounts: AccountCard { a: a; }
+            if SettingsTabState.accounts.length == 0: Text { text: "アカウントがありません"; color: Theme.fg-tertiary; font-size: 12px; }
+
+            if SettingsTabState.renaming-id != "": Card {
+                Text { text: "別名を変更"; color: Theme.fg-secondary; font-size: 12px; height: 24px; vertical-alignment: center; }
+                LineEdit { text <=> SettingsTabState.rename-text; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    padding-top: 6px;
+                    Button { label: "キャンセル"; clicked => { SettingsTabState.acc-rename-cancel(); } }
+                    Button { label: "保存"; primary: true; clicked => { SettingsTabState.acc-rename-save(); } }
+                }
+            }
+            if SettingsTabState.removing-id != "": Card {
+                Text { text: "「" + SettingsTabState.removing-alias + "」を削除しますか?"; color: Theme.fg; font-size: 13px; height: 28px; vertical-alignment: center; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    padding-top: 4px;
+                    Button { label: "キャンセル"; clicked => { SettingsTabState.acc-remove-cancel(); } }
+                    Button { label: "削除"; primary: true; clicked => { SettingsTabState.acc-remove-confirm(); } }
+                }
+            }
+
+            Rectangle { height: 8px; }
+            Heading { text: "アカウントを追加"; }
+            Card {
+                Text { text: "別名"; color: Theme.fg-tertiary; font-size: 11px; height: 20px; }
+                LineEdit { text <=> SettingsTabState.new-alias; }
+                Text { text: "API キー(保存後は表示しません)"; color: Theme.fg-tertiary; font-size: 11px; height: 24px; vertical-alignment: bottom; }
+                SecretEdit { text <=> SettingsTabState.new-key; }
+                if SettingsTabState.login-note != "": Text { text: SettingsTabState.login-note; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; height: 26px; vertical-alignment: center; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    padding-top: 8px;
+                    if SettingsTabState.login-pending: Button { label: "ログインをキャンセル"; clicked => { SettingsTabState.acc-cancel-login(); } }
+                    Button { label: SettingsTabState.login-pending ? "ブラウザで待機中…" : "ChatGPT を追加"; clicked => { SettingsTabState.acc-add-chatgpt(); } }
+                    Button { label: "API キーを追加"; primary: true; clicked => { SettingsTabState.acc-add-key(); } }
+                }
+            }
+
+            Rectangle { height: 8px; }
+            Heading { text: "方針"; }
+            Card {
+                SwitchRow { label: "自動で切り替える"; on: SettingsTabState.pol-auto; toggled(v) => { SettingsTabState.pol-auto = v; } }
+                Text { text: "しきい値(使用率 %)"; color: Theme.fg-tertiary; font-size: 11px; height: 22px; vertical-alignment: bottom; }
+                LineEdit { text <=> SettingsTabState.pol-threshold; }
+                Text { text: "対象の枠"; color: Theme.fg-tertiary; font-size: 11px; height: 22px; vertical-alignment: bottom; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    for w[i] in SettingsTabState.pol-windows: Tag { label: w; selected: SettingsTabState.pol-window == i; clicked => { SettingsTabState.pol-window = i; } }
+                }
+                Text { text: "選び方"; color: Theme.fg-tertiary; font-size: 11px; height: 22px; vertical-alignment: bottom; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    for w[i] in SettingsTabState.pol-selections: Tag { label: w; selected: SettingsTabState.pol-selection == i; clicked => { SettingsTabState.pol-selection = i; } }
+                }
+                Text { text: "API キーを使う順序"; color: Theme.fg-tertiary; font-size: 11px; height: 22px; vertical-alignment: bottom; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    for w[i] in SettingsTabState.pol-orders: Tag { label: w; selected: SettingsTabState.pol-order == i; clicked => { SettingsTabState.pol-order = i; } }
+                }
+                Text { text: "冷却の既定(秒)"; color: Theme.fg-tertiary; font-size: 11px; height: 22px; vertical-alignment: bottom; }
+                LineEdit { text <=> SettingsTabState.pol-cooldown; }
+                HorizontalLayout {
+                    alignment: end;
+                    padding-top: 8px;
+                    Button { label: "保存"; primary: true; clicked => { SettingsTabState.pol-save(); } }
+                }
+            }
+        }
+    }
+}
+
 export component SettingsTab inherits Rectangle {
     background: Theme.surface;
-    Flickable {
+    VerticalLayout {
+        HorizontalLayout {
+            height: 44px;
+            padding: 10px;
+            padding-left: 16px;
+            spacing: 6px;
+            for t[i] in SettingsTabState.pages: Tag {
+                label: t;
+                selected: SettingsTabState.page == i;
+                clicked => { SettingsTabState.page = i; SettingsTabState.page-changed(i); }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        Rectangle {
+            vertical-stretch: 1;
+            if SettingsTabState.page == 1: AccountsPage { }
+            if SettingsTabState.page == 0: Flickable {
         content-height: page.preferred-height;
         page := VerticalLayout {
             width: min(parent.width, 760px);
@@ -218,5 +466,7 @@ export component SettingsTab inherits Rectangle {
                 }
             }
         }
+        }
+    }
     }
 }

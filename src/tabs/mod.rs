@@ -9,6 +9,7 @@ use serde_json::Value;
 use slint::ComponentHandle;
 use std::rc::Rc;
 
+mod accounts;
 mod evidence;
 mod knowledge;
 mod settings;
