@@ -882,12 +882,23 @@ fn usage_reply(app: &AppWindow, tag: &str, v: Option<Value>) {
         cards.push(UsageAccount {
             provider: provider_name(a.get("provider").and_then(Value::as_str).unwrap_or("openai")).into(),
             alias: a.get("alias").and_then(Value::as_str).unwrap_or("").into(),
-            email: if shows_email { email.as_str().into() } else { "".into() },
+            email: match a.get("email").and_then(Value::as_str).filter(|e| !e.is_empty()) {
+                Some(e) => e.into(),
+                None if shows_email => email.as_str().into(),
+                None => "".into(),
+            },
             plan: a.get("plan").and_then(Value::as_str).unwrap_or("").into(),
             in_use,
             bars: ModelRc::from(Rc::new(VecModel::from(bars))),
             credits: if in_use { credits(&snap).into() } else { "".into() },
-            banked: if in_use { banked.as_str().into() } else { "".into() },
+            banked: {
+                let lines = crate::accounts_page::credit_lines(a);
+                if lines.is_empty() {
+                    if in_use { banked.as_str().into() } else { "".into() }
+                } else {
+                    lines.iter().map(|(l, v)| format!("{l} {v}")).collect::<Vec<_>>().join(" · ").into()
+                }
+            },
         });
     }
     if cards.is_empty() {

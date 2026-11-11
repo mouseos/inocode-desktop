@@ -10,6 +10,12 @@ export struct AcctBar {
     reset: string,
 }
 
+// A line of the reset-credit block of an account.
+export struct CreditRow {
+    label: string,
+    value: string,
+}
+
 export struct AcctCard {
     id: string,
     alias: string,
@@ -29,6 +35,8 @@ export struct AcctCard {
     enabled: bool,
     can-reauth: bool,
     bars: [AcctBar],
+    // The reset credits (Claude), only the values the server sent
+    credit: [CreditRow],
 }
 
 // A setting of one provider (a choice among a few values).
@@ -484,6 +492,18 @@ export component AccountsView inherits Rectangle {
                         pct: b.pct;
                         clickable: false;
                         separator: i < AccountsState.cur.bars.length - 1;
+                    }
+                }
+                if AccountsState.cur.credit.length > 0: VerticalLayout {
+                    spacing: 0px;
+                    GroupTitle { text: "リセット券"; }
+                    Group {
+                        for cr[i] in AccountsState.cur.credit: Row {
+                            label: cr.label;
+                            value: cr.value;
+                            clickable: false;
+                            separator: i < AccountsState.cur.credit.length - 1;
+                        }
                     }
                 }
                 Group {

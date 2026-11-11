@@ -8,7 +8,10 @@
       {
         "id": "chatgpt-3a9f0c12d4e5b678",
         "kind": "chatgpt",
+        "provider": "openai",
         "alias": "メイン",
+        "email": "main.user@example.test",
+        "name": "山田 太郎",
         "plan": "pro",
         "usage": {
           "fiveHour": {
@@ -21,7 +24,8 @@
             "windowMinutes": 10080,
             "resetsAt": 1794744000
           },
-          "updatedAt": 1794390000
+          "updatedAt": 1794390000,
+          "resetCredit": null
         },
         "state": "active",
         "cooldownUntil": null,
@@ -33,7 +37,10 @@
       {
         "id": "chatgpt-91be77aa02c4d5e6",
         "kind": "chatgpt",
+        "provider": "openai",
         "alias": "サブ",
+        "email": "sub.user@example.test",
+        "name": "山田 太郎",
         "plan": "plus",
         "usage": {
           "fiveHour": {
@@ -46,7 +53,8 @@
             "windowMinutes": 10080,
             "resetsAt": 1794744000
           },
-          "updatedAt": 1794390000
+          "updatedAt": 1794390000,
+          "resetCredit": null
         },
         "state": "cooldown",
         "cooldownUntil": 1794398400,
@@ -58,7 +66,10 @@
       {
         "id": "apikey-3f9c1a",
         "kind": "apiKey",
+        "provider": "openai",
         "alias": "予備キー",
+        "email": null,
+        "name": null,
         "plan": null,
         "usage": null,
         "state": "active",
@@ -71,7 +82,10 @@
       {
         "id": "chatgpt-c07d12ef98ab3456",
         "kind": "chatgpt",
+        "provider": "openai",
         "alias": "チーム",
+        "email": "team.user@example.test",
+        "name": "山田 太郎",
         "plan": "team",
         "usage": {
           "fiveHour": {
@@ -84,13 +98,30 @@
             "windowMinutes": 10080,
             "resetsAt": 1794744000
           },
-          "updatedAt": 1794390000
+          "updatedAt": 1794390000,
+          "resetCredit": null
         },
         "state": "disabled",
         "cooldownUntil": null,
         "priority": 5,
         "lastUsedAt": null,
         "inUse": false,
+        "isDefault": false
+      },
+      {
+        "id": "claude-5d2a7e0b91c3f4a8",
+        "kind": "claudeOauth",
+        "provider": "claude",
+        "alias": "Claude",
+        "email": "claude.user@example.test",
+        "name": "山田 太郎",
+        "plan": "max",
+        "usage": null,
+        "state": "active",
+        "cooldownUntil": null,
+        "priority": 0,
+        "lastUsedAt": 1794388000,
+        "inUse": true,
         "isDefault": false
       }
     ]

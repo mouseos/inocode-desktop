@@ -414,6 +414,30 @@ fn render_providers(app: &AppWindow, all: &[Value]) {
     app.global::<AccountsState>().set_provs(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 
+/// The reset credits (usage.resetCredit): (label, value) of what the server sent; none for null.
+pub(crate) fn credit_lines(a: &Value) -> Vec<(String, String)> {
+    let Some(c) = a.get("usage").and_then(|u| u.get("resetCredit")).filter(|c| c.is_object()) else { return Vec::new() };
+    let now = now_secs();
+    let mut out = Vec::new();
+    if let Some(left) = c.get("resetsLeft").and_then(Value::as_i64) {
+        let value = match c.get("resetsTotal").and_then(Value::as_i64) {
+            Some(total) => format!("{left} / {total} 枚"),
+            None => format!("{left} 枚"),
+        };
+        out.push(("残り".to_string(), value));
+    }
+    if let Some(usable) = c.get("usableNow").and_then(Value::as_bool) {
+        out.push(("いま使えますか".to_string(), if usable { "使えます" } else { "使えません" }.to_string()));
+    }
+    if let Some(t) = c.get("endsAt").and_then(Value::as_i64).filter(|t| *t > now) {
+        out.push(("期限".to_string(), format!("あと{}", span_jp(t - now))));
+    }
+    if let Some(t) = c.get("cooldownUntil").and_then(Value::as_i64).filter(|t| *t > now) {
+        out.push(("次に使えるまで".to_string(), format!("あと{}", span_jp(t - now))));
+    }
+    out
+}
+
 fn card(a: &Value, now: i64) -> AcctCard {
     let kind = s(a, "kind");
     let provider = provider_of(a);
@@ -462,6 +486,9 @@ fn card(a: &Value, now: i64) -> AcctCard {
         enabled: s(a, "state") != "disabled",
         can_reauth: kind != "apiKey" && !a.get("isDefault").and_then(Value::as_bool).unwrap_or(false),
         bars: ModelRc::from(Rc::new(VecModel::from(bars))),
+        credit: ModelRc::from(Rc::new(VecModel::from(
+            credit_lines(a).into_iter().map(|(l, v)| CreditRow { label: l.into(), value: v.into() }).collect::<Vec<_>>(),
+        ))),
     }
 }
 

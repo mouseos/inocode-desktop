@@ -24,7 +24,8 @@
             "windowMinutes": 10080,
             "resetsAt": 1794744000
           },
-          "updatedAt": 1794390000
+          "updatedAt": 1794390000,
+          "resetCredit": null
         },
         "state": "active",
         "cooldownUntil": null,
@@ -52,7 +53,8 @@
             "windowMinutes": 10080,
             "resetsAt": 1794744000
           },
-          "updatedAt": 1794390000
+          "updatedAt": 1794390000,
+          "resetCredit": null
         },
         "state": "cooldown",
         "cooldownUntil": 1794398400,
@@ -96,7 +98,8 @@
             "windowMinutes": 10080,
             "resetsAt": 1794744000
           },
-          "updatedAt": 1794390000
+          "updatedAt": 1794390000,
+          "resetCredit": null
         },
         "state": "disabled",
         "cooldownUntil": null,
@@ -124,7 +127,31 @@
             "windowMinutes": 10080,
             "resetsAt": 1794744000
           },
-          "updatedAt": 1794390000
+          "updatedAt": 1794390000,
+          "resetCredit": {
+            "eligible": true,
+            "atLimit": false,
+            "resetsLeft": 1,
+            "resetsTotal": 2,
+            "usableNow": false,
+            "endsAt": 1796083200,
+            "cooldownUntil": null,
+            "grants": [
+              {
+                "id": "grant_1",
+                "label": "Bonus reset",
+                "resetsLeft": 1,
+                "resetsTotal": 2,
+                "endsAt": 1796083200,
+                "paused": false,
+                "usableNow": false,
+                "clears": [
+                  "five_hour",
+                  "seven_day"
+                ]
+              }
+            ]
+          }
         },
         "state": "active",
         "cooldownUntil": null,
