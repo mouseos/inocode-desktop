@@ -108,7 +108,7 @@ export component StatsPage inherits Rectangle {
             HorizontalLayout {
                 spacing: 6px;
                 height: 40px;
-                Text { text: "統計"; color: Theme.fg; font-size: 20px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+                Rectangle { horizontal-stretch: 1; }
                 for p[i] in StatsState.periods: VerticalLayout {
                     alignment: center;
                     Tag { label: p; selected: StatsState.period == i; clicked => { StatsState.set-period(i); } }
