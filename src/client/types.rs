@@ -260,6 +260,8 @@ pub enum Event {
     RateLimits(String),
     /// Cumulative token totals of the thread (total, last).
     TokenTotals { total: i64, last_total: i64, last_output: i64 },
+    /// The same report, split: the thread's totals of input, cached input and output tokens.
+    TokenSplit { input: i64, cached: i64, output: i64, total: i64 },
     /// configRequirements/read: allowed approval policies / sandbox modes (None = unrestricted).
     Requirements { policies: Option<Vec<String>>, sandboxes: Option<Vec<String>> },
     /// thread.daybreakEnabled as stored by the server.

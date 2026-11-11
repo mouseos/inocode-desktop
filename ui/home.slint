@@ -287,6 +287,15 @@ component Composer inherits VerticalLayout {
         }
     }
 
+    // What the thread has used so far.
+    if MetricsState.thread-text != "" && !root.fresh: Text {
+        text: MetricsState.thread-text;
+        color: Theme.fg-tertiary;
+        font-size: 11px;
+        overflow: elide;
+        horizontal-alignment: center;
+    }
+
     if root.fresh: LocationRow {
         height: 28px;
         state: root.project;

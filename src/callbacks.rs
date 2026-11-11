@@ -19,6 +19,9 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             app.set_prompt("".into());
             return;
         }
+        if !app.global::<AppState>().get_busy() {
+            crate::thread_stats::note_send();
+        }
         // The replies that are ready go in front of the text, one line each.
         let text = crate::reply::compose(&app, text);
         // A message queued behind a running turn shows in the chat when it starts.

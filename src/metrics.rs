@@ -109,6 +109,9 @@ pub(crate) fn chunk(app: &AppWindow, text: &str) {
             if dt <= GAP {
                 m.gen_secs += dt.as_secs_f64();
             }
+        } else {
+            // the first text of the turn: the time to the first answer ends here
+            crate::thread_stats::first_output();
         }
         m.last_chunk = Some(now);
         m.est_tokens += estimate(text);
@@ -150,6 +153,9 @@ pub(crate) fn turn_done(app: &AppWindow) {
         }
         m.running = false;
         paint(app, &m, true);
+        // the same seconds and tokens go to the thread's sums
+        let out = if m.exact { m.turn_out } else { m.est_tokens.round() as i64 };
+        crate::thread_stats::turn_finished(app, m.gen_secs, out);
     });
 }
 
@@ -157,4 +163,5 @@ pub(crate) fn turn_done(app: &AppWindow) {
 pub(crate) fn reset(app: &AppWindow) {
     M.with(|m| *m.borrow_mut() = M::default());
     app.global::<MetricsState>().set_text("".into());
+    crate::thread_stats::reset(app);
 }

@@ -112,6 +112,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             app.invoke_scroll_bottom();
             crate::chat_actions::after_history(app);
             crate::reply::number_all(app);
+            crate::thread_stats::refresh(app);
         }
         Event::AssistantStart => {
             // The answer before is final now; a new one starts.
@@ -120,6 +121,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             messages_with(app, |m| push(m, "", "assistant", ""));
         }
         Event::TokenTotals { total, last_total, last_output } => crate::metrics::totals(app, total, last_total, last_output),
+        Event::TokenSplit { input, cached, output, total } => crate::thread_stats::usage(app, input, cached, output, total),
         Event::Delta(delta) => {
             crate::metrics::chunk(app, &delta);
             messages_with(app, |model| {

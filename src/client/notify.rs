@@ -166,6 +166,8 @@ impl<F: Fn(Event)> Session<'_, F> {
                 (self.on_event)(Event::Usage { percent, text });
                 let last_output = params.pointer("/tokenUsage/last/outputTokens").and_then(Value::as_i64).unwrap_or(0);
                 (self.on_event)(Event::TokenTotals { total, last_total: last, last_output });
+                let part = |k: &str| params.pointer(&format!("/tokenUsage/total/{k}")).and_then(Value::as_i64).unwrap_or(0);
+                (self.on_event)(Event::TokenSplit { input: part("inputTokens"), cached: part("cachedInputTokens"), output: part("outputTokens"), total });
             }
             "account/rateLimits/updated" => {
                 if let Some(text) = rate_limit_text(params.get("rateLimits").unwrap_or(&Value::Null)) {
