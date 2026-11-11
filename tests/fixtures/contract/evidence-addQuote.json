@@ -2,10 +2,12 @@
   "method": "inocode/evidence/addQuote",
   "request": {
     "sourceId": "src-0001",
-    "quote": "この法律は"
+    "start": 8,
+    "end": 38,
+    "quote": "人を殺した者は、死刑又は無期若しくは五年以上の懲役に処する。"
   },
   "response": {
     "spanId": "span-0001"
   },
-  "note": "quote(原文に一字一句ある文字列)か、start と end(文字オフセット、end は含まない)のどちらか。原文に無い quote は JSON-RPC エラー。"
+  "note": "start と end(文字オフセット、end は含まない)があればその位置を引用にする(同じ文字列が複数あっても位置で特定できる)。quote を一緒に渡したときは、その位置の文字列と一致しなければ JSON-RPC エラー。start / end が無ければ、従来どおり quote が原文に一字一句ある最初の位置。"
 }

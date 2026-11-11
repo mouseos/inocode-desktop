@@ -1,14 +1,13 @@
 {
   "method": "inocode/evidence/importSource",
   "request": {
-    "title": "個人情報保護法",
+    "fileName": "刑法.txt",
     "kind": "law",
-    "text": "第一条 この法律は…",
-    "version": "2024"
+    "text": "第一条 この法律は…"
   },
   "response": {
     "id": "src-0001",
     "hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
   },
-  "note": "text か path のどちらか(両方あれば text)。原文は変更せず保存し、hash は原文の SHA-256。"
+  "note": "text か path のどちらか(両方あれば text)。title は省略可: 省略すると fileName、それも無ければ本文の最初の空でない行(40 文字まで)、path のときはファイル名。原文は変更せず保存し、hash は原文の SHA-256。"
 }

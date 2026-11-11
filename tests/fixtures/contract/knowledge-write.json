@@ -26,5 +26,5 @@
   "response": {
     "id": "failure-sqlite-lock-001"
   },
-  "note": "record.id を省略すると採番して返す。付けると同じ id の上書き。書き込んだ rule はすぐ有効。"
+  "note": "record.id を省略すると採番して返す。付けると同じ id の上書き。書き込んだ rule はすぐ有効。 失敗例の signature を省略すると症状の最初の行(80 文字まで)から作る。規則の enforcedBy を省略すると、対象(paths か commands)があれば hook、無ければ prompt。createdBy を省略すると user。既存の ID を渡す、または supersedes を渡すと、置き換えられる側の状態は superseded になる。"
 }

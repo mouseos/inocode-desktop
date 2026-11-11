@@ -1,0 +1,10 @@
+{
+  "method": "inocode/knowledge/delete",
+  "request": {
+    "id": "issue-0002",
+    "scope": "project",
+    "cwd": "D:/work/proj"
+  },
+  "response": {},
+  "note": "レコードのファイルを消す(元に戻せない)。撤回で足りるときは setStatus の retracted を使う。存在しない ID は JSON-RPC エラー。"
+}

@@ -18,7 +18,14 @@
         "premiseIds": [
           "claim-002"
         ],
-        "createdBy": "gpt-5.6-luna"
+        "createdBy": "gpt-5.6-luna",
+        "evidence": [
+          {
+            "spanId": "span-001",
+            "sourceTitle": "刑法 第199条",
+            "quote": "人を殺した者は、死刑又は…"
+          }
+        ]
       },
       {
         "id": "claim-002",
@@ -30,7 +37,14 @@
           "span-002"
         ],
         "premiseIds": [],
-        "createdBy": "gpt-5.6-luna"
+        "createdBy": "gpt-5.6-luna",
+        "evidence": [
+          {
+            "spanId": "span-002",
+            "sourceTitle": "刑法 第199条",
+            "quote": "人を殺した者は、死刑又は…"
+          }
+        ]
       },
       {
         "id": "claim-003",
@@ -40,7 +54,8 @@
         "confidence": "low",
         "spanIds": [],
         "premiseIds": [],
-        "createdBy": "gpt-5.6-luna"
+        "createdBy": "gpt-5.6-luna",
+        "evidence": []
       },
       {
         "id": "claim-004",
@@ -54,5 +69,5 @@
       }
     ]
   },
-  "note": "status は supported / unsupported / retracted。"
+  "note": "status は supported / unsupported / retracted。 各主張の evidence は、引用箇所の本文と原資料の題名(spanIds と同じ順)。"
 }

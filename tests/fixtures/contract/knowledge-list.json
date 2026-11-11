@@ -51,7 +51,13 @@
         "createdBy": "gpt-5.6-luna",
         "updatedAt": "2026-11-11T08:20:00Z"
       }
-    ]
+    ],
+    "counts": {
+      "rule": 2,
+      "failure_case": 3,
+      "unverified": 4,
+      "verified": 1
+    }
   },
-  "note": "scope=project の例。kind/status/query/cursor は省略可。nextCursor は続きがあるときだけ付く。"
+  "note": "scope=project の例。kind/status/query/cursor は省略可。nextCursor は続きがあるときだけ付く。 counts は scope 内の全件の、種類ごと(rule、failure_case、issue、decision、fact、contract、procedure)と状態ごと(unverified、verified、superseded、retracted)の件数。records の createdBy は作成者(user、advisor、モデル名など)。"
 }
