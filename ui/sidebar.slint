@@ -166,13 +166,15 @@ export component Sidebar inherits Rectangle {
             padding-bottom: 6px;
             padding-left: 6px;
             spacing: 6px;
-            Rectangle {
+            VerticalLayout {
                 width: 22px;
-                height: 22px;
-                y: 1px;
-                border-radius: 11px;
-                background: Theme.pressed;
-                Text { text: SidebarState.account-initial; color: Theme.fg-secondary; font-size: 11px; }
+                alignment: center;
+                Rectangle {
+                    height: 22px;
+                    border-radius: 11px;
+                    background: Theme.pressed;
+                    Text { text: SidebarState.account-initial; color: Theme.fg-secondary; font-size: 11px; }
+                }
             }
             Text {
                 text: root.user-name;

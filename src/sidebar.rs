@@ -15,6 +15,8 @@ const PINNED: &str = "Pinned";
 /// What the confirmation dialog will do when accepted.
 #[derive(Clone)]
 enum Confirm {
+    /// A request to send when accepted: (tag, method).
+    Request(&'static str, &'static str),
     Archive(String),
     Delete(String),
     Logout,
@@ -127,6 +129,7 @@ pub(crate) fn separator() -> MenuItem {
 
 fn set_menu(app: &AppWindow, items: Vec<MenuItem>, x: f32, y: f32) {
     let s = app.global::<SidebarState>();
+    s.set_menu_up(false);
     s.set_menu_items(ModelRc::from(Rc::new(VecModel::from(items))));
     s.set_menu_x(x);
     s.set_menu_y(y);
@@ -224,9 +227,9 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
                     },
                 ];
                 set_menu(&app, items, x, y);
-                // The footer is at the bottom: open the menu upwards.
-                app.global::<SidebarState>().set_menu_y(y - (4.0 * 28.0 + 9.0 + 8.0 + 44.0));
-                ACCT_POS.with(|p| p.set((x, y - 120.0)));
+                // The footer is at the bottom: the menu opens upwards from the row.
+                app.global::<SidebarState>().set_menu_up(true);
+                ACCT_POS.with(|p| p.set((x, y)));
             }
         }
     });
@@ -340,6 +343,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
                 rpc(&h, format!("chat.archive|{id}"), "thread/archive", json!({ "threadId": id }))
             }
             Some(Confirm::Delete(id)) => rpc(&h, format!("chat.delete|{id}"), "thread/delete", json!({ "threadId": id })),
+            Some(Confirm::Request(tag, method)) => rpc(&h, tag.to_string(), method, json!({})),
             Some(Confirm::Logout) => rpc(&h, "chat.logout".into(), "account/logout", Value::Null),
             None => {}
         }
@@ -492,6 +496,7 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
             }
             let (x, y) = ACCT_POS.with(|p| p.get());
             set_menu(app, items, x, y);
+            app.global::<SidebarState>().set_menu_up(true);
         }
         "chat.account.use" => {}
         // chat.pin, chat.unpin, chat.read, chat.unarchive
@@ -513,4 +518,9 @@ pub(crate) fn on_notify(method: &str) {
     ) {
         refresh();
     }
+}
+
+/// Ask for confirmation, then send `method` with no parameters (used by the settings page).
+pub(crate) fn ask_request(app: &AppWindow, tag: &'static str, method: &'static str, title: &str, body: &str, label: &str) {
+    confirm(app, Confirm::Request(tag, method), title, body, label, true);
 }

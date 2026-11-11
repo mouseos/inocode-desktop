@@ -135,9 +135,13 @@ export component PaletteOverlay inherits Rectangle {
                         init => { self.focus(); self.select-all(); }
                     }
                     if PaletteState.query == "": Text {
+                        x: 8px;
+                        width: parent.width - 8px;
+                        height: parent.height;
                         text: "セッションを検索、または開始…";
                         color: Theme.fg-tertiary;
                         font-size: 14px;
+                        horizontal-alignment: left;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
                     }

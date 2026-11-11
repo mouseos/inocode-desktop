@@ -2,12 +2,11 @@ import { Theme } from "theme.slint";
 import { KnowledgeTab } from "tabs/knowledge.slint";
 import { EvidenceTab } from "tabs/evidence.slint";
 import { TeamTab } from "tabs/team.slint";
-import { SettingsTab } from "tabs/settings.slint";
 
 // タブの登録は、このファイルの 2 か所だけ: titles(帯の名前)と TabHost(画面の差し込み)。
 // 0 がチャット(app.slint の既存画面)、1 以降が各タブの画面。
 export global Tabs {
-    out property <[string]> titles: ["チャット", "知識", "根拠", "チーム", "設定"];
+    out property <[string]> titles: ["チャット", "知識", "根拠", "チーム"];
     in-out property <int> current: 0;
     callback opened(int);
     public function select(i: int) {
@@ -45,5 +44,4 @@ export component TabHost inherits Rectangle {
     if Tabs.current == 1: KnowledgeTab { }
     if Tabs.current == 2: EvidenceTab { }
     if Tabs.current == 3: TeamTab { }
-    if Tabs.current == 4: SettingsTab { }
 }

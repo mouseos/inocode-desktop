@@ -5,6 +5,7 @@ mod client;
 mod attach;
 mod callbacks;
 mod discovery;
+mod gui_prefs;
 mod events;
 mod palette;
 mod panel_data;
@@ -67,6 +68,7 @@ fn main() {
     TAB_HOST.with(|h| *h.borrow_mut() = Some(host));
 
     callbacks::register(&app, &handle);
+    settings_page::init(&app);
     app.run().unwrap();
     // Closing the window: stop the client so the app-server child it started exits too.
     handle.shutdown();

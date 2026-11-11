@@ -32,7 +32,7 @@ component PanelRow inherits HorizontalLayout {
     height: 26px;
     spacing: 8px;
     Icon { width: 16px; text: root.glyph; font-size: 15px; color: Theme.fg-secondary; }
-    Text { text: root.label; color: Theme.fg; font-size: 12px; vertical-alignment: center; }
+    Text { text: root.label; color: Theme.fg; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: root.detail == "" ? 1 : 0; }
     if root.detail != "": Text {
         text: root.detail;
         color: Theme.fg-secondary;

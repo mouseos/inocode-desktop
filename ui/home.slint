@@ -5,6 +5,7 @@ import { IntelligenceMenu, PermMenu, LocationRow, IntelligenceState, PermState, 
 import { AppState, Message, Approval } from "state.slint";
 import { MessageActions } from "chat_actions.slint";
 import { ToolRow } from "chat_items.slint";
+import { ShortcutState } from "shortcuts.slint";
 import { AttachState, AttachChips, SuggestList } from "attach.slint";
 import { PromptState, QuestionCard, QueueList, ErrorBanner } from "prompts.slint";
 
@@ -159,7 +160,8 @@ component Composer inherits VerticalLayout {
                     return accept;
                 }
                 // Ctrl+Shift+M opens the model picker.
-                if (event.modifiers.control && event.modifiers.shift && (event.text == "M" || event.text == "m")) {
+                if (event.text.to-lowercase() == ShortcutState.model-key && event.modifiers.control == ShortcutState.model-ctrl
+                    && event.modifiers.shift == ShortcutState.model-shift && event.modifiers.alt == ShortcutState.model-alt) {
                     picker.open();
                     return accept;
                 }
@@ -187,8 +189,9 @@ component Composer inherits VerticalLayout {
                         edited => { AttachState.text-changed(self.text); }
                     }
                     if root.text == "": Text {
+                        x: 3px;
                         y: 4px;
-                        width: parent.width;
+                        width: parent.width - 3px;
                         text: root.placeholder;
                         color: Theme.fg-tertiary;
                         font-size: Theme.body-font;

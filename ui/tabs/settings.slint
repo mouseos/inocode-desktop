@@ -267,7 +267,7 @@ component AccountCard inherits Rectangle {
     }
 }
 
-component AccountsPage inherits Rectangle {
+export component AccountsPage inherits Rectangle {
     Flickable {
         content-height: pg.preferred-height;
         pg := VerticalLayout {
@@ -358,25 +358,8 @@ component AccountsPage inherits Rectangle {
     }
 }
 
-export component SettingsTab inherits Rectangle {
-    background: Theme.surface;
-    VerticalLayout {
-        HorizontalLayout {
-            height: 44px;
-            padding: 10px;
-            padding-left: 16px;
-            spacing: 6px;
-            for t[i] in SettingsTabState.pages: Tag {
-                label: t;
-                selected: SettingsTabState.page == i;
-                clicked => { SettingsTabState.page = i; SettingsTabState.page-changed(i); }
-            }
-        }
-        Rectangle { height: 1px; background: Theme.border; }
-        Rectangle {
-            vertical-stretch: 1;
-            if SettingsTabState.page == 1: AccountsPage { }
-            if SettingsTabState.page == 0: Flickable {
+export component InocodePage inherits Rectangle {
+    Flickable {
         content-height: page.preferred-height;
         page := VerticalLayout {
             width: min(parent.width, 760px);
@@ -467,6 +450,27 @@ export component SettingsTab inherits Rectangle {
             }
         }
         }
+}
+
+export component SettingsTab inherits Rectangle {
+    background: Theme.surface;
+    VerticalLayout {
+        HorizontalLayout {
+            height: 44px;
+            padding: 10px;
+            padding-left: 16px;
+            spacing: 6px;
+            for t[i] in SettingsTabState.pages: Tag {
+                label: t;
+                selected: SettingsTabState.page == i;
+                clicked => { SettingsTabState.page = i; SettingsTabState.page-changed(i); }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        Rectangle {
+            vertical-stretch: 1;
+            if SettingsTabState.page == 1: AccountsPage { }
+            if SettingsTabState.page == 0: InocodePage { }
     }
     }
 }

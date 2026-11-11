@@ -18,6 +18,8 @@ export global SidebarState {
     in-out property <bool> menu-open: false;
     in-out property <length> menu-x;
     in-out property <length> menu-y;
+    // The menu's bottom edge sits at menu-y (account menu at the bottom of the sidebar).
+    in-out property <bool> menu-up: false;
     in property <[MenuItem]> menu-items;
     // First letter of the account label shown on the avatar.
     in property <string> account-initial: "I";
@@ -92,7 +94,7 @@ export component MenuOverlay inherits Rectangle {
         }
         Rectangle {
             x: max(4px, min(SidebarState.menu-x, root.width - self.width - 4px));
-            y: max(4px, min(SidebarState.menu-y, root.height - self.height - 4px));
+            y: SidebarState.menu-up ? max(4px, SidebarState.menu-y - self.height) : max(4px, min(SidebarState.menu-y, root.height - self.height - 4px));
             width: 224px;
             height: col.preferred-height + 8px;
             border-radius: 10px;

@@ -4,7 +4,9 @@ import { Palette } from "std-widgets.slint";
 // capture of the running app (dark: page #191919, sidebar #1f1f1f, composer #303030,
 // user bubble #252525). The scheme follows the operating system.
 export global Theme {
-    out property <bool> dark: Palette.color-scheme != ColorScheme.light;
+    // 0 follow the system, 1 light, 2 dark (settings page)
+    in-out property <int> scheme: 0;
+    out property <bool> dark: scheme == 2 || (scheme == 0 && Palette.color-scheme != ColorScheme.light);
     out property <color> surface: dark ? #191919 : #ffffff;
     out property <color> sidebar: dark ? #1f1f1f : #f6f6f5;
     out property <color> chrome: dark ? #202020 : #f6f6f5;

@@ -1,0 +1,12 @@
+// Configurable shortcuts (changed on the settings page, saved by src/gui_prefs.rs).
+// A shortcut is a lower-case key text plus the modifiers that must be held.
+export global ShortcutState {
+    in-out property <string> palette-key: "k";
+    in-out property <bool> palette-ctrl: true;
+    in-out property <bool> palette-shift: false;
+    in-out property <bool> palette-alt: false;
+    in-out property <string> model-key: "m";
+    in-out property <bool> model-ctrl: true;
+    in-out property <bool> model-shift: true;
+    in-out property <bool> model-alt: false;
+}
