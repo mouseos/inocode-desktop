@@ -155,6 +155,10 @@ fn enter_provider(app: &AppWindow, id: &str, record: bool) {
         d.policy = Value::Null;
     });
     rpc("acct.policy", "inocode/accounts/policy/read", json!({ "provider": id }));
+    st.set_settings(ModelRc::from(Rc::new(VecModel::from(Vec::<ProvSetting>::new()))));
+    if id == "openai" {
+        rpc("acct.cfg", "config/read", json!({ "includeLayers": false }));
+    }
     render(app);
     set_rows(app);
     if record {
@@ -579,6 +583,33 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         }
     });
     let weak = app.as_weak();
+    st.on_choose_setting(move |key, index| {
+        let Some(app) = weak.upgrade() else { return };
+        let Some((_, label, opts)) = crate::settings_page::OPENAI_SETTINGS.iter().find(|(k, _, _)| *k == key.as_str()) else { return };
+        let Some((shown, wire)) = opts.get(index as usize) else { return };
+        crate::settings_page::write_config(&key, json!(wire));
+        let st = app.global::<AccountsState>();
+        let rows: Vec<ProvSetting> = st
+            .get_settings()
+            .iter()
+            .map(|mut r| {
+                if r.key == key {
+                    r.value = (*shown).into();
+                    r.cur = index;
+                }
+                r
+            })
+            .collect();
+        let _ = label;
+        st.set_settings(ModelRc::from(Rc::new(VecModel::from(rows))));
+    });
+    let weak = app.as_weak();
+    st.on_leave(move || {
+        if let Some(app) = weak.upgrade() {
+            crate::settings_page::show_home(&app);
+        }
+    });
+    let weak = app.as_weak();
     st.on_open_provider(move |id| {
         if let Some(app) = weak.upgrade() {
             enter_provider(&app, &id, true);
@@ -671,6 +702,20 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
             if !p.is_null() {
                 DATA.with(|d| d.borrow_mut().policy = p);
                 show_policy(app);
+            }
+        }
+        "acct.cfg" => {
+            let config = v.get("config").cloned().unwrap_or(Value::Null);
+            let rows: Vec<ProvSetting> = crate::settings_page::OPENAI_SETTINGS
+                .iter()
+                .map(|(key, label, opts)| {
+                    let wire = crate::settings_page::lookup(&config, key).and_then(Value::as_str).unwrap_or("");
+                    let cur = opts.iter().position(|(_, w)| *w == wire);
+                    ProvSetting { key: (*key).into(), title: (*label).into(), value: cur.map(|i| opts[i].0).unwrap_or("").into(), cur: cur.unwrap_or(0) as i32, count: opts.len() as i32 }
+                })
+                .collect();
+            if st.get_provider_id().as_str() == "openai" {
+                st.set_settings(ModelRc::from(Rc::new(VecModel::from(rows))));
             }
         }
         "acct.act" => refresh(false),

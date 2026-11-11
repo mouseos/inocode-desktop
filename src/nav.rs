@@ -120,6 +120,10 @@ fn go(app: &AppWindow, back: bool) {
             s.set_open(true);
             crate::accounts_page::show_at(app, provider, account);
         }
+        Entry::Settings(section) if *section < 0 => {
+            app.global::<Tabs>().set_current(0);
+            crate::settings_page::show_home(app);
+        }
         Entry::Settings(section) => {
             app.global::<Tabs>().set_current(0);
             s.set_open(true);

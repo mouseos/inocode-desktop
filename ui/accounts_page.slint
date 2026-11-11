@@ -31,6 +31,15 @@ export struct AcctCard {
     bars: [AcctBar],
 }
 
+// A setting of one provider (a choice among a few values).
+export struct ProvSetting {
+    key: string,
+    title: string,
+    value: string,
+    cur: int,
+    count: int,
+}
+
 // A row of the top level: one provider.
 export struct ProvRow {
     id: string,
@@ -56,6 +65,7 @@ export global AccountsState {
     in property <[AcctCard]> cards;
     in property <AcctCard> cur;
     in property <[ProvRow]> provs;
+    in property <[ProvSetting]> settings;
     in property <bool> loading: false;
     in property <string> note;
     // Where we are: "" for the top level; the provider; then the account
@@ -105,6 +115,9 @@ export global AccountsState {
     callback open-provider(string);
     callback open-account(string);
     callback back;
+    // Leave the account section for the settings list
+    callback leave;
+    callback choose-setting(string, int);
 }
 
 component AddDialog inherits Rectangle {
@@ -256,7 +269,7 @@ export component AccountsView inherits Rectangle {
             // Level 1: the providers
             if AccountsState.provider-id == "": VerticalLayout {
                 spacing: 10px;
-                ScreenHead { title: "アカウント"; }
+                ScreenHead { back-label: "設定"; title: "アカウント"; back => { AccountsState.leave(); } }
                 if AccountsState.loading && AccountsState.provs.length == 0: Text { text: "読み込み中…"; color: Theme.fg-tertiary; font-size: 13px; }
                 Group {
                     for p[i] in AccountsState.provs: Row {
@@ -312,6 +325,19 @@ export component AccountsView inherits Rectangle {
                         clicked => { AccountsState.reorder = !AccountsState.reorder; }
                     }
                     Row { label: "使用量を更新"; separator: false; clicked => { AccountsState.refresh(); } }
+                }
+                if AccountsState.settings.length > 0: VerticalLayout {
+                    spacing: 0px;
+                    GroupTitle { text: "設定"; }
+                    Group {
+                        for st[i] in AccountsState.settings: Row {
+                            label: st.title;
+                            value: st.value;
+                            chevron: true;
+                            separator: i < AccountsState.settings.length - 1;
+                            clicked => { AccountsState.choose-setting(st.key, Math.mod(st.cur + 1, max(1, st.count))); }
+                        }
+                    }
                 }
                 if AccountsState.cards.length > 0: Group {
                     Row {

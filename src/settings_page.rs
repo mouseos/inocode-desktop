@@ -62,10 +62,16 @@ fn index_of(s: S) -> i32 {
 const SCHEMES: [&str; 3] = ["システム", "ライト", "ダーク"];
 
 /// (config key, label, [(shown, written)]) of the "構成" page (Codex: Agent defaults).
-const AGENT_DEFAULTS: [(&str, &str, &[(&str, &str)]); 5] = [
+const AGENT_DEFAULTS: [(&str, &str, &[(&str, &str)]); 3] = [
     ("approval_policy", "承認ポリシー", &[("未信頼", "untrusted"), ("リクエスト時", "on-request"), ("承認を求めない", "never")]),
     ("sandbox_mode", "サンドボックス設定", &[("読み取り専用", "read-only"), ("ワークスペース内での書き込み", "workspace-write"), ("フルアクセス", "danger-full-access")]),
     ("web_search", "ウェブ検索", &[("無効", "disabled"), ("キャッシュ済み", "cached"), ("インデックス済み", "indexed"), ("ライブ", "live")]),
+];
+
+/// The settings that only the Responses API (OpenAI) reads: Claude's adapter drops text.verbosity
+/// and reasoning.summary (codex-rs client.rs build_responses_request, codex-api wire.rs). They
+/// are on the OpenAI provider's screen, not in the general list.
+pub(crate) const OPENAI_SETTINGS: [(&str, &str, &[(&str, &str)]); 2] = [
     ("model_verbosity", "出力の詳細度", &[("低", "low"), ("中", "medium"), ("高", "high")]),
     ("model_reasoning_summary", "推論の概要", &[("自動", "auto"), ("簡潔", "concise"), ("詳細", "detailed"), ("なし", "none")]),
 ];
@@ -116,17 +122,37 @@ fn row(id: &str, title: &str, desc: &str, value: &str, kind: i32, on: bool) -> S
         kind,
         on,
         opts: ModelRc::from(Rc::new(VecModel::<SharedString>::default())),
+        cur: 0,
     }
 }
 
 fn choice(id: &str, title: &str, value: &str, opts: Vec<String>) -> SRow {
     let mut r = row(id, title, "", value, 3, false);
+    r.cur = opts.iter().position(|o| o == value).unwrap_or(0) as i32;
     r.opts = strings(opts);
     r
 }
 
 fn set_rows(app: &AppWindow, rows: Vec<SRow>) {
     let s = app.global::<SettingsPageState>();
+    // A heading row (kind 6) starts the next group of the screen.
+    let mut groups: Vec<SGroup> = Vec::new();
+    let mut cur: Vec<SRow> = Vec::new();
+    let mut title = SharedString::default();
+    for r in rows.iter().cloned() {
+        if r.kind == 6 {
+            if !cur.is_empty() {
+                groups.push(SGroup { title: title.clone(), rows: ModelRc::from(Rc::new(VecModel::from(std::mem::take(&mut cur)))) });
+            }
+            title = r.title;
+        } else {
+            cur.push(r);
+        }
+    }
+    if !cur.is_empty() {
+        groups.push(SGroup { title, rows: ModelRc::from(Rc::new(VecModel::from(cur))) });
+    }
+    s.set_groups(ModelRc::from(Rc::new(VecModel::from(groups))));
     s.set_rows(ModelRc::from(Rc::new(VecModel::from(rows))));
     s.set_loading(false);
 }
@@ -147,7 +173,7 @@ pub(crate) fn boot() {
     rpc("spage.boot", "config/read", json!({ "includeLayers": false }));
 }
 
-fn lookup<'a>(config: &'a Value, key: &str) -> Option<&'a Value> {
+pub(crate) fn lookup<'a>(config: &'a Value, key: &str) -> Option<&'a Value> {
     let mut v = config;
     for part in key.split('.') {
         v = v.get(part)?;
@@ -179,9 +205,15 @@ pub(crate) fn show_providers(app: &AppWindow) {
 }
 
 pub(crate) fn open(app: &AppWindow) {
-    app.global::<SettingsPageState>().set_open(true);
-    let cur = app.global::<SettingsPageState>().get_section();
-    load(app, if cur <= 0 { index_of(S::General) } else { cur });
+    show_home(app);
+}
+
+/// The list of the sections (the first screen of the settings).
+pub(crate) fn show_home(app: &AppWindow) {
+    let s = app.global::<SettingsPageState>();
+    s.set_open(true);
+    s.set_home(true);
+    crate::nav::visit(app, crate::nav::Entry::Settings(-1));
 }
 
 pub(crate) fn open_usage(app: &AppWindow) {
@@ -267,20 +299,28 @@ fn general_rows(config: &Value) -> Vec<SRow> {
 }
 
 fn config_rows(config: &Value) -> Vec<SRow> {
-    let mut rows = vec![row("open-config", "config.toml", "", "ファイルを開く", 2, false)];
-    for (key, label, opts) in AGENT_DEFAULTS {
+    let default_row = |key: &str| {
+        let (key, label, opts) = AGENT_DEFAULTS.iter().find(|(k, _, _)| *k == key).copied().unwrap();
         let wire = lookup(config, key).and_then(Value::as_str).unwrap_or("");
         let shown = opts.iter().find(|(_, w)| *w == wire).map(|(s, _)| *s).unwrap_or("");
-        rows.push(choice(&format!("cfg:{key}"), label, shown, opts.iter().map(|(s, _)| s.to_string()).collect()));
-    }
+        choice(&format!("cfg:{key}"), label, shown, opts.iter().map(|(s, _)| s.to_string()).collect())
+    };
     let net = lookup(config, "sandbox_workspace_write.network_access").and_then(Value::as_bool).unwrap_or(false);
-    rows.push(row("cfgb:sandbox_workspace_write.network_access", "ネットワークアクセスを許可", "", "", 1, net));
-    rows
+    vec![
+        row("open-config", "config.toml", "", "ファイルを開く", 2, false),
+        row("", "承認とサンドボックス", "", "", 6, false),
+        default_row("approval_policy"),
+        default_row("sandbox_mode"),
+        row("cfgb:sandbox_workspace_write.network_access", "ネットワークアクセスを許可", "", "", 1, net),
+        row("", "ツール", "", "", 6, false),
+        default_row("web_search"),
+    ]
 }
 
 fn personal_rows(config: &Value) -> Vec<SRow> {
     let b = |k: &str, d: bool| lookup(config, k).and_then(Value::as_bool).unwrap_or(d);
     vec![
+        row("", "メモリ", "", "", 6, false),
         row("cfgb:memories.use_memories", "Codex のメモリを有効にする", "", "", 1, b("memories.use_memories", false)),
         row("cfgb:memories.generate_memories", "メモリを生成する", "", "", 1, b("memories.generate_memories", false)),
         // The config key says the opposite: disable_on_external_context.
@@ -297,6 +337,7 @@ fn load(app: &AppWindow, section: i32) {
         idx += 1;
     }
     DATA.with(|d| d.borrow_mut().section = idx);
+    s.set_home(false);
     crate::nav::visit(app, crate::nav::Entry::Settings(idx as i32));
     s.set_section(idx as i32);
     s.set_title(list[idx].1.into());
@@ -369,7 +410,7 @@ fn reload_agents(app: &AppWindow) {
     }
 }
 
-fn write_config(key: &str, value: Value) {
+pub(crate) fn write_config(key: &str, value: Value) {
     rpc("spage.cfg.write", "config/value/write", json!({ "keyPath": key, "value": value, "mergeStrategy": "replace" }));
 }
 
@@ -388,6 +429,29 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     let st = app.global::<SettingsPageState>();
     let items: Vec<NavItem> = nav().into_iter().map(|(s, l)| NavItem { label: l.into(), heading: s == S::Head }).collect();
     st.set_sections(ModelRc::from(Rc::new(VecModel::from(items))));
+    let mut groups: Vec<NavGroup> = Vec::new();
+    let mut entries: Vec<NavEntry> = Vec::new();
+    let mut title = SharedString::default();
+    for (i, (sec, label)) in nav().into_iter().enumerate() {
+        if sec == S::Head {
+            if !entries.is_empty() {
+                groups.push(NavGroup { title: title.clone(), items: ModelRc::from(Rc::new(VecModel::from(std::mem::take(&mut entries)))) });
+            }
+            title = (*label).into();
+        } else {
+            entries.push(NavEntry { label: label.into(), index: i as i32 });
+        }
+    }
+    if !entries.is_empty() {
+        groups.push(NavGroup { title, items: ModelRc::from(Rc::new(VecModel::from(entries))) });
+    }
+    st.set_home_groups(ModelRc::from(Rc::new(VecModel::from(groups))));
+    let weak = app.as_weak();
+    st.on_go_home(move || {
+        if let Some(app) = weak.upgrade() {
+            show_home(&app);
+        }
+    });
 
     let weak = app.as_weak();
     st.on_open_page(move || {
