@@ -33,6 +33,42 @@ impl<F: Fn(Event)> Session<'_, F> {
                 let detail = params.get("reason").and_then(Value::as_str).unwrap_or("").to_string();
                 ("追加の権限を許可しますか？".to_string(), detail)
             }
+            "mcpServer/elicitation/request" => {
+                let server = params.get("serverName").and_then(Value::as_str).unwrap_or("MCP").to_string();
+                let mut detail = params.get("message").and_then(Value::as_str).unwrap_or("").to_string();
+                if let Some(u) = params.get("url").and_then(Value::as_str) {
+                    detail.push_str(&format!("\n{u}"));
+                }
+                let key = id.to_string();
+                self.approvals.insert(key.clone(), (id, method.to_string(), params));
+                (self.on_event)(Event::Elicit { key, title: format!("{server} が入力を求めています"), detail: detail.trim().to_string() });
+                return Ok(());
+            }
+            "item/tool/requestUserInput" => {
+                let items: Vec<QuestionInfo> = params
+                    .get("questions")
+                    .and_then(Value::as_array)
+                    .map(|qs| {
+                        qs.iter()
+                            .map(|q| QuestionInfo {
+                                id: q.get("id").and_then(Value::as_str).unwrap_or("").to_string(),
+                                header: q.get("header").and_then(Value::as_str).unwrap_or("").to_string(),
+                                question: q.get("question").and_then(Value::as_str).unwrap_or("").to_string(),
+                                options: q
+                                    .get("options")
+                                    .and_then(Value::as_array)
+                                    .map(|o| o.iter().filter_map(|x| x.get("label").and_then(Value::as_str).map(str::to_string)).collect())
+                                    .unwrap_or_default(),
+                                secret: q.get("isSecret").and_then(Value::as_bool).unwrap_or(false),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let key = id.to_string();
+                self.approvals.insert(key.clone(), (id, method.to_string(), params));
+                (self.on_event)(Event::Questions { key, items });
+                return Ok(());
+            }
             _ => {
                 return self.conn.send(json!({
                     "id": id,

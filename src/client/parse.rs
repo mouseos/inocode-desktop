@@ -486,6 +486,14 @@ pub(super) fn approval_result(method: &str, params: &Value, decision: Decision) 
             _ => json!({ "permissions": {}, "scope": "turn" }),
         };
     }
+    if method == "mcpServer/elicitation/request" {
+        let action = match decision {
+            Decision::Accept | Decision::AcceptForSession => "accept",
+            Decision::Decline => "decline",
+            Decision::Cancel => "cancel",
+        };
+        return json!({ "action": action, "content": null, "_meta": null });
+    }
     json!({ "decision": decision.wire() })
 }
 

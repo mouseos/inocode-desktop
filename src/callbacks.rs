@@ -14,8 +14,12 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         if text.is_empty() {
             return;
         }
-        messages_with(&app, |m| push(m, "", "user", &text));
-        h.send(Command::Prompt(text));
+        // A message queued behind a running turn shows in the chat when it starts.
+        if !app.global::<AppState>().get_busy() {
+            messages_with(&app, |m| push(m, "", "user", &text));
+        }
+        // While a turn runs the message goes to the queue; otherwise it starts a turn.
+        crate::prompts::submit(&app, &h, text);
         app.set_prompt("".into());
         app.invoke_scroll_bottom();
     });

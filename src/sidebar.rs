@@ -180,6 +180,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     HANDLE.with(|c| *c.borrow_mut() = Some(handle.clone()));
     crate::palette::register(app, handle);
     crate::chat_actions::register(app, handle);
+    crate::prompts::register(app, handle);
     let weak = app.as_weak();
     app.global::<SidebarState>().on_open_menu(move |kind, id, x, y| {
         let Some(app) = weak.upgrade() else { return };
@@ -360,6 +361,9 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
     let id = parts.next().unwrap_or("").to_string();
     let extra = parts.next().unwrap_or("").to_string();
     if !kind.starts_with("chat.") {
+        return;
+    }
+    if matches!(kind, "chat.turns" | "chat.fork" | "chat.revert") {
         return;
     }
     if kind == "chat.palette" {

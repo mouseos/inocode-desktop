@@ -6,6 +6,7 @@ mod callbacks;
 mod discovery;
 mod events;
 mod palette;
+mod prompts;
 mod sidebar;
 mod state;
 mod tabs;

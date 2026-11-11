@@ -22,6 +22,15 @@ pub struct Msg {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct QuestionInfo {
+    pub id: String,
+    pub header: String,
+    pub question: String,
+    pub options: Vec<String>,
+    pub secret: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ThreadInfo {
     pub id: String,
     pub title: String,
@@ -215,6 +224,10 @@ pub enum Event {
     TurnStarted,
     TurnDone { interrupted: bool },
     Approval { key: String, title: String, detail: String },
+    /// An MCP server asks for input (mcpServer/elicitation/request): decline or continue.
+    Elicit { key: String, title: String, detail: String },
+    /// Questions from the agent (item/tool/requestUserInput).
+    Questions { key: String, items: Vec<QuestionInfo> },
     ApprovalResolved(String),
     Error(String),
     /// Which transport is in use ("WS" or "stdio").
@@ -261,6 +274,10 @@ pub enum Command {
     Login,
     OpenThread(String),
     Interrupt,
+    /// Send a message into the running turn (turn/steer).
+    Steer(String),
+    /// Answers to an item/tool/requestUserInput request: (question id, answers).
+    Answer { key: String, answers: Vec<(String, Vec<String>)> },
     Approve { key: String, decision: Decision },
     SwitchTransport,
     /// Generic request for the screen tabs; answered with Event::Rpc.

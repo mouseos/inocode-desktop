@@ -1,0 +1,194 @@
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+import { IconButton } from "widgets.slint";
+
+export struct QueueRow {
+    id: string,
+    text: string,
+}
+
+// Questions from the agent, the queued follow-up messages and the error banner above the composer.
+// Rust: src/prompts.rs.
+export global PromptState {
+    // A question from item/tool/requestUserInput (one at a time).
+    in property <bool> question-open: false;
+    in property <string> question-header;
+    in property <string> question-text;
+    in property <[string]> question-options;
+    in property <string> question-progress;
+    in property <bool> question-secret: false;
+    in property <[QueueRow]> queue;
+    in property <string> banner-text;
+    // 0 none, 1 warning, 2 error
+    in property <int> banner-level: 0;
+    // The thread's context window use is shown in the panel; this carries the compaction state.
+    in property <bool> compacting: false;
+
+    callback answer(string);
+    callback skip-question;
+    // kind: "now" (steer), "edit", "remove"
+    callback queue-act(string, string);
+    callback banner-retry;
+    callback banner-close;
+    callback compact;
+}
+
+component FlatButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    callback clicked;
+    height: 28px;
+    width: t.preferred-width + 24px;
+    border-radius: Theme.radius-row;
+    background: root.primary ? (ta.has-hover ? Theme.fg-secondary : Theme.fg)
+        : ta.pressed ? Theme.pressed : ta.has-hover ? Theme.selected : Theme.hover;
+    t := Text {
+        text: root.label;
+        font-size: 13px;
+        color: root.primary ? Theme.surface : Theme.fg;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component QuestionCard inherits Rectangle {
+    border-radius: Theme.radius-composer;
+    background: Theme.composer;
+    border-width: 1px;
+    border-color: Theme.border;
+    height: col.preferred-height;
+    col := VerticalLayout {
+        padding: 12px;
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 6px;
+            Text {
+                text: PromptState.question-header != "" ? PromptState.question-header : "質問";
+                color: Theme.fg;
+                font-size: 13px;
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            if PromptState.question-progress != "": Text {
+                text: PromptState.question-progress;
+                color: Theme.fg-tertiary;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+        Text { text: PromptState.question-text; color: Theme.fg; font-size: 13px; wrap: word-wrap; }
+        for o in PromptState.question-options: Rectangle {
+            height: 30px;
+            border-radius: Theme.radius-row;
+            background: oa.has-hover ? Theme.selected : Theme.hover;
+            Text {
+                x: 10px;
+                width: parent.width - 20px;
+                text: o;
+                color: Theme.fg;
+                font-size: 13px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            oa := TouchArea { mouse-cursor: pointer; clicked => { PromptState.answer(o); } }
+        }
+        Rectangle {
+            height: 30px;
+            border-radius: Theme.radius-row;
+            border-width: 1px;
+            border-color: Theme.border;
+            other := TextInput {
+                x: 10px;
+                width: parent.width - 20px;
+                height: parent.height;
+                font-size: 13px;
+                color: Theme.fg;
+                vertical-alignment: center;
+                single-line: true;
+                input-type: PromptState.question-secret ? InputType.password : InputType.text;
+                accepted => {
+                    if self.text != "" {
+                        PromptState.answer(self.text);
+                        self.text = "";
+                    }
+                }
+            }
+            if other.text == "": Text {
+                x: 10px;
+                text: "その他";
+                color: Theme.fg-tertiary;
+                font-size: 13px;
+                vertical-alignment: center;
+            }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 6px;
+            FlatButton { label: "スキップ"; clicked => { PromptState.skip-question(); } }
+            FlatButton {
+                label: "送信";
+                primary: true;
+                clicked => {
+                    if other.text != "" {
+                        PromptState.answer(other.text);
+                        other.text = "";
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component QueueList inherits VerticalLayout {
+    spacing: 2px;
+    for q in PromptState.queue: Rectangle {
+        height: 30px;
+        border-radius: Theme.radius-row;
+        background: Theme.hover;
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 4px;
+            spacing: 2px;
+            Text {
+                text: q.text;
+                color: Theme.fg-secondary;
+                font-size: 12px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            IconButton { glyph: Glyph.edit-note; box-size: 24px; icon-size: 14px; y: 3px; clicked => { PromptState.queue-act("edit", q.id); } }
+            IconButton { glyph: Glyph.arrow-upward; box-size: 24px; icon-size: 14px; y: 3px; clicked => { PromptState.queue-act("now", q.id); } }
+            IconButton { glyph: Glyph.close; box-size: 24px; icon-size: 14px; y: 3px; clicked => { PromptState.queue-act("remove", q.id); } }
+        }
+    }
+}
+
+export component ErrorBanner inherits Rectangle {
+    height: 36px;
+    border-radius: Theme.radius-row;
+    background: PromptState.banner-level == 2 ? #ff5a5f22 : #e0a41a22;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 4px;
+        spacing: 6px;
+        Text {
+            text: PromptState.banner-text;
+            color: PromptState.banner-level == 2 ? Theme.danger : Theme.warning;
+            font-size: 12px;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        FlatButton { y: 4px; height: 28px; label: "再試行"; clicked => { PromptState.banner-retry(); } }
+        IconButton { glyph: Glyph.close; box-size: 24px; icon-size: 14px; y: 6px; clicked => { PromptState.banner-close(); } }
+    }
+}

@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { PromptState } from "prompts.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Switch } from "widgets.slint";
 
@@ -47,6 +48,7 @@ export component TaskPanel inherits Rectangle {
     in property <int> context-percent: 0;
     in property <string> usage-text;
     in property <string> rate-text;
+    property <bool> context-open: false;
     background: Theme.surface;
     preferred-width: Theme.panel-width;
     min-width: 240px;
@@ -74,23 +76,40 @@ export component TaskPanel inherits Rectangle {
         }
 
         Rectangle { height: 10px; }
-        HorizontalLayout {
+        Rectangle {
             height: 24px;
-            spacing: 6px;
-            Text { text: "コンテキスト"; color: Theme.fg; font-size: 12px; font-weight: 600; vertical-alignment: center; }
-            Icon { width: 14px; text: Glyph.chevron-right; font-size: 14px; color: Theme.fg-tertiary; }
-            Rectangle { horizontal-stretch: 1; }
-            Text { text: root.context-percent + "%"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
-            Rectangle {
-                width: 26px;
-                height: 6px;
-                y: 9px;
-                border-radius: 3px;
-                background: Theme.pressed;
-                Rectangle { width: parent.width * root.context-percent / 100; border-radius: 3px; background: Theme.accent; x: 0px; }
+            TouchArea { mouse-cursor: pointer; clicked => { root.context-open = !root.context-open; } }
+            HorizontalLayout {
+                height: 24px;
+                spacing: 6px;
+                Text { text: "コンテキスト"; color: Theme.fg; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                Icon { width: 14px; text: root.context-open ? Glyph.expand-more : Glyph.chevron-right; font-size: 14px; color: Theme.fg-tertiary; }
+                Rectangle { horizontal-stretch: 1; }
+                Text { text: root.context-percent + "%"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+                Rectangle {
+                    width: 26px;
+                    height: 6px;
+                    y: 9px;
+                    border-radius: 3px;
+                    background: Theme.pressed;
+                    Rectangle { width: parent.width * root.context-percent / 100; border-radius: 3px; background: Theme.accent; x: 0px; }
+                }
             }
         }
         if root.usage-text != "": Text { text: root.usage-text; color: Theme.fg-secondary; font-size: 11px; wrap: word-wrap; }
+        if root.context-open: Rectangle {
+            height: 28px;
+            border-radius: Theme.radius-row;
+            background: ca.has-hover ? Theme.selected : Theme.hover;
+            Text {
+                text: PromptState.compacting ? "圧縮中…" : "このセッションを圧縮";
+                color: Theme.fg;
+                font-size: 12px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            ca := TouchArea { enabled: !PromptState.compacting; mouse-cursor: pointer; clicked => { PromptState.compact(); } }
+        }
         Rectangle { height: 6px; }
         SectionTitle { label: "使用量"; trailing: root.rate-text == "" ? "—" : root.rate-text; }
         SectionTitle { label: "コネクタ"; open: false; }

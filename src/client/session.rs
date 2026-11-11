@@ -276,6 +276,27 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                     self.request("turn/interrupt", json!({ "threadId": tid, "turnId": turn }), Pending::Other)?;
                 }
             }
+            Command::Steer(text) => match (self.active_thread.clone(), self.turn_id.clone()) {
+                (Some(tid), Some(turn)) => {
+                    let input = json!([{ "type": "text", "text": text, "text_elements": [] }]);
+                    self.request(
+                        "turn/steer",
+                        json!({ "threadId": tid, "expectedTurnId": turn, "input": input }),
+                        Pending::Other,
+                    )?;
+                }
+                _ => (self.on_event)(Event::Error("実行中のターンがありません".into())),
+            },
+            Command::Answer { key, answers } => {
+                if let Some((id, _, _)) = self.approvals.remove(&key) {
+                    let mut map = serde_json::Map::new();
+                    for (qid, list) in answers {
+                        map.insert(qid, json!({ "answers": list }));
+                    }
+                    self.conn.send(json!({ "id": id, "result": { "answers": map } }))?;
+                    (self.on_event)(Event::ApprovalResolved(key));
+                }
+            }
             Command::Approve { key, decision } => {
                 if let Some((id, method, params)) = self.approvals.remove(&key) {
                     let result = approval_result(&method, &params, decision);

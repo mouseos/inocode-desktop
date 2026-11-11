@@ -5,6 +5,7 @@ import { IntelligenceMenu, PermMenu, LocationRow, IntelligenceState, PermState, 
 import { AppState, Message, Approval } from "state.slint";
 import { MessageActions } from "chat_actions.slint";
 import { ToolRow } from "chat_items.slint";
+import { PromptState, QuestionCard, QueueList, ErrorBanner } from "prompts.slint";
 
 // InoCode mark: a ring with a dot, drawn as vector paths.
 component Logo inherits Rectangle {
@@ -88,9 +89,9 @@ component ApprovalCard inherits Rectangle {
         HorizontalLayout {
             spacing: 6px;
             alignment: end;
-            ApprovalButton { label: "拒否"; clicked => { root.decide(root.item.key, "decline"); } }
-            ApprovalButton { label: "このセッションで許可"; clicked => { root.decide(root.item.key, "session"); } }
-            ApprovalButton { label: "許可"; primary: true; clicked => { root.decide(root.item.key, "accept"); } }
+            ApprovalButton { label: root.item.simple ? "辞退" : "拒否"; clicked => { root.decide(root.item.key, "decline"); } }
+            if !root.item.simple: ApprovalButton { label: "このセッションで許可"; clicked => { root.decide(root.item.key, "session"); } }
+            ApprovalButton { label: root.item.simple ? "続行" : "許可"; primary: true; clicked => { root.decide(root.item.key, "accept"); } }
         }
     }
 }
@@ -350,6 +351,9 @@ export component Home inherits Rectangle {
                     max-width: Theme.composer-max-width;
                     decide(k, d) => { AppState.decide(k, d); }
                 }
+                if PromptState.question-open: QuestionCard { max-width: Theme.composer-max-width; }
+                if PromptState.banner-level != 0: ErrorBanner { max-width: Theme.composer-max-width; }
+                if PromptState.queue.length > 0: QueueList { max-width: Theme.composer-max-width; }
 
                 if !root.chat-active: HorizontalLayout {
                     alignment: center;

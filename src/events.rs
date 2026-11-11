@@ -130,6 +130,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             app.invoke_scroll_bottom();
         }
         Event::TurnStarted => {
+            crate::prompts::clear_banner(app);
             let mut st = state.borrow_mut();
             st.busy = true;
             app.global::<AppState>().set_busy(true);
@@ -140,6 +141,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             st.busy = false;
             app.global::<AppState>().set_busy(false);
             rebuild_projects(app, &st);
+            crate::prompts::on_turn_done(app, &st.active.clone(), interrupted);
             // The turn's plan and file changes end up at the bottom, and the next turn starts new rows.
             messages_with(app, |model| {
                 for key in ["turn-diff", "turn-plan"] {
@@ -160,10 +162,18 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::Approval { key, title, detail } => {
             let model = app.global::<AppState>().get_approvals();
             if let Some(vec) = model.as_any().downcast_ref::<VecModel<Approval>>() {
-                vec.push(Approval { key: key.into(), title: title.into(), detail: detail.into() });
+                vec.push(Approval { key: key.into(), title: title.into(), detail: detail.into(), simple: false });
             }
         }
+        Event::Elicit { key, title, detail } => {
+            let model = app.global::<AppState>().get_approvals();
+            if let Some(vec) = model.as_any().downcast_ref::<VecModel<Approval>>() {
+                vec.push(Approval { key: key.into(), title: title.into(), detail: detail.into(), simple: true });
+            }
+        }
+        Event::Questions { key, items } => crate::prompts::on_questions(app, key, items),
         Event::ApprovalResolved(key) => {
+            crate::prompts::on_resolved(app, &key);
             let model = app.global::<AppState>().get_approvals();
             if let Some(vec) = model.as_any().downcast_ref::<VecModel<Approval>>() {
                 for i in (0..vec.row_count()).rev() {
@@ -175,10 +185,14 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         }
         // Rpc / Notify are delivered to the screen tabs (src/tabs) before apply().
         Event::Rpc { tag, result } => {
+            crate::prompts::on_rpc(app, &tag, &result);
             crate::sidebar::on_rpc(app, &tag, &result);
             crate::chat_actions::on_rpc(app, &tag, &result);
         }
-        Event::Notify { method, .. } => crate::sidebar::on_notify(&method),
+        Event::Notify { method, .. } => {
+            crate::sidebar::on_notify(&method);
+            crate::prompts::on_notify(&method);
+        }
         Event::Error(e) => {
             // A model found only through version discovery is not verified with InoCode:
             // when its turn fails, say so as part of the error.
@@ -196,8 +210,8 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
                 ),
                 None => format!("エラー: {e}"),
             };
-            messages_with(app, |m| push(m, "", "assistant", &text));
-            app.invoke_scroll_bottom();
+            // An error is a banner above the composer with a retry button, not a chat message.
+            crate::prompts::show_banner(app, &text, 2);
         }
     }
 }
