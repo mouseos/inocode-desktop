@@ -80,6 +80,11 @@ export global AccountsState {
     in-out property <string> np-key;
     in property <bool> loading: false;
     in property <string> note;
+    // The whole text of the error behind the note, shown on request
+    in property <string> note-detail;
+    in-out property <bool> detail-open: false;
+    // The server does not know the account methods (an older inocode.exe)
+    in property <bool> unsupported: false;
     // Where we are: "" for the top level; the provider; then the account
     in-out property <string> provider-id;
     in property <string> provider-name;
@@ -295,9 +300,26 @@ export component AccountsView inherits Rectangle {
             spacing: 10px;
             alignment: start;
             if AccountsState.note != "": Text { text: AccountsState.note; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
+            if AccountsState.note-detail != "": HorizontalLayout {
+                alignment: start;
+                Chip { label: AccountsState.detail-open ? "詳細を隠す" : "詳細を表示"; clicked => { AccountsState.detail-open = !AccountsState.detail-open; } }
+            }
+            if AccountsState.detail-open && AccountsState.note-detail != "": Rectangle {
+                height: 120px;
+                border-radius: Theme.radius-row;
+                background: Theme.composer;
+                Flickable {
+                    Text { x: 10px; y: 8px; width: parent.width - 20px; text: AccountsState.note-detail; color: Theme.fg-secondary; font-size: 11px; wrap: word-wrap; }
+                }
+            }
 
             // Level 1: the providers
-            if AccountsState.provider-id == "": VerticalLayout {
+            if AccountsState.provider-id == "" && AccountsState.unsupported: VerticalLayout {
+                spacing: 10px;
+                ScreenHead { title: "プロバイダー"; }
+                Text { text: "サーバーが未対応です。inocode.exe を新しいビルドにしてください"; color: Theme.fg-secondary; font-size: 13px; wrap: word-wrap; }
+            }
+            if AccountsState.provider-id == "" && !AccountsState.unsupported: VerticalLayout {
                 spacing: 10px;
                 ScreenHead { title: "プロバイダー"; }
                 if AccountsState.loading && AccountsState.provs.length == 0: Text { text: "読み込み中…"; color: Theme.fg-tertiary; font-size: 13px; }

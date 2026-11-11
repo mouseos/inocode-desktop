@@ -43,7 +43,18 @@ fn rpc(tag: &str, method: &str, params: Value) {
 }
 
 fn note(app: &AppWindow, text: &str) {
-    app.global::<AccountsState>().set_note(text.into());
+    let st = app.global::<AccountsState>();
+    st.set_note(text.into());
+    st.set_note_detail("".into());
+    st.set_detail_open(false);
+}
+
+/// A short line with the whole error behind "show details".
+fn detailed(app: &AppWindow, text: &str, full: &str) {
+    let st = app.global::<AccountsState>();
+    st.set_note(text.into());
+    st.set_note_detail(full.into());
+    st.set_detail_open(false);
 }
 
 fn login_note(app: &AppWindow, text: &str) {
@@ -723,25 +734,32 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
             match tag {
                 "acct.list" => {
                     st.set_loading(false);
-                    note(app, &format!("アカウントを読み込めませんでした: {e}"));
+                    if crate::errmsg::unsupported(e) {
+                        // An older server: one line, not an error per call.
+                        st.set_unsupported(true);
+                        st.set_cards(ModelRc::default());
+                    } else {
+                        detailed(app, &format!("アカウントを読み込めませんでした: {}", crate::errmsg::short(e)), e);
+                    }
                 }
                 "acct.addkey" => {
                     // The pool is not available: the plain API-key login of the main account.
                     if let Some(key) = DATA.with(|d| d.borrow_mut().pending_key.take()) {
                         rpc("acct.login.key", "account/login/start", json!({ "type": "apiKey", "apiKey": key }));
                     } else {
-                        login_note(app, &format!("追加できませんでした: {e}"));
+                        login_note(app, &format!("追加できませんでした: {}", crate::errmsg::short(e)));
                     }
                 }
-                "acct.login.start" | "acct.login.complete" | "acct.login.key" => login_note(app, &format!("できませんでした: {e}")),
+                "acct.login.start" | "acct.login.complete" | "acct.login.key" => login_note(app, &format!("できませんでした: {}", crate::errmsg::short(e))),
                 "acct.providers" | "acct.policy" => {}
-                _ => note(app, &format!("できませんでした: {e}")),
+                _ => detailed(app, &format!("できませんでした: {}", crate::errmsg::short(e)), e),
             }
             return;
         }
     };
     match tag {
         "acct.list" => {
+            st.set_unsupported(false);
             DATA.with(|d| d.borrow_mut().accounts = v.get("accounts").and_then(Value::as_array).cloned().unwrap_or_default());
             render(app);
         }
@@ -867,7 +885,7 @@ pub(crate) fn on_notify(app: &AppWindow, method: &str, params: &Value) {
                 refresh(false);
             } else {
                 let e = s(params, "error");
-                login_note(app, &format!("ログインできませんでした{}", if e.is_empty() { String::new() } else { format!(": {e}") }));
+                login_note(app, &format!("ログインできませんでした{}", if e.is_empty() { String::new() } else { format!(": {}", crate::errmsg::short(e)) }));
             }
         }
         _ => {}

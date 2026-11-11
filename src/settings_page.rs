@@ -584,7 +584,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         }
         match std::fs::write(&path, s.get_raw_text().as_str()) {
             Ok(()) => s.set_raw_note(format!("{} に保存しました", path.display()).into()),
-            Err(e) => s.set_raw_note(format!("保存できませんでした: {e}").into()),
+            Err(e) => s.set_raw_note(format!("保存できませんでした: {}", crate::errmsg::short(&e.to_string())).into()),
         }
     });
     let weak = app.as_weak();
@@ -617,16 +617,16 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                     }
                 }
                 "spage.login.key" | "spage.addkey.other" | "spage.claude.start" | "spage.claude.complete" => {
-                    note(app, &format!("できませんでした: {e}"))
+                    note(app, &format!("できませんでした: {}", crate::errmsg::short(e)))
                 }
                 t if t.ends_with(".write") || t == "spage.memory.reset" => {
-                    app.global::<AppState>().set_status(format!("設定を変更できませんでした: {e}").into());
+                    app.global::<AppState>().set_status(format!("設定を変更できませんでした: {}", crate::errmsg::short(e)).into());
                     app.global::<AppState>().set_status_level(2);
-                    note(app, &format!("変更できませんでした: {e}"));
+                    note(app, &format!("変更できませんでした: {}", crate::errmsg::short(e)));
                 }
                 "spage.account" | "spage.boot" | "spage.feat" => {}
                 "spage.usage" | "spage.usage.pool" | "spage.usage.account" => usage_reply(app, tag, None),
-                _ => set_rows(app, vec![row("", "読み込めませんでした", "", e, 0, false)]),
+                _ => set_rows(app, vec![row("", "読み込めませんでした", "", &crate::errmsg::short(e), 0, false)]),
             }
             return;
         }

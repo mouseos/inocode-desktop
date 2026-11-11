@@ -6,6 +6,7 @@ mod accounts_page;
 mod attach;
 mod callbacks;
 mod discovery;
+mod errmsg;
 mod gui_prefs;
 mod events;
 mod metrics;
