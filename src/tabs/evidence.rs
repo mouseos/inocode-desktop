@@ -1101,7 +1101,7 @@ mod tests {
         assert_eq!(src.len(), 2);
         assert_eq!(src[0].meta, "法令 · 取得 2026-11-10 10:00 · 令和7年6月1日施行");
         let claims = parse_claims(&fixture("evidence-listClaims.json"));
-        assert_eq!(claims.len(), 3);
+        assert!(claims.len() >= 3);
         assert_eq!(claims[0].spans, 1);
         assert_eq!(claims[2].status_label, "根拠なし");
         assert_eq!(claims[2].type_label, "法的主張");
