@@ -44,6 +44,7 @@ export global TeamState {
     callback advisor-toggled(int);
     callback advisor-action(int);
     callback message-toggled(int);
+    callback message-action(int);
     callback message-filter-changed(int);
     callback output-toggled(int);
     in property <[AgentRow]> agents;
@@ -260,6 +261,7 @@ export component TeamTab inherits Rectangle {
             LogList {
                 rows: TeamState.messages;
                 toggled(i) => { TeamState.message-toggled(i); }
+                action(i) => { TeamState.message-action(i); }
             }
 
             if TeamState.compaction.length > 0: Rectangle { height: 8px; }

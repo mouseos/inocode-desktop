@@ -20,5 +20,23 @@
     "text": "WAL を使います。",
     "truncated": false
   },
-  "_doc": "inocode/messages/resolve. Name the item by `id` ('#<turn>.<item>', both 1-based and file-wide; or a server item id) OR by `turnId` + `itemIndex` (a Turn.id and the 0-based position in that Turn.items of thread/read; the answer carries the file-wide numbers the GUI shows). maxChars cuts `text`. Limit (first version): for a fork that references its parent's history (history_base) only the lines of its own file are numbered; replying to a message of the parent is not supported yet."
+  "_doc": "inocode/messages/resolve. Name the item by `id` ('#<turn>.<item>', both 1-based and file-wide; or a server item id) OR by `turnId` + `itemIndex` (a Turn.id and the 0-based position in that Turn.items of thread/read; the answer carries the file-wide numbers the GUI shows). maxChars cuts `text`. Limit (first version): for a fork that references its parent's history (history_base) only the lines of its own file are numbered; replying to a message of the parent is not supported yet. '#<turn>.@<n>' names the n-th agent-to-agent message received in that turn (role 'agent', with from/to).",
+  "mailExample": {
+    "request": {
+      "threadId": "019db3ea-fe9e-7441-b385-70f80f1ffc50",
+      "id": "#6.@1"
+    },
+    "response": {
+      "threadId": "019db3ea-fe9e-7441-b385-70f80f1ffc50",
+      "turnNumber": 6,
+      "itemNumber": 1,
+      "turnId": "019db3ec-aaaa-7000-8000-000000000001",
+      "itemId": "mail-6.1",
+      "role": "agent",
+      "text": "ANSWER\na: use WAL\nreply_to: #4.2\nconf: high",
+      "truncated": false,
+      "from": "/root/b",
+      "to": "/root"
+    }
+  }
 }

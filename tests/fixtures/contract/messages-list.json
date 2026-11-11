@@ -22,7 +22,10 @@
               "value": "done"
             }
           ]
-        }
+        },
+        "summary": "done",
+        "id": null,
+        "replyTo": null
       },
       {
         "tsMs": 1762826200000,
@@ -40,7 +43,10 @@
               "value": "which key format?"
             }
           ]
-        }
+        },
+        "summary": "which key format?",
+        "id": null,
+        "replyTo": null
       },
       {
         "tsMs": 1762826300000,
@@ -58,7 +64,10 @@
               "value": "fixture missing"
             }
           ]
-        }
+        },
+        "summary": "fixture missing",
+        "id": null,
+        "replyTo": null
       },
       {
         "tsMs": 1762826400000,
@@ -66,8 +75,44 @@
         "from": "/root/flags",
         "to": "/root/app-server",
         "delivery": "send_message",
-        "text": "free text without a kind"
+        "text": "free text without a kind",
+        "summary": "free text without a kind",
+        "id": null,
+        "replyTo": null
+      },
+      {
+        "tsMs": 1762826160000,
+        "threadId": "thr_01HZX",
+        "from": "/root/app-server",
+        "to": "/root",
+        "delivery": "send_message",
+        "text": "ANSWER\na: use WAL\nreply_to: #4.2\nreply_thread: 019db3ea-fe9e-7441-b385-70f80f1ffc50\nconf: high",
+        "parsed": {
+          "kind": "ANSWER",
+          "conf": "high",
+          "fields": [
+            {
+              "key": "a",
+              "value": "use WAL"
+            },
+            {
+              "key": "reply_to",
+              "value": "#4.2"
+            },
+            {
+              "key": "reply_thread",
+              "value": "019db3ea-fe9e-7441-b385-70f80f1ffc50"
+            }
+          ]
+        },
+        "summary": "use WAL",
+        "id": "#6.@1",
+        "replyTo": "#4.2",
+        "replyThread": "019db3ea-fe9e-7441-b385-70f80f1ffc50",
+        "fromThread": "019db3ec-1111-7000-8000-000000000002",
+        "toThread": "019db3ea-fe9e-7441-b385-70f80f1ffc50"
       }
     ]
-  }
+  },
+  "_doc": "id: the message as an item of the receiver's history ('#<turn>.@<n>', read it with inocode/messages/resolve on toThread; null until the receiver has recorded it). replyTo + replyThread: the message it answers, '#T.I' or '#T.@N' in the history of replyThread. A GUI nests a message under the one whose id (and toThread == replyThread) equals its replyTo. kind: parsed.kind. summary: one line."
 }

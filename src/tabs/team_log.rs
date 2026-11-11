@@ -129,9 +129,62 @@ fn conf_label(c: &str) -> &str {
     }
 }
 
-/// "/root/app-server" -> 深さ(root = 0)
-fn depth(path: &str) -> usize {
-    path.matches('/').count().saturating_sub(1)
+/// メッセージの返信の木: (行の番号, 深さ) の並び。返信は、その元(id が replyTo と同じで、
+/// toThread が replyThread と同じメッセージ)の下に深さ 1 つ増やして置く。根は新しい順、
+/// 木の中は時系列。元が無い返信は根として出す。
+fn reply_order(messages: &[Value]) -> Vec<(usize, usize)> {
+    let n = messages.len();
+    let ts = |i: usize| messages[i].get("tsMs").and_then(Value::as_i64).unwrap_or(0);
+    let parent_of = |i: usize| -> Option<usize> {
+        let m = &messages[i];
+        let to = s(m, "replyTo");
+        if to.is_empty() {
+            return None;
+        }
+        let thread = s(m, "replyThread");
+        (0..n).find(|&j| j != i && s(&messages[j], "id") == to && (thread.is_empty() || s(&messages[j], "toThread") == thread))
+    };
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut roots: Vec<usize> = Vec::new();
+    for i in 0..n {
+        match parent_of(i) {
+            Some(p) => children[p].push(i),
+            None => roots.push(i),
+        }
+    }
+    roots.sort_by_key(|&i| std::cmp::Reverse(ts(i)));
+    let mut out: Vec<(usize, usize)> = Vec::with_capacity(n);
+    let mut seen = vec![false; n];
+    // depth first; the children of a message in time order
+    let mut stack: Vec<(usize, usize)> = roots.iter().rev().map(|&r| (r, 0)).collect();
+    while let Some((i, d)) = stack.pop() {
+        if seen[i] {
+            continue;
+        }
+        seen[i] = true;
+        out.push((i, d));
+        let mut kids = children[i].clone();
+        kids.sort_by_key(|&k| ts(k));
+        for k in kids.into_iter().rev() {
+            stack.push((k, d + 1));
+        }
+    }
+    // replies that answer each other in a circle are shown as they are
+    for i in 0..n {
+        if !seen[i] {
+            out.push((i, 0));
+        }
+    }
+    out
+}
+
+/// 同じメッセージか(通知で届いたものと、一覧にあるもの)。
+fn same_message(a: &Value, b: &Value) -> bool {
+    let (ia, ib) = (s(a, "id"), s(b, "id"));
+    if !ia.is_empty() && ia == ib && s(a, "toThread") == s(b, "toThread") {
+        return true;
+    }
+    a.get("tsMs") == b.get("tsMs") && s(a, "from") == s(b, "from") && s(a, "to") == s(b, "to") && s(a, "text") == s(b, "text")
 }
 
 fn short_path(p: &str) -> &str {
@@ -144,7 +197,8 @@ fn is_conflict(text: &str) -> bool {
 }
 
 /// メッセージ 1 件 -> 行 (head, meta, detail, tone)。人間向けは見出し + 分解。逐語は開いたときの末尾。
-fn message_row(m: &Value) -> (String, String, String, i32) {
+/// depth: 返信の木の深さ(返信は字下げして「└」を付ける)。
+fn message_row(m: &Value, depth: usize) -> (String, String, String, i32) {
     let parsed = m.get("parsed");
     let kind = parsed.map(|p| s(p, "kind")).unwrap_or("");
     let fields: Vec<(&str, &str)> = parsed
@@ -156,8 +210,10 @@ fn message_row(m: &Value) -> (String, String, String, i32) {
         .iter()
         .find_map(|k| fields.iter().find(|(key, v)| key == k && !v.is_empty()).map(|(_, v)| *v))
         .unwrap_or("");
+    // 電文として読めないものは、サーバーが付けた 1 行の概要
+    let heading = if heading.is_empty() { s(m, "summary") } else { heading };
     let label = if kind.is_empty() { "メッセージ" } else { message_kind_label(kind) };
-    let indent = "  ".repeat(depth(s(m, "from")));
+    let indent = if depth == 0 { String::new() } else { format!("{}└ ", "    ".repeat(depth - 1)) };
     let head = if heading.is_empty() { format!("{indent}{label}") } else { format!("{indent}{label}: {heading}") };
     let wake = match s(m, "delivery") {
         "followup_task" => "起こす",
@@ -282,15 +338,18 @@ fn render_messages(app: &AppWindow) {
         labels.extend(agents.iter().map(|a| short_path(a).to_string()));
         let mut rows = Vec::new();
         let mut keys = Vec::new();
-        for (i, m) in l.messages.iter().enumerate() {
+        for (i, depth) in reply_order(&l.messages) {
+            let m = &l.messages[i];
             if filter > 0 {
                 let a = &agents[filter - 1];
                 if s(m, "from") != a && s(m, "to") != a {
                     continue;
                 }
             }
-            let (head, meta, detail, tone) = message_row(m);
-            rows.push(LogRow { head: head.into(), meta: meta.into(), detail: detail.into(), tone, open: l.open.contains(&msg_key(m)), action_label: "".into(), action2_label: "".into() });
+            let (head, meta, detail, tone) = message_row(m, depth);
+            // 受け取り側の履歴に載っているメッセージ(id がある)には、返信ができる
+            let action = if s(m, "id").is_empty() { "" } else { "返信" };
+            rows.push(LogRow { head: head.into(), meta: meta.into(), detail: detail.into(), tone, open: l.open.contains(&msg_key(m)), action_label: action.into(), action2_label: "".into() });
             keys.push(i);
         }
         l.message_keys = keys;
@@ -364,6 +423,22 @@ pub fn install(app: &AppWindow, host: &Host) {
         let Some(app) = weak.upgrade() else { return };
         toggle(|l| l.message_keys.get(i as usize).and_then(|&k| l.messages.get(k)).map(msg_key));
         render_messages(&app);
+    });
+    let weak = app.as_weak();
+    st.on_message_action(move |i| {
+        let Some(app) = weak.upgrade() else { return };
+        let target = L.with(|l| {
+            let l = l.borrow();
+            l.message_keys.get(i as usize).and_then(|&k| l.messages.get(k)).map(|m| {
+                let text = if s(m, "summary").is_empty() { s(m, "text") } else { s(m, "summary") };
+                // 番号は受け取り側の履歴のもの: その履歴のスレッドを添える
+                (s(m, "id").to_string(), crate::reply::hint_of(text), s(m, "toThread").to_string())
+            })
+        });
+        if let Some((id, hint, thread)) = target.filter(|(id, _, _)| !id.is_empty()) {
+            crate::reply::add_chip(&app, &id, &hint, &thread);
+            app.global::<crate::AppState>().set_status("返信に追加しました (チャットで送信)".into());
+        }
     });
     let weak = app.as_weak();
     st.on_message_filter_changed(move |i| {
@@ -482,11 +557,22 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
             render_advisor(app);
         }
         Event::Notify { method, params } if method == "inocode/messages/appended" => {
-            let mine = L.with(|l| l.borrow().thread_id == s(params, "threadId"));
+            let (mine, tid) = L.with(|l| {
+                let l = l.borrow();
+                (l.thread_id == s(params, "threadId"), l.thread_id.clone())
+            });
             if mine {
                 if let Some(m) = params.get("message") {
-                    L.with(|l| l.borrow_mut().messages.push(m.clone()));
+                    // 同じメッセージを 2 度並べない
+                    L.with(|l| {
+                        let mut l = l.borrow_mut();
+                        if !l.messages.iter().any(|x| same_message(x, m)) {
+                            l.messages.push(m.clone());
+                        }
+                    });
                     render_messages(app);
+                    // 通知の id は、まだ無いことが多い: 一覧を読み直すと付く
+                    host.rpc(TAG_MESSAGES, "inocode/messages/list", json!({ "threadId": tid, "limit": 200 }));
                 }
             }
         }
@@ -528,17 +614,55 @@ mod tests {
     #[test]
     fn messages_show_summary_first_and_verbatim_inside() {
         let list = items(&fixture("messages-list.json"), "messages");
-        let (head, meta, detail, tone) = message_row(&list[0]);
+        let (head, meta, detail, tone) = message_row(&list[0], 0);
         assert_eq!(head, "結果: done");
         assert!(meta.contains("起こす") && meta.contains("確度 高"));
         assert!(detail.contains("要約: done") && detail.ends_with("RESULT summary=done conf:high"));
         assert_eq!(tone, 0);
-        let blocked = message_row(&list[2]);
+        let blocked = message_row(&list[2], 0);
         assert_eq!(blocked.3, 2, "BLOCKED stands out");
-        let plain = message_row(&list[3]);
-        assert_eq!(plain.0, "  メッセージ");
+        // 電文として読めないものは、サーバーの概要が見出し。返信は字下げして「└」
+        let plain = message_row(&list[3], 0);
+        assert_eq!(plain.0, "メッセージ: free text without a kind");
+        assert_eq!(message_row(&list[3], 1).0, "└ メッセージ: free text without a kind");
+        assert_eq!(message_row(&list[3], 2).0, "    └ メッセージ: free text without a kind");
         assert!(plain.2.starts_with("逐語:"));
         assert_eq!(message_agents(&list).len(), 4);
+    }
+
+    #[test]
+    fn replies_are_nested_under_the_message_they_answer() {
+        let m = |ts: i64, id: &str, reply_to: &str, reply_thread: &str, to_thread: &str| {
+            json!({ "tsMs": ts, "from": "/root", "to": "/root/a", "text": format!("t{ts}"), "id": if id.is_empty() { Value::Null } else { json!(id) },
+                    "replyTo": if reply_to.is_empty() { Value::Null } else { json!(reply_to) }, "replyThread": reply_thread, "toThread": to_thread })
+        };
+        let list = vec![
+            m(10, "#1.@1", "", "", "thr-a"),            // 0: a root
+            m(20, "#2.@1", "#1.@1", "thr-a", "thr-b"),   // 1: answers 0
+            m(30, "#3.@1", "#2.@1", "thr-b", "thr-a"),   // 2: answers 1
+            m(25, "", "#1.@1", "thr-a", "thr-b"),        // 3: answers 0, later than 1? no: earlier than 2
+            m(40, "#4.@1", "", "", "thr-a"),             // 4: a newer root
+            m(50, "", "#9.@9", "thr-x", ""),             // 5: its original is not there: a root
+            m(15, "#1.@2", "#1.@1", "thr-other", "thr-b"), // 6: same number, another thread: not a reply to 0
+        ];
+        let order = reply_order(&list);
+        // roots: newest first (5, 4, 6, 0); under 0 in time order: 1 (20) with its answer 2, then 3 (25)
+        assert_eq!(order, vec![(5, 0), (4, 0), (6, 0), (0, 0), (1, 1), (2, 2), (3, 1)]);
+        // every message once, also with a circle
+        let circle = vec![m(1, "#1.@1", "#2.@1", "t", "t"), m(2, "#2.@1", "#1.@1", "t", "t")];
+        assert_eq!(reply_order(&circle).len(), 2);
+        assert!(reply_order(&[]).is_empty());
+    }
+
+    #[test]
+    fn a_message_that_came_by_notice_is_not_listed_twice() {
+        let a = json!({ "tsMs": 1, "from": "/a", "to": "/b", "text": "x", "id": null });
+        let b = json!({ "tsMs": 1, "from": "/a", "to": "/b", "text": "x", "id": "#3.@1", "toThread": "t" });
+        assert!(same_message(&a, &b));
+        let c = json!({ "tsMs": 2, "from": "/a", "to": "/b", "text": "x" });
+        assert!(!same_message(&a, &c));
+        let d = json!({ "tsMs": 9, "from": "/a", "to": "/b", "text": "other", "id": "#3.@1", "toThread": "t" });
+        assert!(same_message(&b, &d), "the same id in the same thread");
     }
 
     #[test]
