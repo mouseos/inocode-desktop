@@ -149,54 +149,19 @@ export component Sidebar inherits Rectangle {
             }
         }
 
-        // Footer: account menu and settings.
+        // Footer: the settings.
         Rectangle {
             height: 44px;
-            acct := TouchArea {
-                x: 0px;
-                width: 200px;
-                mouse-cursor: pointer;
-                clicked => { SidebarState.open-menu("account", "", self.absolute-position.x + 6px, self.absolute-position.y); }
+            background: sa.has-hover ? Theme.hover : transparent;
+            border-radius: Theme.radius-row;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 10px;
+                Icon { width: 20px; text: Glyph.settings; font-size: 18px; color: Theme.fg-secondary; }
+                Text { text: "設定"; color: Theme.fg; font-size: Theme.row-font; font-weight: 500; vertical-alignment: center; horizontal-stretch: 1; }
             }
-        HorizontalLayout {
-            height: 44px;
-            padding-top: 6px;
-            padding-bottom: 6px;
-            padding-left: 6px;
-            spacing: 6px;
-            VerticalLayout {
-                width: 22px;
-                alignment: center;
-                Rectangle {
-                    height: 22px;
-                    border-radius: 11px;
-                    background: Theme.pressed;
-                    Text { text: SidebarState.account-initial; color: Theme.fg-secondary; font-size: 11px; }
-                }
-            }
-            Text {
-                text: root.user-name;
-                color: root.logged-in ? Theme.fg : Theme.warning;
-                font-size: Theme.row-font;
-                font-weight: 500;
-                vertical-alignment: center;
-                overflow: elide;
-                horizontal-stretch: 0;
-                max-width: 150px;
-            }
-            Icon { width: 14px; text: Glyph.expand-more; font-size: 14px; color: Theme.fg-tertiary; }
-            Rectangle { horizontal-stretch: 1; }
-            if !root.logged-in: Rectangle {
-                width: lt.preferred-width + 20px;
-                height: 24px;
-                y: 1px;
-                border-radius: Theme.radius-row;
-                background: la.has-hover ? Theme.pressed : Theme.selected;
-                lt := Text { text: "ログイン"; color: Theme.fg; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
-                la := TouchArea { mouse-cursor: pointer; clicked => { root.login(); } }
-            }
-            IconButton { glyph: Glyph.settings; icon-size: 18px; clicked => { root.open-settings(); } }
-        }
+            sa := TouchArea { mouse-cursor: pointer; clicked => { root.open-settings(); } }
         }
     }
 }
