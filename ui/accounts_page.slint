@@ -2,7 +2,7 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Switch } from "widgets.slint";
 import { Chip, Field } from "controls.slint";
-import { Group, GroupTitle, Row, ScreenHead, Dropdown, RowBar } from "setting_rows.slint";
+import { Group, GroupTitle, Row, ScreenHead, Dropdown, RowBar, ActionButton } from "setting_rows.slint";
 
 export struct AcctBar {
     label: string,
@@ -10,10 +10,13 @@ export struct AcctBar {
     reset: string,
 }
 
-// A line of the reset-credit block of an account.
-export struct CreditRow {
-    label: string,
-    value: string,
+// One reset credit.
+export struct GrantRow {
+    id: string,
+    title: string,
+    // "有効期限 11/16 3:00" or ""
+    expires: string,
+    usable: bool,
 }
 
 // A line of the reset-credit history.
@@ -44,8 +47,11 @@ export struct AcctCard {
     enabled: bool,
     can-reauth: bool,
     bars: [AcctBar],
-    // The reset credits (Claude), only the values the server sent
-    credit: [CreditRow],
+    // The reset-credit block: shown at all, how many can be used, a line instead of credits, the credits
+    credit-shown: bool,
+    credit-count: int,
+    credit-line: string,
+    grants: [GrantRow],
     // A reset credit can be used now, and how many are left
     credit-usable: bool,
     credit-left: int,
@@ -113,7 +119,7 @@ export global AccountsState {
     in property <[RowBar]> total;
     in-out property <string> threshold;
     in-out property <string> confirm-id;
-    // Asking whether to use a reset credit (the account's id), and what came of it
+    // The credit whose button was pressed once (it asks to be pressed again), and what came of it
     in-out property <string> credit-confirm-id;
     in property <string> credit-result;
     in-out property <string> rename-text;
@@ -163,7 +169,7 @@ export global AccountsState {
     callback back;
     callback choose-setting(string, int);
     callback make-default;
-    callback use-credit(string);
+    callback use-credit(string, string);
     callback open-history(string);
     callback add-compatible;
 }
@@ -564,7 +570,7 @@ export component AccountsView inherits Rectangle {
                 }
                 if AccountsState.cur.bars.length > 0: Group {
                     for b[i] in AccountsState.cur.bars: Row {
-                        label: b.label + "の使用量";
+                        label: b.label == "5時間" ? "5 時間の利用制限" : "週あたりの利用制限";
                         sub: b.reset;
                         value: b.pct >= 99.5 ? "上限に達しました" : Math.round(b.pct) + "%";
                         value-color: b.pct >= 99.5 ? Theme.danger : Theme.fg-secondary;
@@ -573,61 +579,56 @@ export component AccountsView inherits Rectangle {
                         separator: i < AccountsState.cur.bars.length - 1;
                     }
                 }
-                if AccountsState.cur.credit.length > 0: VerticalLayout {
+                if AccountsState.cur.credit-shown: VerticalLayout {
                     spacing: 0px;
-                    GroupTitle { text: "リセット券"; }
-                    Group {
-                        for cr[i] in AccountsState.cur.credit: Row {
-                            label: cr.label;
-                            value: cr.value;
-                            clickable: false;
-                            separator: true;
-                        }
-                        if AccountsState.cur.credit-usable && AccountsState.credit-confirm-id != AccountsState.cur.id: Row {
-                            label: "リセット券を使う";
-                            separator: true;
-                            clicked => { AccountsState.credit-confirm-id = AccountsState.cur.id; }
-                        }
-                        if AccountsState.credit-confirm-id == AccountsState.cur.id: Row {
-                            label: "5時間と週の使用量が、リセットされます。使いますか？";
-                            clickable: false;
-                        }
-                        if AccountsState.credit-confirm-id == AccountsState.cur.id: Row {
-                            label: "使う";
-                            value-color: Theme.accent;
-                            clicked => { AccountsState.credit-confirm-id = ""; AccountsState.use-credit(AccountsState.cur.id); }
-                        }
-                        if AccountsState.credit-confirm-id == AccountsState.cur.id: Row {
-                            label: "やめる";
-                            separator: true;
-                            clicked => { AccountsState.credit-confirm-id = ""; }
-                        }
-                        if AccountsState.credit-result != "": Row { label: AccountsState.credit-result; clickable: false; }
-                        Row { label: "履歴"; chevron: true; separator: false; clicked => { AccountsState.open-history(AccountsState.cur.id); } }
-                    }
-                }
-                Group {
-                    if !AccountsState.cur.in-use && AccountsState.cur.enabled && AccountsState.cards.length > 1: Row { label: "このアカウントを使う"; clicked => { AccountsState.use-next(AccountsState.cur.id); } }
                     Row {
-                        label: AccountsState.cur.enabled ? "一時停止する" : "再開する";
-                        separator: AccountsState.cur.can-reauth;
-                        clicked => { AccountsState.toggle(AccountsState.cur.id, !AccountsState.cur.enabled); }
+                        label: "利用制限のリセット";
+                        clickable: false;
+                        separator: true;
+                        if AccountsState.cur.credit-count > 0: Rectangle {
+                            height: 24px;
+                            width: cb.preferred-width + 20px;
+                            border-radius: 12px;
+                            background: #3fb95033;
+                            cb := Text { text: AccountsState.cur.credit-count + " 回利用可能"; color: #3fb950; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                        }
                     }
-                    if AccountsState.cur.can-reauth: Row { label: "ログインし直す"; separator: false; clicked => { AccountsState.reauth(AccountsState.cur.id); } }
+                    if AccountsState.cur.credit-line != "": Row { label: AccountsState.cur.credit-line; clickable: false; separator: true; }
+                    for g[i] in AccountsState.cur.grants: Row {
+                        label: g.title;
+                        sub: g.expires;
+                        clickable: false;
+                        separator: true;
+                        ActionButton {
+                            primary: true;
+                            enabled: g.usable;
+                            label: AccountsState.credit-confirm-id == AccountsState.cur.id + "/" + g.id ? "確認" : "リセットを使用";
+                            clicked => {
+                                if (AccountsState.credit-confirm-id == AccountsState.cur.id + "/" + g.id) {
+                                    AccountsState.credit-confirm-id = "";
+                                    AccountsState.use-credit(AccountsState.cur.id, g.id);
+                                } else {
+                                    AccountsState.credit-confirm-id = AccountsState.cur.id + "/" + g.id;
+                                }
+                            }
+                        }
+                    }
+                    if AccountsState.credit-result != "": Row { label: AccountsState.credit-result; clickable: false; separator: true; }
+                    Row { label: "履歴"; chevron: true; separator: false; clicked => { AccountsState.open-history(AccountsState.cur.id); } }
                 }
-                Group {
-                    if AccountsState.confirm-id != AccountsState.cur.id: Row {
-                        label: "このアカウントを削除";
-                        danger: true;
-                        separator: false;
-                        clicked => { AccountsState.confirm-id = AccountsState.cur.id; }
-                    }
-                    if AccountsState.confirm-id == AccountsState.cur.id: Row {
-                        label: "削除する(ログイン情報も消えます)";
-                        danger: true;
-                        clicked => { AccountsState.remove(AccountsState.cur.id); }
-                    }
-                    if AccountsState.confirm-id == AccountsState.cur.id: Row { label: "やめる"; separator: false; clicked => { AccountsState.confirm-id = ""; } }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    if !AccountsState.cur.in-use && AccountsState.cur.enabled && AccountsState.cards.length > 1: ActionButton { primary: true; label: "このアカウントを使う"; clicked => { AccountsState.use-next(AccountsState.cur.id); } }
+                    ActionButton { label: AccountsState.cur.enabled ? "一時停止する" : "再開する"; clicked => { AccountsState.toggle(AccountsState.cur.id, !AccountsState.cur.enabled); } }
+                    if AccountsState.cur.can-reauth: ActionButton { label: "ログインし直す"; clicked => { AccountsState.reauth(AccountsState.cur.id); } }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    if AccountsState.confirm-id != AccountsState.cur.id: ActionButton { danger: true; label: "このアカウントを削除"; clicked => { AccountsState.confirm-id = AccountsState.cur.id; } }
+                    if AccountsState.confirm-id == AccountsState.cur.id: ActionButton { danger: true; label: "削除する(ログイン情報も消えます)"; clicked => { AccountsState.remove(AccountsState.cur.id); } }
+                    if AccountsState.confirm-id == AccountsState.cur.id: ActionButton { label: "やめる"; clicked => { AccountsState.confirm-id = ""; } }
                 }
             }
         }

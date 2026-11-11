@@ -215,3 +215,32 @@ export component ScreenHead inherits VerticalLayout {
     }
     Text { text: root.title; color: Theme.fg; font-size: 18px; font-weight: 700; height: 40px; vertical-alignment: center; }
 }
+
+// A button: a filled one for the main action, an outlined one otherwise; dimmed when it cannot be pressed.
+export component ActionButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 34px;
+    width: bt.preferred-width + 32px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: root.primary ? transparent : root.danger ? Theme.danger : Theme.pressed;
+    background: root.primary ? (ba.has-hover && root.enabled ? Theme.accent.darker(0.15) : Theme.accent) : ba.has-hover && root.enabled ? Theme.pressed : Theme.selected;
+    opacity: root.enabled ? 1.0 : 0.4;
+    bt := Text {
+        text: root.label;
+        color: root.primary ? Theme.on-primary : root.danger ? Theme.danger : Theme.fg;
+        font-size: 13px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ba := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}

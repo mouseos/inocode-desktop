@@ -27,6 +27,7 @@
       },
       "updatedAt": 1794390100,
       "resetCredit": {
+        "status": "ok",
         "eligible": true,
         "atLimit": false,
         "resetsLeft": 0,
@@ -52,6 +53,7 @@
       }
     },
     "resetCredit": {
+      "status": "ok",
       "eligible": true,
       "atLimit": false,
       "resetsLeft": 0,
@@ -100,6 +102,7 @@
       },
       "updatedAt": 1794390100,
       "resetCredit": {
+        "status": "ok",
         "eligible": true,
         "atLimit": false,
         "resetsLeft": 0,
@@ -125,6 +128,7 @@
       }
     },
     "resetCredit": {
+      "status": "ok",
       "eligible": true,
       "atLimit": false,
       "resetsLeft": 0,
@@ -187,6 +191,7 @@
       },
       "updatedAt": 1794390100,
       "resetCredit": {
+        "status": "ok",
         "eligible": true,
         "atLimit": false,
         "resetsLeft": 0,
@@ -212,6 +217,7 @@
       }
     },
     "resetCredit": {
+      "status": "ok",
       "eligible": true,
       "atLimit": false,
       "resetsLeft": 0,
@@ -260,6 +266,7 @@
       },
       "updatedAt": 1794390100,
       "resetCredit": {
+        "status": "ok",
         "eligible": true,
         "atLimit": false,
         "resetsLeft": 0,
@@ -285,6 +292,7 @@
       }
     },
     "resetCredit": {
+      "status": "ok",
       "eligible": true,
       "atLimit": false,
       "resetsLeft": 0,

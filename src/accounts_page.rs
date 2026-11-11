@@ -326,8 +326,41 @@ fn now_secs() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
+/// (year, month, day, hour, minute) in this computer's time zone, from seconds since 1970.
+fn local_parts(ts: i64) -> (i64, i64, i64, i64, i64) {
+    let secs = ts + local_offset_minutes() * 60;
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    // civil-from-days (proleptic Gregorian)
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    (y, m, d, rem / 3600, (rem % 3600) / 60)
+}
+
+/// When it comes back, as Codex Desktop writes it: the time of day within a day ("18:20"), the
+/// date and the time after that ("11月16日の3:00"); then how long that is.
+fn when_text(at: i64) -> String {
+    let (_, m, d, hh, mm) = local_parts(at);
+    if at - now_secs() < 86_400 {
+        format!("{hh}:{mm:02}")
+    } else {
+        format!("{m}月{d}日の{hh}:{mm:02}")
+    }
+}
+
+/// "18:20にリセット · あと2時間11分"; empty when the time is past or unknown.
 fn reset_text(at: Option<i64>) -> String {
-    at.filter(|t| *t > now_secs()).map(|t| format!("あと{}で使用量が戻ります", span_jp(t - now_secs()))).unwrap_or_default()
+    match at.filter(|t| *t > now_secs()) {
+        Some(t) => format!("{}にリセット · あと{}", when_text(t), span_jp(t - now_secs())),
+        None => String::new(),
+    }
 }
 
 /// The accounts in the order of use: the highest priority first, the server's order inside a tie.
@@ -416,28 +449,50 @@ fn render_providers(app: &AppWindow, all: &[Value]) {
     app.global::<AccountsState>().set_provs(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 
-/// The reset credits (usage.resetCredit): (label, value) of what the server sent; none for null.
-pub(crate) fn credit_lines(a: &Value) -> Vec<(String, String)> {
-    let Some(c) = a.get("usage").and_then(|u| u.get("resetCredit")).filter(|c| c.is_object()) else { return Vec::new() };
+/// The reset-credit block of an account (usage.resetCredit): whether to show it, how many credits
+/// can be used, a line when there is something to say instead of credits, and the credits.
+pub(crate) fn credit_view(a: &Value) -> (bool, i32, String, Vec<GrantRow>) {
+    let Some(c) = a.get("usage").and_then(|u| u.get("resetCredit")).filter(|c| c.is_object()) else {
+        return (false, 0, String::new(), Vec::new());
+    };
     let now = now_secs();
-    let mut out = Vec::new();
-    if let Some(left) = c.get("resetsLeft").and_then(Value::as_i64) {
-        let value = match c.get("resetsTotal").and_then(Value::as_i64) {
-            Some(total) => format!("{left} / {total} 枚"),
-            None => format!("{left} 枚"),
-        };
-        out.push(("残り".to_string(), value));
+    let left = c.get("resetsLeft").and_then(Value::as_i64);
+    match s(c, "status") {
+        // Not a thing of this account or plan: nothing to show.
+        "none" | "unavailable" => return (false, 0, String::new(), Vec::new()),
+        // Not read, and no earlier values to keep showing.
+        "error" if left.is_none() => return (true, 0, "リセット券の情報を取得できていません".to_string(), Vec::new()),
+        _ => {}
     }
-    if let Some(usable) = c.get("usableNow").and_then(Value::as_bool) {
-        out.push(("いま使えますか".to_string(), if usable { "使えます" } else { "使えません" }.to_string()));
+    let left = left.unwrap_or(0);
+    let usable_all = c.get("usableNow").and_then(Value::as_bool).unwrap_or(false);
+    let expires = |at: Option<i64>| -> String {
+        match at.filter(|t| *t > now) {
+            Some(t) => {
+                let (_, m, d, hh, mm) = local_parts(t);
+                format!("有効期限 {m}/{d} {hh}:{mm:02}")
+            }
+            None => String::new(),
+        }
+    };
+    let title = |v: &Value| -> String {
+        let t = s(v, "label").trim();
+        if t.is_empty() { "利用量リセット".to_string() } else { t.to_string() }
+    };
+    let mut grants = Vec::new();
+    for g in c.get("grants").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {
+        if g.get("resetsLeft").and_then(Value::as_i64).unwrap_or(1) <= 0 {
+            continue;
+        }
+        let usable = g.get("usableNow").and_then(Value::as_bool).unwrap_or(usable_all) && !g.get("paused").and_then(Value::as_bool).unwrap_or(false);
+        grants.push(GrantRow { id: s(g, "id").into(), title: title(g).into(), expires: expires(g.get("endsAt").and_then(Value::as_i64)).into(), usable });
     }
-    if let Some(t) = c.get("endsAt").and_then(Value::as_i64).filter(|t| *t > now) {
-        out.push(("期限".to_string(), format!("あと{}", span_jp(t - now))));
+    // The server told only how many there are: one line for them.
+    if grants.is_empty() && left > 0 {
+        grants.push(GrantRow { id: "".into(), title: "利用量リセット".into(), expires: expires(c.get("endsAt").and_then(Value::as_i64)).into(), usable: usable_all });
     }
-    if let Some(t) = c.get("cooldownUntil").and_then(Value::as_i64).filter(|t| *t > now) {
-        out.push(("次に使えるまで".to_string(), format!("あと{}", span_jp(t - now))));
-    }
-    out
+    let line = if left <= 0 { "利用可能なリセットはありません".to_string() } else { String::new() };
+    (true, left as i32, line, grants)
 }
 
 /// Minutes east of UTC of this computer's time zone (0 where it cannot be read).
@@ -475,20 +530,8 @@ fn local_offset_minutes() -> i64 {
 
 /// "2026/11/11 09:46" in this computer's time zone, from seconds (or milliseconds) since 1970.
 fn local_stamp(ts: i64) -> String {
-    let secs = if ts > 100_000_000_000 { ts / 1000 } else { ts } + local_offset_minutes() * 60;
-    let days = secs.div_euclid(86_400);
-    let rem = secs.rem_euclid(86_400);
-    // civil-from-days (proleptic Gregorian)
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
-    format!("{y}/{m:02}/{d:02} {:02}:{:02}", rem / 3600, (rem % 3600) / 60)
+    let (y, m, d, hh, mm) = local_parts(if ts > 100_000_000_000 { ts / 1000 } else { ts });
+    format!("{y}/{m:02}/{d:02} {hh:02}:{mm:02}")
 }
 
 /// The lines of a reset-credit history reply, newest first.
@@ -530,6 +573,7 @@ fn history_rows(v: &Value) -> Vec<HistRow> {
 }
 
 fn card(a: &Value, now: i64) -> AcctCard {
+    let credit = credit_view(a);
     let kind = s(a, "kind");
     let provider = provider_of(a);
     let mut bars = Vec::new();
@@ -545,7 +589,7 @@ fn card(a: &Value, now: i64) -> AcctCard {
         .get("cooldownUntil")
         .and_then(Value::as_i64)
         .filter(|t| *t > now)
-        .map(|t| format!("あと{}で回復", span_jp(t - now)))
+        .map(|t| format!("{}に回復 · あと{}", when_text(t), span_jp(t - now)))
         .unwrap_or_default();
     let in_use = a.get("inUse").and_then(Value::as_bool).unwrap_or(false);
     let (badge, tone) = match s(a, "state") {
@@ -579,9 +623,10 @@ fn card(a: &Value, now: i64) -> AcctCard {
         bars: ModelRc::from(Rc::new(VecModel::from(bars))),
         credit_usable: a.get("usage").and_then(|u| u.get("resetCredit")).and_then(|c| c.get("usableNow")).and_then(Value::as_bool).unwrap_or(false),
         credit_left: a.get("usage").and_then(|u| u.get("resetCredit")).and_then(|c| c.get("resetsLeft")).and_then(Value::as_i64).unwrap_or(0) as i32,
-        credit: ModelRc::from(Rc::new(VecModel::from(
-            credit_lines(a).into_iter().map(|(l, v)| CreditRow { label: l.into(), value: v.into() }).collect::<Vec<_>>(),
-        ))),
+        credit_shown: credit.0,
+        credit_count: credit.1,
+        credit_line: credit.2.into(),
+        grants: ModelRc::from(Rc::new(VecModel::from(credit.3))),
     }
 }
 
@@ -855,11 +900,14 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         visit(&app);
     });
     let weak = app.as_weak();
-    st.on_use_credit(move |id| {
+    st.on_use_credit(move |id, grant| {
         if let Some(app) = weak.upgrade() {
             app.global::<AccountsState>().set_credit_result("".into());
         }
         let mut p = json!({ "id": id.to_string() });
+        if !grant.is_empty() {
+            p["grantId"] = json!(grant.to_string());
+        }
         if let Some(op) = DATA.with(|d| d.borrow_mut().credit_op.take()) {
             p["operationId"] = json!(op);
         }
@@ -948,7 +996,7 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                     st.set_history_error(format!("履歴を取得できませんでした: {}", crate::errmsg::short(e)).into());
                 }
                 "acct.credit" => {
-                    st.set_credit_result(format!("リセット券を使えませんでした: {}", crate::errmsg::short(e)).into());
+                    st.set_credit_result(format!("使用量をリセットできませんでした: {}", crate::errmsg::short(e)).into());
                 }
                 "acct.providers" | "acct.policy" => {}
                 _ => detailed(app, &format!("できませんでした: {}", crate::errmsg::short(e)), e),
@@ -1040,7 +1088,7 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
         "acct.credit" => {
             if v.get("ok").and_then(Value::as_bool).unwrap_or(true) {
                 DATA.with(|d| d.borrow_mut().credit_op = None);
-                st.set_credit_result("リセット券を使いました。使用量を更新しています".into());
+                st.set_credit_result("使用量をリセットしました".into());
                 refresh(true);
             } else {
                 let f = v.get("failure").cloned().unwrap_or(Value::Null);
@@ -1050,7 +1098,7 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                     "notUsable" => "いまは使えません".to_string(),
                     "expired" => "期限が切れています".to_string(),
                     "cooldown" => "しばらく使えません".to_string(),
-                    "alreadyUsed" => "すでに使われています".to_string(),
+                    "alreadyUsed" => "このリセットはすでに使用済みです".to_string(),
                     "networkError" => "通信できませんでした。もう一度試せます".to_string(),
                     "authFailed" => "ログインが必要です。ログインし直してください".to_string(),
                     "rateLimited" => "しばらくしてから、もう一度試してください".to_string(),
@@ -1060,7 +1108,7 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                     _ if !s(&f, "detail").is_empty() => crate::errmsg::short(s(&f, "detail")),
                     _ => "使えませんでした".to_string(),
                 };
-                st.set_credit_result(format!("リセット券を使えませんでした: {why}").into());
+                st.set_credit_result(format!("使用量をリセットできませんでした: {why}").into());
             }
         }
         "acct.poll" => {

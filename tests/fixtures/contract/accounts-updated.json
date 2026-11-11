@@ -25,7 +25,17 @@
             "resetsAt": 1794744000
           },
           "updatedAt": 1794390000,
-          "resetCredit": null
+          "resetCredit": {
+            "status": "ok",
+            "eligible": true,
+            "atLimit": false,
+            "resetsLeft": 0,
+            "resetsTotal": 0,
+            "usableNow": false,
+            "endsAt": null,
+            "cooldownUntil": null,
+            "grants": []
+          }
         },
         "state": "active",
         "cooldownUntil": null,
@@ -54,7 +64,10 @@
             "resetsAt": 1794744000
           },
           "updatedAt": 1794390000,
-          "resetCredit": null
+          "resetCredit": {
+            "status": "unavailable",
+            "reason": "http_404"
+          }
         },
         "state": "cooldown",
         "cooldownUntil": 1794398400,
@@ -99,7 +112,10 @@
             "resetsAt": 1794744000
           },
           "updatedAt": 1794390000,
-          "resetCredit": null
+          "resetCredit": {
+            "status": "error",
+            "reason": "request_failed"
+          }
         },
         "state": "disabled",
         "cooldownUntil": null,
