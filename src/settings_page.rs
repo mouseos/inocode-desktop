@@ -47,7 +47,7 @@ fn nav() -> Vec<(S, &'static str)> {
         (S::Head, "このコンピュータ"),
         (S::Providers, "モデルプロバイダー"),
         (S::Hooks, "フック"),
-        (S::Head, "カスタマイズ"),
+        (S::Head, "連携"),
         (S::Skills, "スキル"),
         (S::Mcp, "MCP サーバー"),
         (S::Head, "InoCode"),
@@ -174,12 +174,6 @@ pub(crate) fn open(app: &AppWindow) {
 pub(crate) fn open_usage(app: &AppWindow) {
     app.global::<SettingsPageState>().set_open(true);
     load(app, index_of(S::Usage));
-}
-
-/// The "カスタマイズ" row of the sidebar: the skills page.
-pub(crate) fn open_customize(app: &AppWindow) {
-    app.global::<SettingsPageState>().set_open(true);
-    load(app, index_of(S::Skills));
 }
 
 /// Show a section without recording a history step (used by back / forward).

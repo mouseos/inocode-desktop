@@ -358,12 +358,6 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     });
     app.global::<SidebarState>().on_load_more(load_more);
     let weak = app.as_weak();
-    app.global::<SidebarState>().on_open_customize(move || {
-        if let Some(app) = weak.upgrade() {
-            crate::settings_page::open_customize(&app);
-        }
-    });
-    let weak = app.as_weak();
     app.global::<SidebarState>().on_cancel_confirm(move || {
         if let Some(app) = weak.upgrade() {
             app.global::<SidebarState>().set_confirm_open(false);
