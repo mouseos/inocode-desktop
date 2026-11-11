@@ -22,6 +22,9 @@ struct Data {
     auth_url: String,
     /// The API key kept while the pool answers (fallback to the plain login).
     pending_key: Option<String>,
+    /// modelProvider/list: (id, name, base URL) and the default provider's id.
+    endpoints: Vec<(String, String, String)>,
+    default_provider: String,
     /// The provider whose policy (switching threshold) is loaded: each provider has its own.
     policy_provider: String,
     /// The account being signed in again (re-login), when the dialog is for that.
@@ -63,6 +66,12 @@ pub(crate) fn open(app: &AppWindow) {
     note(app, "");
     refresh(false);
     rpc("acct.providers", "inocode/providers/list", json!({}));
+    reload_endpoints();
+}
+
+/// The connection settings of the providers (config's model_providers and the default one).
+pub(crate) fn reload_endpoints() {
+    rpc("acct.mp", "modelProvider/list", json!({}));
 }
 
 fn refresh(force: bool) {
@@ -281,15 +290,15 @@ fn provider_of(a: &Value) -> &str {
     }
 }
 
-fn summary(accounts: &[Value]) -> String {
-    let mut parts = Vec::new();
-    if let Some(n) = mean(accounts, "fiveHour") {
-        parts.push(format!("5時間 平均 {n}%"));
+/// The mean usage of the accounts as two bars (5 hours, week); none when they report none.
+fn mean_bars(accounts: &[Value]) -> Vec<RowBar> {
+    let mut bars = Vec::new();
+    for (key, label) in [("fiveHour", "5時間"), ("weekly", "週")] {
+        if let Some(n) = mean(accounts, key) {
+            bars.push(RowBar { label: label.into(), pct: n as f32, text: format!("{n}%").into() });
+        }
     }
-    if let Some(n) = mean(accounts, "weekly") {
-        parts.push(format!("週 平均 {n}%"));
-    }
-    parts.join("、")
+    bars
 }
 
 /// The rows of the top level: the providers of the server plus any provider an account names.
@@ -318,9 +327,24 @@ fn render_providers(app: &AppWindow, all: &[Value]) {
             } else {
                 "warn"
             };
-            ProvRow { id: id.as_str().into(), name: name.as_str().into(), count: mine.len() as i32, summary: summary(&mine).into(), tone: tone.into() }
+            ProvRow {
+                id: id.as_str().into(),
+                name: name.as_str().into(),
+                count: mine.len() as i32,
+                bars: ModelRc::from(Rc::new(VecModel::from(mean_bars(&mine)))),
+                summary: "".into(),
+                tone: tone.into(),
+            }
         })
         .collect();
+    let mut rows = rows;
+    // Providers added through the config (OpenAI-compatible) have no accounts.
+    let ends = DATA.with(|d| d.borrow().endpoints.clone());
+    for (id, name, url) in ends {
+        if !rows.iter().any(|r| r.id.as_str() == id) {
+            rows.push(ProvRow { id: id.as_str().into(), name: name.as_str().into(), count: -1, bars: ModelRc::default(), summary: url.as_str().into(), tone: "ok".into() });
+        }
+    }
     app.global::<AccountsState>().set_provs(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 
@@ -378,6 +402,19 @@ fn render(app: &AppWindow) {
     render_providers(app, &everything);
     let st = app.global::<AccountsState>();
     let pid = st.get_provider_id().to_string();
+    {
+        let (url, found, def) = DATA.with(|d| {
+            let d = d.borrow();
+            match d.endpoints.iter().find(|e| e.0 == pid) {
+                Some(e) => (e.2.clone(), true, d.default_provider == pid),
+                None => (String::new(), false, false),
+            }
+        });
+        st.set_endpoint_url(url.into());
+        st.set_has_endpoint(found);
+        st.set_is_default(def);
+        st.set_pooled(pid.is_empty() || matches!(pid.as_str(), "openai" | "claude") || DATA.with(|d| d.borrow().providers.iter().any(|p| p.0 == pid)));
+    }
     let mine: Vec<Value> = everything.into_iter().filter(|a| pid.is_empty() || provider_of(a) == pid).collect();
     let now = now_secs();
     let cards: Vec<AcctCard> = ordered(&mine).iter().map(|a| card(a, now)).collect();
@@ -391,8 +428,7 @@ fn render(app: &AppWindow) {
     }
     st.set_cards(ModelRc::from(Rc::new(VecModel::from(cards))));
     st.set_loading(false);
-    let total = summary(&mine);
-    st.set_total(if total.is_empty() { "".into() } else { format!("全体の使用量  {total}").into() });
+    st.set_total(ModelRc::from(Rc::new(VecModel::from(mean_bars(&mine)))));
 }
 
 fn show_policy(app: &AppWindow) {
@@ -606,19 +642,12 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             .map(|mut r| {
                 if r.key == key {
                     r.value = (*shown).into();
-                    r.cur = index;
                 }
                 r
             })
             .collect();
         let _ = label;
         st.set_settings(ModelRc::from(Rc::new(VecModel::from(rows))));
-    });
-    let weak = app.as_weak();
-    st.on_leave(move || {
-        if let Some(app) = weak.upgrade() {
-            crate::settings_page::show_home(&app);
-        }
     });
     let weak = app.as_weak();
     st.on_open_provider(move |id| {
@@ -647,11 +676,39 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         visit(&app);
     });
     let weak = app.as_weak();
-    st.on_open_providers(move || {
+    st.on_make_default(move || {
         if let Some(app) = weak.upgrade() {
-            app.global::<AccountsState>().set_add_step(0);
-            crate::settings_page::show_providers(&app);
+            let pid = app.global::<AccountsState>().get_provider_id().to_string();
+            if !pid.is_empty() {
+                crate::settings_page::write_config("model_provider", json!(pid));
+            }
         }
+    });
+    let weak = app.as_weak();
+    st.on_add_compatible(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<AccountsState>();
+        let (name, url) = (st.get_np_name().trim().to_string(), st.get_np_url().trim().to_string());
+        let (env, key) = (st.get_np_env().trim().to_string(), st.get_np_key().trim().to_string());
+        if name.is_empty() || url.is_empty() || (env.is_empty() && key.is_empty()) {
+            login_note(&app, "名前、base URL、API キー(環境変数名か値)を入力してください");
+            return;
+        }
+        let mut cfg = json!({ "name": name, "base_url": url, "wire_api": "responses", "requires_openai_auth": false });
+        if !env.is_empty() {
+            cfg["env_key"] = json!(env);
+        }
+        if !key.is_empty() {
+            cfg["experimental_bearer_token"] = json!(key);
+        }
+        // The key leaves the field at once.
+        st.set_np_key("".into());
+        crate::settings_page::upsert_config(&format!("model_providers.{}", crate::settings_page::slug(&name)), cfg);
+        st.set_np_name("".into());
+        st.set_np_url("".into());
+        st.set_np_env("".into());
+        st.set_add_step(0);
+        note(&app, "プロバイダを追加しました");
     });
 }
 
@@ -722,12 +779,41 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                 .map(|(key, label, opts)| {
                     let wire = crate::settings_page::lookup(&config, key).and_then(Value::as_str).unwrap_or("");
                     let cur = opts.iter().position(|(_, w)| *w == wire);
-                    ProvSetting { key: (*key).into(), title: (*label).into(), value: cur.map(|i| opts[i].0).unwrap_or("").into(), cur: cur.unwrap_or(0) as i32, count: opts.len() as i32 }
+                    let desc = match *key {
+                        "model_verbosity" => "応答の長さの目安(Responses API の text.verbosity)。",
+                        _ => "推論の要約の詳細度(Responses API の reasoning.summary)。",
+                    };
+                    ProvSetting {
+                        key: (*key).into(),
+                        title: (*label).into(),
+                        desc: desc.into(),
+                        value: cur.map(|i| opts[i].0).unwrap_or("").into(),
+                        opts: ModelRc::from(Rc::new(VecModel::from(opts.iter().map(|o| SharedString::from(o.0)).collect::<Vec<_>>()))),
+                    }
                 })
                 .collect();
             if st.get_provider_id().as_str() == "openai" {
                 st.set_settings(ModelRc::from(Rc::new(VecModel::from(rows))));
             }
+        }
+        "acct.mp" => {
+            let default = v.get("defaultProviderId").and_then(Value::as_str).unwrap_or("").to_string();
+            let list: Vec<(String, String, String)> = v
+                .get("data")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|p| {
+                    let id = s(p, "id");
+                    (id.to_string(), if s(p, "name").is_empty() { id.to_string() } else { s(p, "name").to_string() }, s(p, "baseUrl").to_string())
+                })
+                .collect();
+            DATA.with(|d| {
+                let mut d = d.borrow_mut();
+                d.endpoints = list;
+                d.default_provider = default;
+            });
+            render(app);
         }
         "acct.act" => refresh(false),
         "acct.login.start" => {

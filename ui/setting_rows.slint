@@ -1,34 +1,125 @@
 import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 
-// The grammar of the settings screens (the iOS Settings app): a screen holds groups, a group holds
-// rows, a row has its label on the left and its value or state and a ">" on the right.
+// The parts of a settings page (Claude Desktop's settings): a heading per section and, under it,
+// rows with the title and the description on the left and the control on the right, divided by a
+// thin line.
 
-// A rounded surface that holds rows.
+export struct RowBar {
+    label: string,
+    pct: float,
+    // "42%"
+    text: string,
+}
+
+// A section's rows.
 export component Group inherits Rectangle {
-    background: Theme.bubble;
-    border-radius: 12px;
-    clip: true;
     VerticalLayout {
         @children
     }
 }
 
-// A small grey heading above a group.
+// The heading of a section.
 export component GroupTitle inherits Text {
-    color: Theme.fg-secondary;
-    font-size: 12px;
-    height: 28px;
+    color: Theme.fg;
+    font-size: 14px;
+    font-weight: 700;
+    height: 44px;
     vertical-alignment: bottom;
+}
+
+// A closed box that opens a list; choosing an entry closes it.
+export component Dropdown inherits Rectangle {
+    in property <[string]> options;
+    in property <string> current;
+    callback selected(int);
+    width: 190px;
+    height: 32px;
+    border-radius: Theme.radius-row;
+    background: ta.has-hover ? Theme.pressed : Theme.selected;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 8px;
+        spacing: 6px;
+        Text { text: root.current != "" ? root.current : "選択"; color: Theme.fg; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        Icon { width: 18px; text: Glyph.expand-more; font-size: 18px; color: Theme.fg-secondary; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { pop.show(); } }
+    pop := PopupWindow {
+        x: 0px;
+        y: root.height + 2px;
+        width: root.width;
+        Rectangle {
+            background: Theme.composer;
+            border-radius: Theme.radius-row;
+            border-width: 1px;
+            border-color: Theme.border;
+            VerticalLayout {
+                padding: 4px;
+                for o[i] in root.options: Rectangle {
+                    height: 30px;
+                    border-radius: 6px;
+                    background: oa.has-hover ? Theme.hover : transparent;
+                    Text { x: 10px; text: o; color: o == root.current ? Theme.accent : Theme.fg; font-size: 13px; vertical-alignment: center; }
+                    oa := TouchArea { clicked => { root.selected(i); } }
+                }
+            }
+        }
+    }
+}
+
+// A few options side by side, the current one highlighted.
+export component Segmented inherits Rectangle {
+    in property <[string]> options;
+    in property <int> cur;
+    callback selected(int);
+    width: seg.preferred-width + 6px;
+    height: 32px;
+    border-radius: Theme.radius-row;
+    background: Theme.composer;
+    border-width: 1px;
+    border-color: Theme.border;
+    seg := HorizontalLayout {
+        padding: 2px;
+        spacing: 2px;
+        for o[i] in root.options: Rectangle {
+            width: t.preferred-width + 24px;
+            border-radius: 6px;
+            background: i == root.cur ? Theme.selected : transparent;
+            t := Text { text: o; color: Theme.fg; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+            TouchArea { mouse-cursor: pointer; clicked => { root.selected(i); } }
+        }
+    }
+}
+
+component BarLine inherits HorizontalLayout {
+    in property <RowBar> b;
+    spacing: 8px;
+    Text { text: root.b.label; color: Theme.fg-secondary; font-size: 11px; width: 40px; vertical-alignment: center; }
+    Rectangle {
+        horizontal-stretch: 1;
+        height: 5px;
+        border-radius: 2.5px;
+        background: Theme.pressed;
+        Rectangle {
+            width: parent.width * max(0, min(100, root.b.pct)) / 100;
+            x: 0px;
+            border-radius: 2.5px;
+            background: root.b.pct >= 99.5 ? Theme.danger : root.b.pct >= 80 ? Theme.warning : #3fb950;
+        }
+    }
+    Text { text: root.b.text; color: Theme.fg-secondary; font-size: 11px; width: 52px; horizontal-alignment: right; vertical-alignment: center; }
 }
 
 export component Row inherits Rectangle {
     in property <string> label;
     in property <string> sub;
     in property <string> value;
-    // A thin usage bar inside the row; below 0 there is none
+    // A thin usage bar under the text; below 0 there is none
     in property <float> pct: -1;
-    // Shows a ">": the row opens a next screen
+    // Usage bars under the text
+    in property <[RowBar]> bars;
+    // Shows a ">": the row opens a next level
     in property <bool> chevron: false;
     in property <bool> danger: false;
     in property <bool> clickable: true;
@@ -38,7 +129,7 @@ export component Row inherits Rectangle {
     in property <color> value-color: Theme.fg-secondary;
     callback clicked;
 
-    height: max(48px, col.preferred-height + 20px);
+    height: max(56px, col.preferred-height + 24px);
     background: ta.has-hover && root.clickable ? Theme.hover : transparent;
     ta := TouchArea {
         enabled: root.clickable;
@@ -46,9 +137,9 @@ export component Row inherits Rectangle {
         clicked => { root.clicked(); }
     }
     HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 12px;
-        spacing: 10px;
+        padding-left: 4px;
+        padding-right: 4px;
+        spacing: 12px;
         if root.tone != "": Rectangle {
             width: 8px;
             VerticalLayout {
@@ -62,10 +153,10 @@ export component Row inherits Rectangle {
         }
         col := VerticalLayout {
             alignment: center;
-            spacing: 3px;
+            spacing: 4px;
             horizontal-stretch: 1;
-            Text { text: root.label; color: root.danger ? Theme.danger : Theme.fg; font-size: 14px; overflow: elide; }
-            if root.sub != "": Text { text: root.sub; color: Theme.fg-secondary; font-size: 12px; overflow: elide; }
+            Text { text: root.label; color: root.danger ? Theme.danger : Theme.fg; font-size: 14px; font-weight: 600; wrap: word-wrap; }
+            if root.sub != "": Text { text: root.sub; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
             if root.pct >= 0: Rectangle {
                 height: 4px;
                 border-radius: 2px;
@@ -77,15 +168,21 @@ export component Row inherits Rectangle {
                     background: root.pct >= 99.5 ? Theme.danger : root.pct >= 80 ? Theme.warning : #3fb950;
                 }
             }
+            for b in root.bars: BarLine { b: b; }
         }
         if root.value != "": Text {
             text: root.value;
             color: root.value-color;
-            font-size: 14px;
+            font-size: 13px;
             vertical-alignment: center;
             overflow: elide;
+            horizontal-stretch: 0;
         }
-        @children
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            @children
+        }
         if root.chevron: Icon {
             width: 18px;
             text: Glyph.chevron-right;
@@ -94,20 +191,18 @@ export component Row inherits Rectangle {
         }
     }
     if root.separator: Rectangle {
-        x: 16px;
         y: parent.height - 1px;
-        width: parent.width - 16px;
         height: 1px;
         background: Theme.border;
     }
 }
 
-// The top of a screen: the way back, named after the previous screen, and the title.
+// The top of a level inside a page: the way back to the level above, named after it, and the title.
 export component ScreenHead inherits VerticalLayout {
     in property <string> back-label;
     in property <string> title;
     callback back;
-    spacing: 6px;
+    spacing: 4px;
     if root.back-label != "": Rectangle {
         height: 30px;
         HorizontalLayout {
@@ -118,5 +213,5 @@ export component ScreenHead inherits VerticalLayout {
         }
         TouchArea { mouse-cursor: pointer; clicked => { root.back(); } }
     }
-    Text { text: root.title; color: Theme.fg; font-size: 24px; font-weight: 700; height: 40px; vertical-alignment: center; }
+    Text { text: root.title; color: Theme.fg; font-size: 18px; font-weight: 700; height: 40px; vertical-alignment: center; }
 }

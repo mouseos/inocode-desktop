@@ -2,7 +2,7 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Switch } from "widgets.slint";
 import { Chip, Field } from "controls.slint";
-import { Group, GroupTitle, Row, ScreenHead } from "ios.slint";
+import { Group, GroupTitle, Row, ScreenHead, Dropdown, RowBar } from "setting_rows.slint";
 
 export struct AcctBar {
     label: string,
@@ -35,9 +35,9 @@ export struct AcctCard {
 export struct ProvSetting {
     key: string,
     title: string,
+    desc: string,
     value: string,
-    cur: int,
-    count: int,
+    opts: [string],
 }
 
 // A row of the top level: one provider.
@@ -45,7 +45,9 @@ export struct ProvRow {
     id: string,
     name: string,
     count: int,
-    // "5時間 平均 42%、週 平均 31%" or ""
+    // The mean usage of the provider's accounts: 5 hours and the week; none when it reports none
+    bars: [RowBar],
+    // The base URL of a provider added through the config
     summary: string,
     // "ok", "warn" or "off"
     tone: string,
@@ -66,6 +68,16 @@ export global AccountsState {
     in property <AcctCard> cur;
     in property <[ProvRow]> provs;
     in property <[ProvSetting]> settings;
+    // The open provider: does it sign in through the account pool, and its connection (config)
+    in property <bool> pooled: true;
+    in property <string> endpoint-url;
+    in property <bool> has-endpoint: false;
+    in property <bool> is-default: false;
+    // The form of an OpenAI-compatible provider
+    in-out property <string> np-name;
+    in-out property <string> np-url;
+    in-out property <string> np-env;
+    in-out property <string> np-key;
     in property <bool> loading: false;
     in property <string> note;
     // Where we are: "" for the top level; the provider; then the account
@@ -73,7 +85,7 @@ export global AccountsState {
     in property <string> provider-name;
     in-out property <string> account-id;
     in-out property <bool> reorder: false;
-    in property <string> total;
+    in property <[RowBar]> total;
     in-out property <string> threshold;
     in-out property <string> confirm-id;
     in-out property <string> rename-text;
@@ -111,13 +123,12 @@ export global AccountsState {
     callback reauth(string);
     callback remove(string);
     callback commit-threshold(string);
-    callback open-providers;
     callback open-provider(string);
     callback open-account(string);
     callback back;
-    // Leave the account section for the settings list
-    callback leave;
     callback choose-setting(string, int);
+    callback make-default;
+    callback add-compatible;
 }
 
 component AddDialog inherits Rectangle {
@@ -138,7 +149,7 @@ component AddDialog inherits Rectangle {
             spacing: 10px;
             HorizontalLayout {
                 spacing: 8px;
-                if AccountsState.add-step == 2: IconButton { glyph: Glyph.arrow-back; clicked => { AccountsState.begin(""); } }
+                if AccountsState.add-step >= 2: IconButton { glyph: Glyph.arrow-back; clicked => { AccountsState.begin(""); } }
                 Text {
                     text: AccountsState.add-step == 1 ? "アカウントを追加" : AccountsState.add-title;
                     color: Theme.fg;
@@ -183,7 +194,7 @@ component AddDialog inherits Rectangle {
                     border-radius: Theme.radius-row;
                     background: fa.has-hover ? Theme.hover : transparent;
                     Text { x: 10px; text: "一覧に無いプロバイダーを追加"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
-                    fa := TouchArea { mouse-cursor: pointer; clicked => { AccountsState.open-providers(); } }
+                    fa := TouchArea { mouse-cursor: pointer; clicked => { AccountsState.add-step = 3; AccountsState.add-title = "OpenAI 互換のプロバイダを追加"; AccountsState.login-note = ""; } }
                 }
             }
             if AccountsState.add-step == 2 && (AccountsState.add-kind == "chatgpt" || AccountsState.add-kind == "claude"): VerticalLayout {
@@ -234,6 +245,25 @@ component AddDialog inherits Rectangle {
                 }
                 if AccountsState.login-note != "": Text { text: AccountsState.login-note; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
             }
+            if AccountsState.add-step == 3: VerticalLayout {
+                spacing: 8px;
+                Field { placeholder: "名前"; text <=> AccountsState.np-name; }
+                Field { placeholder: "base URL(OpenAI 互換のエンドポイント)"; text <=> AccountsState.np-url; }
+                Field { placeholder: "API キーの環境変数名"; text <=> AccountsState.np-env; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Field {
+                        horizontal-stretch: 1;
+                        placeholder: "API キーの値(環境変数名と、どちらか)";
+                        secret: !AccountsState.show-key;
+                        text <=> AccountsState.np-key;
+                        accepted(t) => { AccountsState.add-compatible(); }
+                    }
+                    Chip { label: AccountsState.show-key ? "隠す" : "表示"; clicked => { AccountsState.show-key = !AccountsState.show-key; } }
+                    Chip { label: "追加"; active: true; clicked => { AccountsState.add-compatible(); } }
+                }
+                if AccountsState.login-note != "": Text { text: AccountsState.login-note; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
+            }
             if AccountsState.add-step == 2 && AccountsState.add-kind.starts-with("key:"): VerticalLayout {
                 spacing: 8px;
                 Field { placeholder: "別名"; text <=> AccountsState.add-alias; }
@@ -269,13 +299,14 @@ export component AccountsView inherits Rectangle {
             // Level 1: the providers
             if AccountsState.provider-id == "": VerticalLayout {
                 spacing: 10px;
-                ScreenHead { back-label: "設定"; title: "アカウント"; back => { AccountsState.leave(); } }
+                ScreenHead { title: "プロバイダー"; }
                 if AccountsState.loading && AccountsState.provs.length == 0: Text { text: "読み込み中…"; color: Theme.fg-tertiary; font-size: 13px; }
                 Group {
                     for p[i] in AccountsState.provs: Row {
                         label: p.name;
                         sub: p.summary;
-                        value: p.count + " アカウント";
+                        bars: p.bars;
+                        value: p.count >= 0 ? p.count + " アカウント" : "";
                         tone: p.tone;
                         chevron: true;
                         separator: i < AccountsState.provs.length - 1;
@@ -291,8 +322,25 @@ export component AccountsView inherits Rectangle {
             if AccountsState.provider-id != "" && AccountsState.account-id == "": VerticalLayout {
                 spacing: 10px;
                 ScreenHead { back-label: "アカウント"; title: AccountsState.provider-name; back => { AccountsState.back(); } }
-                if AccountsState.total != "": Text { text: AccountsState.total; color: Theme.fg-secondary; font-size: 12px; }
-                if AccountsState.cards.length == 0 && !AccountsState.loading: Group {
+                if AccountsState.total.length > 0: Group {
+                    Row { label: "全体の使用量"; bars: AccountsState.total; clickable: false; separator: false; }
+                }
+                if AccountsState.has-endpoint: VerticalLayout {
+                    spacing: 0px;
+                    GroupTitle { text: "接続先"; }
+                    Group {
+                        if AccountsState.endpoint-url != "": Row { label: "base URL"; value: AccountsState.endpoint-url; clickable: false; }
+                        Row {
+                            label: AccountsState.is-default ? "既定のプロバイダー" : "既定にする";
+                            value: AccountsState.is-default ? "✓" : "";
+                            value-color: Theme.accent;
+                            clickable: !AccountsState.is-default;
+                            separator: false;
+                            clicked => { AccountsState.make-default(); }
+                        }
+                    }
+                }
+                if AccountsState.cards.length == 0 && !AccountsState.loading && AccountsState.pooled: Group {
                     for r[i] in AccountsState.add-rows: Row {
                         label: r.title;
                         value: r.kind;
@@ -316,15 +364,14 @@ export component AccountsView inherits Rectangle {
                     }
                 }
                 Group {
-                    Row { label: "アカウントを追加"; chevron: true; clicked => { AccountsState.begin(""); } }
+                    if AccountsState.pooled: Row { label: "アカウントを追加"; chevron: true; clicked => { AccountsState.begin(""); } }
                     if AccountsState.cards.length > 1: Row {
                         label: "並べ替え";
-                        value: AccountsState.reorder ? "完了" : "";
-                        value-color: Theme.accent;
-                        chevron: !AccountsState.reorder;
-                        clicked => { AccountsState.reorder = !AccountsState.reorder; }
+                        sub: "上から順に使います。";
+                        clickable: false;
+                        Chip { label: AccountsState.reorder ? "完了" : "並べ替える"; clicked => { AccountsState.reorder = !AccountsState.reorder; } }
                     }
-                    Row { label: "使用量を更新"; separator: false; clicked => { AccountsState.refresh(); } }
+                    if AccountsState.pooled: Row { label: "使用量を更新"; separator: false; clicked => { AccountsState.refresh(); } }
                 }
                 if AccountsState.settings.length > 0: VerticalLayout {
                     spacing: 0px;
@@ -332,17 +379,21 @@ export component AccountsView inherits Rectangle {
                     Group {
                         for st[i] in AccountsState.settings: Row {
                             label: st.title;
-                            value: st.value;
-                            chevron: true;
+                            sub: st.desc;
+                            clickable: false;
                             separator: i < AccountsState.settings.length - 1;
-                            clicked => { AccountsState.choose-setting(st.key, Math.mod(st.cur + 1, max(1, st.count))); }
+                            Dropdown {
+                                options: st.opts;
+                                current: st.value;
+                                selected(n) => { AccountsState.choose-setting(st.key, n); }
+                            }
                         }
                     }
                 }
                 if AccountsState.cards.length > 0: Group {
                     Row {
                         label: "使用量が超える前に次のアカウントへ";
-                        sub: "上から順に使います";
+                        sub: "上のアカウントの使用量が、この値を超える前に、次のアカウントへ切り替えます。";
                         separator: false;
                         clickable: false;
                         VerticalLayout {

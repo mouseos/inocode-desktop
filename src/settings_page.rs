@@ -25,7 +25,6 @@ enum S {
     Archive,
     Usage,
     Account,
-    Providers,
     Hooks,
     Skills,
     Mcp,
@@ -42,9 +41,8 @@ fn nav() -> Vec<(S, &'static str)> {
         (S::Shortcuts, "キーボードショートカット"),
         (S::Archive, "アーカイブ済みチャット"),
         (S::Usage, "使用量"),
-        (S::Account, "アカウント"),
+        (S::Account, "プロバイダー"),
         (S::Head, "このコンピュータ"),
-        (S::Providers, "モデルプロバイダー"),
         (S::Hooks, "フック"),
         (S::Head, "連携"),
         (S::Skills, "スキル"),
@@ -53,6 +51,46 @@ fn nav() -> Vec<(S, &'static str)> {
         (S::Inocode, "InoCode"),
         (S::Stats, "統計"),
     ]
+}
+
+fn glyph_of(s: S) -> &'static str {
+    match s {
+        S::General => "\u{e8b8}",
+        S::Config => "\u{e429}",
+        S::Personal => "\u{e7fd}",
+        S::Shortcuts => "\u{e312}",
+        S::Archive => "\u{e149}",
+        S::Usage => "\u{e26b}",
+        S::Account => "\u{e875}",
+        S::Hooks => "\u{e86f}",
+        S::Skills => "\u{e87b}",
+        S::Mcp => "\u{e9f4}",
+        S::Inocode => "\u{e1b1}",
+        S::Stats => "\u{e4fc}",
+        _ => "",
+    }
+}
+
+/// The list of sections on the left, kept to those whose name has `filter` in it.
+fn show_nav(app: &AppWindow, filter: &str) {
+    let q = filter.trim().to_lowercase();
+    let all = nav();
+    let mut items: Vec<NavItem> = Vec::new();
+    let mut head: Option<NavItem> = None;
+    for (i, (sec, label)) in all.iter().enumerate() {
+        if *sec == S::Head {
+            head = Some(NavItem { label: (*label).into(), heading: true, index: i as i32, glyph: "".into() });
+            continue;
+        }
+        if !q.is_empty() && !label.to_lowercase().contains(&q) {
+            continue;
+        }
+        if let Some(h) = head.take() {
+            items.push(h);
+        }
+        items.push(NavItem { label: (*label).into(), heading: false, index: i as i32, glyph: glyph_of(*sec).into() });
+    }
+    app.global::<SettingsPageState>().set_sections(ModelRc::from(Rc::new(VecModel::from(items))));
 }
 
 fn index_of(s: S) -> i32 {
@@ -126,8 +164,15 @@ fn row(id: &str, title: &str, desc: &str, value: &str, kind: i32, on: bool) -> S
     }
 }
 
+/// The same row with a description under its title.
+fn described(mut r: SRow, desc: &str) -> SRow {
+    r.desc = desc.into();
+    r
+}
+
 fn choice(id: &str, title: &str, value: &str, opts: Vec<String>) -> SRow {
-    let mut r = row(id, title, "", value, 3, false);
+    let few = opts.len() <= 3 && opts.iter().map(|o| o.chars().count()).sum::<usize>() <= 12;
+    let mut r = row(id, title, "", value, if few { 7 } else { 3 }, false);
     r.cur = opts.iter().position(|o| o == value).unwrap_or(0) as i32;
     r.opts = strings(opts);
     r
@@ -198,12 +243,6 @@ pub(crate) fn show_accounts(app: &AppWindow) {
     load(app, index_of(S::Account));
 }
 
-/// Show the model providers page.
-pub(crate) fn show_providers(app: &AppWindow) {
-    app.global::<SettingsPageState>().set_open(true);
-    load(app, index_of(S::Providers));
-}
-
 pub(crate) fn open(app: &AppWindow) {
     show_home(app);
 }
@@ -212,8 +251,8 @@ pub(crate) fn open(app: &AppWindow) {
 pub(crate) fn show_home(app: &AppWindow) {
     let s = app.global::<SettingsPageState>();
     s.set_open(true);
-    s.set_home(true);
-    crate::nav::visit(app, crate::nav::Entry::Settings(-1));
+    let cur = s.get_section();
+    load(app, if cur <= 0 { index_of(S::General) } else { cur });
 }
 
 pub(crate) fn open_usage(app: &AppWindow) {
@@ -293,8 +332,13 @@ fn general_rows(config: &Value) -> Vec<SRow> {
     let follow = lookup(config, "desktop.followUpQueueMode").and_then(Value::as_str).unwrap_or("queue");
     let shown = FOLLOW_UP.iter().find(|(_, w)| *w == follow).map(|(s, _)| *s).unwrap_or(FOLLOW_UP[0].0);
     vec![
-        choice("scheme", "テーマ", SCHEMES[scheme.min(2)], SCHEMES.iter().map(|s| s.to_string()).collect()),
-        choice("follow", "フォローアップの動作", shown, FOLLOW_UP.iter().map(|(s, _)| s.to_string()).collect()),
+        row("", "外観", "", "", 6, false),
+        described(choice("scheme", "テーマ", SCHEMES[scheme.min(2)], SCHEMES.iter().map(|s| s.to_string()).collect()), "ライト、ダーク、またはシステムの設定に合わせます。"),
+        row("", "チャット", "", "", 6, false),
+        described(
+            choice("follow", "フォローアップの動作", shown, FOLLOW_UP.iter().map(|(s, _)| s.to_string()).collect()),
+            "実行中に送ったメッセージを、キューに追加するか、すぐ反映するか。",
+        ),
     ]
 }
 
@@ -303,7 +347,13 @@ fn config_rows(config: &Value) -> Vec<SRow> {
         let (key, label, opts) = AGENT_DEFAULTS.iter().find(|(k, _, _)| *k == key).copied().unwrap();
         let wire = lookup(config, key).and_then(Value::as_str).unwrap_or("");
         let shown = opts.iter().find(|(_, w)| *w == wire).map(|(s, _)| *s).unwrap_or("");
-        choice(&format!("cfg:{key}"), label, shown, opts.iter().map(|(s, _)| s.to_string()).collect())
+        let desc = match key {
+            "approval_policy" => "ツールやコマンドを実行する前に、承認を求める条件。",
+            "sandbox_mode" => "コマンドを実行するときの、ファイルへのアクセスの範囲。",
+            "web_search" => "モデルがウェブ検索ツールを使う方法。",
+            _ => "",
+        };
+        described(choice(&format!("cfg:{key}"), label, shown, opts.iter().map(|(s, _)| s.to_string()).collect()), desc)
     };
     let net = lookup(config, "sandbox_workspace_write.network_access").and_then(Value::as_bool).unwrap_or(false);
     vec![
@@ -311,7 +361,7 @@ fn config_rows(config: &Value) -> Vec<SRow> {
         row("", "承認とサンドボックス", "", "", 6, false),
         default_row("approval_policy"),
         default_row("sandbox_mode"),
-        row("cfgb:sandbox_workspace_write.network_access", "ネットワークアクセスを許可", "", "", 1, net),
+        row("cfgb:sandbox_workspace_write.network_access", "ネットワークアクセスを許可", "ワークスペース内での書き込みのとき、コマンドがネットワークを使えるようにします。", "", 1, net),
         row("", "ツール", "", "", 6, false),
         default_row("web_search"),
     ]
@@ -321,8 +371,8 @@ fn personal_rows(config: &Value) -> Vec<SRow> {
     let b = |k: &str, d: bool| lookup(config, k).and_then(Value::as_bool).unwrap_or(d);
     vec![
         row("", "メモリ", "", "", 6, false),
-        row("cfgb:memories.use_memories", "Codex のメモリを有効にする", "", "", 1, b("memories.use_memories", false)),
-        row("cfgb:memories.generate_memories", "メモリを生成する", "", "", 1, b("memories.generate_memories", false)),
+        row("cfgb:memories.use_memories", "Codex のメモリを有効にする", "過去のチャットから作ったメモリを、新しいチャットで使います。", "", 1, b("memories.use_memories", false)),
+        row("cfgb:memories.generate_memories", "メモリを生成する", "チャットの内容から、メモリを作ります。", "", 1, b("memories.generate_memories", false)),
         // The config key says the opposite: disable_on_external_context.
         row("cfgi:memories.disable_on_external_context", "ツールを使ったチャットからのメモリ生成を許可", "", "", 1, !b("memories.disable_on_external_context", false)),
         row("memory-reset", "Codex のメモリをすべて削除", "", "削除", 2, false),
@@ -337,7 +387,6 @@ fn load(app: &AppWindow, section: i32) {
         idx += 1;
     }
     DATA.with(|d| d.borrow_mut().section = idx);
-    s.set_home(false);
     crate::nav::visit(app, crate::nav::Entry::Settings(idx as i32));
     s.set_section(idx as i32);
     s.set_title(list[idx].1.into());
@@ -368,11 +417,6 @@ fn load(app: &AppWindow, section: i32) {
             s.set_layout(2);
             s.set_loading(false);
             crate::accounts_page::open(app);
-        }
-        S::Providers => {
-            s.set_layout(3);
-            rpc("spage.prov", "modelProvider/list", json!({}));
-            rpc("spage.provlist", "inocode/providers/list", json!({}));
         }
         S::Hooks => {
             let cwd = STATE.with(|st| st.borrow().active_cwd.clone());
@@ -414,11 +458,11 @@ pub(crate) fn write_config(key: &str, value: Value) {
     rpc("spage.cfg.write", "config/value/write", json!({ "keyPath": key, "value": value, "mergeStrategy": "replace" }));
 }
 
-fn upsert_config(key: &str, value: Value) {
+pub(crate) fn upsert_config(key: &str, value: Value) {
     rpc("spage.cfg.write", "config/value/write", json!({ "keyPath": key, "value": value, "mergeStrategy": "upsert" }));
 }
 
-fn slug(name: &str) -> String {
+pub(crate) fn slug(name: &str) -> String {
     let s: String = name.trim().to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
     let s = s.trim_matches('-').to_string();
     if s.is_empty() { "custom".to_string() } else { s }
@@ -427,29 +471,11 @@ fn slug(name: &str) -> String {
 pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     HANDLE.with(|c| *c.borrow_mut() = Some(handle.clone()));
     let st = app.global::<SettingsPageState>();
-    let items: Vec<NavItem> = nav().into_iter().map(|(s, l)| NavItem { label: l.into(), heading: s == S::Head }).collect();
-    st.set_sections(ModelRc::from(Rc::new(VecModel::from(items))));
-    let mut groups: Vec<NavGroup> = Vec::new();
-    let mut entries: Vec<NavEntry> = Vec::new();
-    let mut title = SharedString::default();
-    for (i, (sec, label)) in nav().into_iter().enumerate() {
-        if sec == S::Head {
-            if !entries.is_empty() {
-                groups.push(NavGroup { title: title.clone(), items: ModelRc::from(Rc::new(VecModel::from(std::mem::take(&mut entries)))) });
-            }
-            title = (*label).into();
-        } else {
-            entries.push(NavEntry { label: label.into(), index: i as i32 });
-        }
-    }
-    if !entries.is_empty() {
-        groups.push(NavGroup { title, items: ModelRc::from(Rc::new(VecModel::from(entries))) });
-    }
-    st.set_home_groups(ModelRc::from(Rc::new(VecModel::from(groups))));
+    show_nav(app, "");
     let weak = app.as_weak();
-    st.on_go_home(move || {
+    st.on_nav_search_changed(move |t| {
         if let Some(app) = weak.upgrade() {
-            show_home(&app);
+            show_nav(&app, &t);
         }
     });
 
@@ -469,8 +495,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     let weak = app.as_weak();
     st.on_open_providers(move || {
         if let Some(app) = weak.upgrade() {
-            app.global::<SettingsPageState>().set_open(true);
-            load(&app, index_of(S::Providers));
+            crate::accounts_page::begin(&app, "");
         }
     });
     let weak = app.as_weak();
@@ -550,27 +575,6 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         set_rows(&app, shortcut_rows());
     });
     let weak = app.as_weak();
-    st.on_add_provider(move || {
-        let Some(app) = weak.upgrade() else { return };
-        let s = app.global::<SettingsPageState>();
-        let (name, url) = (s.get_prov_name().trim().to_string(), s.get_prov_url().trim().to_string());
-        let (env, key) = (s.get_prov_env().trim().to_string(), s.get_prov_key().trim().to_string());
-        if name.is_empty() || url.is_empty() || (env.is_empty() && key.is_empty()) {
-            note(&app, "名前、base URL、API キー(環境変数名か値)を入力してください");
-            return;
-        }
-        let mut cfg = json!({ "name": name, "base_url": url, "wire_api": "responses", "requires_openai_auth": false });
-        if !env.is_empty() {
-            cfg["env_key"] = json!(env);
-        }
-        if !key.is_empty() {
-            cfg["experimental_bearer_token"] = json!(key);
-        }
-        s.set_prov_key("".into());
-        upsert_config(&format!("model_providers.{}", slug(&name)), cfg);
-        note(&app, "追加しています…");
-    });
-    let weak = app.as_weak();
     st.on_save_raw(move || {
         let Some(app) = weak.upgrade() else { return };
         let s = app.global::<SettingsPageState>();
@@ -615,7 +619,6 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                 "spage.login.key" | "spage.addkey.other" | "spage.claude.start" | "spage.claude.complete" => {
                     note(app, &format!("できませんでした: {e}"))
                 }
-                "spage.provlist" => {}
                 t if t.ends_with(".write") || t == "spage.memory.reset" => {
                     app.global::<AppState>().set_status(format!("設定を変更できませんでした: {e}").into());
                     app.global::<AppState>().set_status_level(2);
@@ -676,65 +679,9 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
         }
         "spage.cfg.write" => {
             note(app, "");
-            match here {
-                Some(S::Providers) => load(app, current as i32),
-                _ => rpc("spage.config", "config/read", json!({ "includeLayers": false })),
-            }
-        }
-        "spage.prov" => {
-            let default = v.get("defaultProviderId").and_then(Value::as_str).unwrap_or("");
-            let rows: Vec<SRow> = v
-                .get("data")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .map(|p| {
-                    let id = p.get("id").and_then(Value::as_str).unwrap_or("");
-                    let name = p.get("name").and_then(Value::as_str).unwrap_or(id);
-                    let url = p.get("baseUrl").and_then(Value::as_str).unwrap_or("");
-                    if id == default {
-                        row("", name, url, "既定", 0, false)
-                    } else {
-                        row(&format!("prov-default:{id}"), name, url, "既定にする", 2, false)
-                    }
-                })
-                .collect();
-            set_rows(app, rows);
-        }
-        "spage.provlist" => {
-            let list: Vec<(String, String, Vec<String>, i64)> = v
-                .get("providers")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .map(|p| {
-                    (
-                        p.get("id").and_then(Value::as_str).unwrap_or("").to_string(),
-                        p.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
-                        p.get("authKinds").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect(),
-                        p.get("accountCount").and_then(Value::as_i64).unwrap_or(0),
-                    )
-                })
-                .collect();
-            DATA.with(|d| d.borrow_mut().providers = list.clone());
-            match here {
-                Some(S::Providers) => {
-                    // The providers the account pool signs in to, above the config providers.
-                    let mut rows: Vec<SRow> = list
-                        .iter()
-                        .map(|p| row("", &p.1, &p.2.iter().map(|k| auth_kind_name(k)).collect::<Vec<_>>().join(" / "), &format!("{} アカウント", p.3), 0, false))
-                        .collect();
-                    let cur = app.global::<SettingsPageState>().get_rows();
-                    for i in 0..cur.row_count() {
-                        if let Some(r) = cur.row_data(i) {
-                            if !rows.iter().any(|x| x.title == r.title) {
-                                rows.push(r);
-                            }
-                        }
-                    }
-                    set_rows(app, rows);
-                }
-                _ => {}
+            crate::accounts_page::reload_endpoints();
+            if !matches!(here, Some(S::Account)) {
+                rpc("spage.config", "config/read", json!({ "includeLayers": false }));
             }
         }
         "spage.claude.start" => {
@@ -962,11 +909,3 @@ fn usage_reply(app: &AppWindow, tag: &str, v: Option<Value>) {
     s.set_loading(false);
 }
 
-fn auth_kind_name(k: &str) -> &str {
-    match k {
-        "chatgpt" => "ChatGPT",
-        "claudeOauth" => "サブスク",
-        "apiKey" => "API キー",
-        other => other,
-    }
-}

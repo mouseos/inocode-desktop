@@ -10,6 +10,8 @@
         "kind": "chatgpt",
         "provider": "openai",
         "alias": "メイン",
+        "email": "main.user@example.test",
+        "name": "山田 太郎",
         "plan": "pro",
         "usage": {
           "fiveHour": {
@@ -29,15 +31,15 @@
         "priority": 10,
         "lastUsedAt": 1794389000,
         "inUse": true,
-        "isDefault": true,
-        "email": "main@example.com",
-        "name": "Main User"
+        "isDefault": true
       },
       {
         "id": "chatgpt-91be77aa02c4d5e6",
         "kind": "chatgpt",
         "provider": "openai",
         "alias": "サブ",
+        "email": "sub.user@example.test",
+        "name": "山田 太郎",
         "plan": "plus",
         "usage": {
           "fiveHour": {
@@ -57,15 +59,15 @@
         "priority": 5,
         "lastUsedAt": 1794380000,
         "inUse": false,
-        "isDefault": false,
-        "email": "sub@example.com",
-        "name": "Sub User"
+        "isDefault": false
       },
       {
         "id": "apikey-3f9c1a",
         "kind": "apiKey",
         "provider": "openai",
         "alias": "予備キー",
+        "email": null,
+        "name": null,
         "plan": null,
         "usage": null,
         "state": "active",
@@ -80,6 +82,8 @@
         "kind": "chatgpt",
         "provider": "openai",
         "alias": "チーム",
+        "email": "team.user@example.test",
+        "name": "山田 太郎",
         "plan": "team",
         "usage": {
           "fiveHour": {
@@ -99,15 +103,15 @@
         "priority": 5,
         "lastUsedAt": null,
         "inUse": false,
-        "isDefault": false,
-        "email": "claude@example.com",
-        "name": "Claude User"
+        "isDefault": false
       },
       {
         "id": "claude-5d2a7e0b91c3f4a8",
         "kind": "claudeOauth",
         "provider": "claude",
-        "alias": "クロード",
+        "alias": "Claude",
+        "email": "claude.user@example.test",
+        "name": "山田 太郎",
         "plan": "max",
         "usage": {
           "fiveHour": {
@@ -127,11 +131,9 @@
         "priority": 0,
         "lastUsedAt": 1794388000,
         "inUse": true,
-        "isDefault": false,
-        "email": "claude@example.com",
-        "name": "Claude User"
+        "isDefault": false
       }
     ]
   },
-  "note": "メールアドレスは載せない。識別は alias と plan。usage は ChatGPT のみ(API キーは null)。時刻は Unix 秒。id は chatgpt- + (chatgpt_user_id とワークスペース ID のハッシュ)、API キーは apikey- + 短いハッシュ。isDefault は従来の auth.json のログイン。cooldown の間は cooldownUntil が入る。 provider は openai か claude。Claude の OAuth の usage は、最後の Messages の応答の anthropic-ratelimit-unified-5h / 7d ヘッダー(利用率と、リセット時刻)から、リクエストの後に更新される(一覧の取得では取りに行かない)。まだ 1 回もリクエストしていないときは null。一覧は両方のプロバイダの全件。"
+  "note": "メールアドレスは載せない。識別は alias と plan。usage は ChatGPT のみ(API キーは null)。時刻は Unix 秒。id は chatgpt- + (chatgpt_user_id とワークスペース ID のハッシュ)、API キーは apikey- + 短いハッシュ。isDefault は従来の auth.json のログイン。cooldown の間は cooldownUntil が入る。 provider は openai か claude。Claude の OAuth の usage は、最後の Messages の応答の anthropic-ratelimit-unified-5h / 7d ヘッダー(利用率と、リセット時刻)から、リクエストの後に更新される(一覧の取得では取りに行かない)。まだ 1 回もリクエストしていないときは null。一覧は両方のプロバイダの全件。 email と name は、アカウント画面で「どれが何のアカウントか」を分かるようにするためのもの(ChatGPT: ID トークンの email と name、Claude: profile の応答)。取れないときと API キーは null。ローカルのメタにだけ保存し、通知(switched など)とログには載せない。GUI の左下のアカウント行には出さない。"
 }

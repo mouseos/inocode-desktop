@@ -1,7 +1,7 @@
 {
   "method": "inocode/accounts/login/start",
   "request": {
-    "alias": "クロード",
+    "alias": "Claude",
     "provider": "claude",
     "method": "oauthCode"
   },
