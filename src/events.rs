@@ -100,15 +100,18 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::History(list) => {
             let rows: Vec<Message> = list
                 .into_iter()
-                .map(|Msg { id, role, text, detail }| {
+                .map(|Msg { id, role, text, detail, turn_id, item_index }| {
                     let blocks = if role == "assistant" { crate::chat_md::blocks_of(&text) } else { Default::default() };
-                    Message { id: id.into(), role: role.into(), text: text.into(), detail: clip_detail(&detail).into(), blocks }
+                    let mut m = Message { id: id.into(), role: role.into(), text: text.into(), detail: clip_detail(&detail).into(), blocks, turn_id: turn_id.into(), item_index, ..Default::default() };
+                    crate::reply::decorate(&mut m);
+                    m
                 })
                 .collect();
             crate::chat_md::reset();
             app.global::<AppState>().set_messages(ModelRc::from(Rc::new(VecModel::from(rows))));
             app.invoke_scroll_bottom();
             crate::chat_actions::after_history(app);
+            crate::reply::number_all(app);
         }
         Event::AssistantStart => {
             // The answer before is final now; a new one starts.
@@ -167,6 +170,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         }
         Event::TurnDone { interrupted } => {
             crate::chat_md::sync_last(app, true);
+            crate::reply::after_turn(app);
             crate::metrics::turn_done(app);
             let mut st = state.borrow_mut();
             st.busy = false;
@@ -213,6 +217,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             crate::sidebar::on_rpc(app, &tag, &result);
             crate::chat_actions::on_rpc(app, &tag, &result);
             crate::coding::on_rpc(app, &tag, &result);
+            crate::reply::on_rpc(app, &tag, &result);
         }
         Event::Notify { method, params } => {
             crate::panel_data::on_notify(app, &method, &params);

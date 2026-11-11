@@ -21,6 +21,7 @@ import { SidebarState } from "menus.slint";
 export { Tabs } from "tabs.slint";
 export { AppState, Message, Approval, ALine } from "state.slint";
 export { MdState, MdRow, MdLine } from "markdown.slint";
+export { ReplyState, ReplyRef } from "reply.slint";
 export { GitState, GitFile, GitLine } from "git_panel.slint";
 export { SidebarState } from "menus.slint";
 export { PaletteState } from "palette.slint";
@@ -55,6 +56,7 @@ export component AppWindow inherits Window {
     in-out property <string> prompt;
     callback submit(string);
     public function scroll-bottom() { home.scroll-bottom(); }
+    public function scroll-to(index: int) { home.scroll-to(index); }
 
     // Ctrl+K opens the command palette from anywhere in the window (key events bubble up).
     FocusScope {

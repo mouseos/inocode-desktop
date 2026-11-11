@@ -232,7 +232,9 @@ pub fn history_from_thread(thread: &Value) -> Vec<Msg> {
     let mut out = Vec::new();
     let turns = thread.get("turns").and_then(Value::as_array).cloned().unwrap_or_default();
     for turn in turns {
-        for item in turn.get("items").and_then(Value::as_array).cloned().unwrap_or_default() {
+        let turn_id = turn.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+        for (item_index, item) in turn.get("items").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().enumerate() {
+            let item_index = item_index as i32;
             let id = item_id(&item).unwrap_or_default();
             match item.get("type").and_then(Value::as_str) {
                 Some("userMessage") => {
@@ -247,15 +249,15 @@ pub fn history_from_thread(thread: &Value) -> Vec<Msg> {
                                 .join("\n")
                         })
                         .unwrap_or_default();
-                    out.push(Msg { id, role: "user".into(), text, detail: String::new() });
+                    out.push(Msg { id, role: "user".into(), text, detail: String::new(), turn_id: turn_id.clone(), item_index });
                 }
                 Some("agentMessage") => {
                     let text = item.get("text").and_then(Value::as_str).unwrap_or("").to_string();
-                    out.push(Msg { id, role: "assistant".into(), text, detail: String::new() });
+                    out.push(Msg { id, role: "assistant".into(), text, detail: String::new(), turn_id: turn_id.clone(), item_index });
                 }
                 _ => {
                     if let Some(text) = tool_text(&item) {
-                        out.push(Msg { id, role: "tool".into(), text, detail: tool_detail(&item) });
+                        out.push(Msg { id, role: "tool".into(), text, detail: tool_detail(&item), turn_id: turn_id.clone(), item_index });
                     }
                 }
             }

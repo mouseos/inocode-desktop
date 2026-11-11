@@ -19,6 +19,10 @@ pub struct Msg {
     pub text: String,
     /// Body of an expandable tool row.
     pub detail: String,
+    /// The turn the message belongs to (its Turn.id) and its position in that turn's items:
+    /// what inocode/messages/resolve takes to name the message.
+    pub turn_id: String,
+    pub item_index: i32,
 }
 
 #[derive(Debug, Clone, PartialEq)]

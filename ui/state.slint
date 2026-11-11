@@ -2,6 +2,7 @@ import { IntelligenceState, PermState, ProjectState } from "pickers.slint";
 import { ProjectItem } from "sidebar.slint";
 import { DiscoveryState } from "settings.slint";
 import { MdRow } from "markdown.slint";
+import { ReplyRef } from "reply.slint";
 
 // One line of an approval's body (command, diff, permissions). kind: 0 plain, 1 added,
 // 2 removed, 3 file header, 4 note.
@@ -32,6 +33,14 @@ export struct Message {
     detail: string,
     // The blocks of an assistant answer (markdown).
     blocks: [MdRow],
+    // Its number "#<turn>.<item>" (user and assistant messages; empty until the server named it).
+    ref-id: string,
+    // Where it sits in the thread: what the server needs to give the number.
+    turn-id: string,
+    item-index: int,
+    // A user message that replies to others: those, and the text without the reply lines.
+    refs: [ReplyRef],
+    shown: string,
 }
 
 // チャット画面の状態とコールバックをここに集約する。Rust は app.global::<AppState>() で触り、

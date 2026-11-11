@@ -52,6 +52,9 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         let Some(app) = weak.upgrade() else { return };
         let model = app.global::<AppState>().get_messages();
         let Some(msg) = model.row_data(index as usize) else { return };
+        if crate::reply::act(&app, &kind, index as usize) {
+            return;
+        }
         if kind == "copy" || kind == "copy-detail" {
             let text = if kind == "copy" { msg.text.to_string() } else { msg.detail.to_string() };
             match arboard::Clipboard::new().and_then(|mut c| c.set_text(text)) {

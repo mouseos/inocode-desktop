@@ -142,7 +142,9 @@ pub(crate) fn messages_with<R>(app: &AppWindow, f: impl FnOnce(&VecModel<Message
 }
 
 pub(crate) fn push(model: &VecModel<Message>, id: &str, role: &str, text: &str) {
-    model.push(Message { id: id.into(), role: role.into(), text: text.into(), detail: "".into(), ..Default::default() });
+    let mut m = Message { id: id.into(), role: role.into(), text: text.into(), detail: "".into(), ..Default::default() };
+    crate::reply::decorate(&mut m);
+    model.push(m);
 }
 
 pub(crate) fn rebuild_projects(app: &AppWindow, state: &State) {

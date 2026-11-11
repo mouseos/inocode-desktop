@@ -2,4 +2,7 @@
 export global MessageActions {
     // kind: "copy", "edit", "rewind" or "fork"; the index is the row in AppState.messages.
     callback act(string, int);
+    // Reply to the selected part of a message: the row, and the start and end of the selection
+    // (bytes of the message text).
+    callback reply-selection(int, int, int);
 }

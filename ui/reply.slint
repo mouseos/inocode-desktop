@@ -1,0 +1,63 @@
+import { Theme } from "theme.slint";
+import { IconButton } from "widgets.slint";
+import { Glyph } from "icons.slint";
+
+// Replying to a message by its number (#<turn>.<item>). Rust: src/reply.rs.
+
+export struct ReplyRef {
+    id: string,
+    // the start of the message it points at
+    hint: string,
+}
+
+export global ReplyState {
+    // The messages the next message replies to.
+    in property <[ReplyRef]> chips;
+    callback remove(int);
+    // A chip of a message was clicked: scroll to the message it points at.
+    callback jump(string);
+}
+
+// A reply in a message of the chat: the number and the start of the text.
+export component RefChip inherits Rectangle {
+    in property <ReplyRef> item;
+    height: 22px;
+    width: min(t.preferred-width + 16px, 460px);
+    border-radius: 11px;
+    background: ta.has-hover ? Theme.pressed : Theme.hover;
+    t := Text {
+        x: 8px;
+        width: parent.width - 16px;
+        text: "\u{21a9} " + root.item.id + " " + root.item.hint;
+        color: Theme.fg-secondary;
+        font-size: 11px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { ReplyState.jump(root.item.id); } }
+}
+
+// The replies that are ready, above the text field of the composer.
+export component ReplyChips inherits HorizontalLayout {
+    spacing: 4px;
+    alignment: start;
+    for c[i] in ReplyState.chips: Rectangle {
+        height: 24px;
+        width: min(lbl.preferred-width + 44px, 360px);
+        border-radius: 12px;
+        background: Theme.hover;
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 2px;
+            spacing: 4px;
+            lbl := Text {
+                text: "\u{21a9} " + c.id + " " + c.hint;
+                color: Theme.fg;
+                font-size: 12px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            IconButton { glyph: Glyph.close; box-size: 20px; icon-size: 12px; y: 2px; clicked => { ReplyState.remove(i); } }
+        }
+    }
+}

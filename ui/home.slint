@@ -12,6 +12,7 @@ import { AccountsState } from "accounts_page.slint";
 import { AttachState, AttachChips, SuggestList } from "attach.slint";
 import { PromptState, QuestionCard, QueueList, ErrorBanner } from "prompts.slint";
 import { MarkdownView } from "markdown.slint";
+import { ReplyState, ReplyChips, RefChip } from "reply.slint";
 import { GitState, GitChip, GitPanel } from "git_panel.slint";
 
 component ApprovalButton inherits Rectangle {
@@ -217,6 +218,7 @@ component Composer inherits VerticalLayout {
                 padding-left: 14px;
                 spacing: 4px;
 
+                if ReplyState.chips.length > 0: ReplyChips { }
                 if AttachState.items.length > 0: AttachChips { }
                 Rectangle {
                     min-height: max(40px, input.preferred-height + 8px);
@@ -300,6 +302,8 @@ component ActionRow inherits HorizontalLayout {
     in property <bool> selecting;
     // The last message of the conversation: only its answer can be made again.
     in property <bool> last;
+    // The number of the message (#<turn>.<item>); clicking it copies it.
+    in property <string> ref-id;
     callback toggle-select;
     // Copy shows a check mark for 1.2 s, as in Claude Desktop.
     property <bool> copied: false;
@@ -320,6 +324,14 @@ component ActionRow inherits HorizontalLayout {
             MessageActions.act("copy", root.index);
         }
     }
+    IconButton { glyph: "\u{e15e}"; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("reply", root.index); } }
+    if root.ref-id != "": Text {
+        text: root.ref-id;
+        color: Theme.fg-tertiary;
+        font-size: 11px;
+        vertical-alignment: center;
+        TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { MessageActions.act("copy-id", root.index); } }
+    }
     if root.user: IconButton { glyph: Glyph.edit-note; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("edit", root.index); } }
     if root.user: IconButton { glyph: Glyph.replay; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("rewind", root.index); } }
     if root.last && !root.user: IconButton { glyph: "\u{e5d5}"; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("regenerate", root.index); } }
@@ -329,6 +341,12 @@ component ActionRow inherits HorizontalLayout {
 
 component ChatView inherits Rectangle {
     in property <[Message]> messages;
+    // The row to bring to the top (-1: none).
+    property <int> goto: -1;
+    public function scroll-to(index: int) {
+        root.goto = -1;
+        root.goto = index;
+    }
     public function scroll-bottom() {
         flick.content-y = min(0px, flick.height - content.preferred-height);
     }
@@ -343,6 +361,12 @@ component ChatView inherits Rectangle {
             alignment: start;
             for m[mi] in root.messages: HorizontalLayout {
                 property <bool> select-mode: false;
+                property <bool> target: root.goto == mi;
+                changed target => {
+                    if (self.target) {
+                        flick.content-y = -min(self.y, max(content.preferred-height - flick.height, 0px));
+                    }
+                }
                 Rectangle { horizontal-stretch: 1; }
                 VerticalLayout {
                     max-width: Theme.composer-max-width;
@@ -359,8 +383,10 @@ component ChatView inherits Rectangle {
                                 padding: 8px;
                                 padding-left: 12px;
                                 padding-right: 12px;
-                                Text {
-                                    text: m.text;
+                                spacing: 4px;
+                                for r in m.refs: RefChip { item: r; }
+                                if m.refs.length == 0 || m.shown != "": Text {
+                                    text: m.refs.length > 0 ? m.shown : m.text;
                                     wrap: word-wrap;
                                     color: Theme.fg;
                                     font-size: Theme.body-font;
@@ -376,19 +402,33 @@ component ChatView inherits Rectangle {
                         color: Theme.fg;
                         font-size: Theme.body-font;
                     }
-                    if m.role == "assistant" && select-mode: TextInput {
-                        text: m.text;
-                        read-only: true;
-                        wrap: word-wrap;
-                        color: Theme.fg;
-                        font-size: Theme.body-font;
-                        selection-background-color: Theme.accent;
-                        selection-foreground-color: #ffffff;
+                    if m.role == "assistant" && select-mode: VerticalLayout {
+                        spacing: 4px;
+                        sel := TextInput {
+                            text: m.text;
+                            read-only: true;
+                            wrap: word-wrap;
+                            color: Theme.fg;
+                            font-size: Theme.body-font;
+                            selection-background-color: Theme.accent;
+                            selection-foreground-color: #ffffff;
+                        }
+                        if sel.anchor-position-byte-offset != sel.cursor-position-byte-offset: HorizontalLayout {
+                            alignment: start;
+                            ApprovalButton {
+                                label: "選択範囲に返信";
+                                clicked => {
+                                    MessageActions.reply-selection(mi, min(sel.anchor-position-byte-offset, sel.cursor-position-byte-offset), max(sel.anchor-position-byte-offset, sel.cursor-position-byte-offset));
+                                    sel.clear-selection();
+                                }
+                            }
+                        }
                     }
                     if m.role == "tool": ToolRow { text: m.text; detail: m.detail; index: mi; }
                     if m.role != "tool": ActionRow {
                         user: m.role == "user";
                         index: mi;
+                        ref-id: m.ref-id;
                         selecting: select-mode;
                         last: mi == root.messages.length - 1;
                         toggle-select => { select-mode = !select-mode; }
@@ -412,6 +452,7 @@ export component Home inherits Rectangle {
     callback submit(string);
     property <bool> chat-active: AppState.messages.length > 0;
     public function scroll-bottom() { chat.scroll-bottom(); }
+    public function scroll-to(index: int) { chat.scroll-to(index); }
 
     background: Theme.surface;
 
