@@ -22,6 +22,9 @@ struct Data {
     auth_url: String,
     /// The API key kept while the pool answers (fallback to the plain login).
     pending_key: Option<String>,
+    /// The accounts there were when the sign-in started, and the checks made since (a new one means done).
+    ids_at_start: Vec<String>,
+    poll_ticks: u32,
     /// modelProvider/list: (id, name, base URL) and the default provider's id.
     endpoints: Vec<(String, String, String)>,
     default_provider: String,
@@ -32,6 +35,7 @@ struct Data {
 }
 
 thread_local! {
+    static POLL: RefCell<Option<slint::Timer>> = const { RefCell::new(None) };
     static HANDLE: RefCell<Option<Rc<client::Handle>>> = const { RefCell::new(None) };
     static DATA: RefCell<Data> = RefCell::new(Data::default());
 }
@@ -58,7 +62,54 @@ fn detailed(app: &AppWindow, text: &str, full: &str) {
 }
 
 fn login_note(app: &AppWindow, text: &str) {
-    app.global::<AccountsState>().set_login_note(text.into());
+    let st = app.global::<AccountsState>();
+    st.set_login_note(text.into());
+    st.set_login_detail("".into());
+    st.set_login_detail_open(false);
+}
+
+/// A sign-in error: one line, the whole text on request.
+fn login_error(app: &AppWindow, e: &str) {
+    let st = app.global::<AccountsState>();
+    st.set_login_note(crate::errmsg::login_short(e).into());
+    st.set_login_detail(e.into());
+    st.set_login_detail_open(false);
+    // Nothing is in progress any more: the buttons (paste the code, ...) are usable again.
+    stop_poll();
+    DATA.with(|d| d.borrow_mut().login_id = None);
+    st.set_waiting(false);
+}
+
+/// While a sign-in is open, look at the accounts every few seconds: a new one means it is done,
+/// whether or not the notification came.
+fn start_poll() {
+    stop_poll();
+    DATA.with(|d| {
+        let mut d = d.borrow_mut();
+        d.ids_at_start = d.accounts.iter().map(|a| s(a, "id").to_string()).collect();
+        d.poll_ticks = 0;
+    });
+    let t = slint::Timer::default();
+    t.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(3), || {
+        rpc("acct.poll", "inocode/accounts/list", json!({ "refresh": false }));
+    });
+    POLL.with(|p| *p.borrow_mut() = Some(t));
+}
+
+fn stop_poll() {
+    POLL.with(|p| *p.borrow_mut() = None);
+}
+
+/// Cancel a sign-in in progress (closing the dialog, another provider, the button).
+fn cancel_login_now(app: &AppWindow) {
+    stop_poll();
+    if let Some(id) = DATA.with(|d| d.borrow_mut().login_id.take()) {
+        rpc("acct.login.cancel", "inocode/accounts/login/cancel", json!({ "loginId": id }));
+    }
+    let st = app.global::<AccountsState>();
+    st.set_waiting(false);
+    st.set_code_open(false);
+    st.set_device_code("".into());
 }
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
@@ -67,6 +118,7 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
 
 /// The page was opened: load the accounts, the providers and the policy.
 pub(crate) fn open(app: &AppWindow) {
+    cancel_login_now(app);
     {
         let st = app.global::<AccountsState>();
         st.set_provider_id("".into());
@@ -162,6 +214,9 @@ fn visit(app: &AppWindow) {
 
 /// Open a provider's screen.
 fn enter_provider(app: &AppWindow, id: &str, record: bool) {
+    if app.global::<AccountsState>().get_provider_id().as_str() != id {
+        cancel_login_now(app);
+    }
     let st = app.global::<AccountsState>();
     st.set_provider_id(id.into());
     st.set_provider_name(crate::settings_page::provider_name(id).into());
@@ -383,7 +438,7 @@ fn card(a: &Value, now: i64) -> AcctCard {
         "cooldown" => ("今は使えません", "warn"),
         "disabled" => ("停止中", "off"),
         _ if in_use => ("使用中", "ok"),
-        _ => ("待機中", "ok"),
+        _ => ("使用できます", "ok"),
     };
     AcctCard {
         id: s(a, "id").into(),
@@ -477,13 +532,9 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     let weak = app.as_weak();
     st.on_close_add(move || {
         let Some(app) = weak.upgrade() else { return };
-        if let Some(id) = DATA.with(|d| d.borrow_mut().login_id.take()) {
-            rpc("acct.login.cancel", "inocode/accounts/login/cancel", json!({ "loginId": id }));
-        }
+        cancel_login_now(&app);
         let st = app.global::<AccountsState>();
         st.set_add_step(0);
-        st.set_waiting(false);
-        st.set_code_open(false);
     });
     let weak = app.as_weak();
     st.on_search_changed(move |_| {
@@ -519,13 +570,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     let weak = app.as_weak();
     st.on_cancel_login(move || {
         let Some(app) = weak.upgrade() else { return };
-        if let Some(id) = DATA.with(|d| d.borrow_mut().login_id.take()) {
-            rpc("acct.login.cancel", "inocode/accounts/login/cancel", json!({ "loginId": id }));
-        }
-        let st = app.global::<AccountsState>();
-        st.set_waiting(false);
-        st.set_code_open(false);
-        st.set_device_code("".into());
+        cancel_login_now(&app);
         login_note(&app, "");
     });
     let weak = app.as_weak();
@@ -675,6 +720,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     let weak = app.as_weak();
     st.on_back(move || {
         let Some(app) = weak.upgrade() else { return };
+        cancel_login_now(&app);
         let st = app.global::<AccountsState>();
         if !st.get_account_id().is_empty() {
             st.set_account_id("".into());
@@ -750,7 +796,9 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                         login_note(app, &format!("追加できませんでした: {}", crate::errmsg::short(e)));
                     }
                 }
-                "acct.login.start" | "acct.login.complete" | "acct.login.key" => login_note(app, &format!("できませんでした: {}", crate::errmsg::short(e))),
+                "acct.login.start" | "acct.login.complete" => login_error(app, e),
+                "acct.login.key" => login_note(app, &format!("できませんでした: {}", crate::errmsg::short(e))),
+                "acct.poll" => {}
                 "acct.providers" | "acct.policy" => {}
                 _ => detailed(app, &format!("できませんでした: {}", crate::errmsg::short(e)), e),
             }
@@ -834,7 +882,34 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
             render(app);
         }
         "acct.act" => refresh(false),
+        "acct.poll" => {
+            let list = v.get("accounts").and_then(Value::as_array).cloned().unwrap_or_default();
+            let (new_one, ticks) = DATA.with(|d| {
+                let mut d = d.borrow_mut();
+                d.poll_ticks += 1;
+                let new_one = list.iter().any(|a| !d.ids_at_start.iter().any(|i| i == s(a, "id")));
+                (new_one, d.poll_ticks)
+            });
+            if st.get_waiting() && new_one {
+                stop_poll();
+                DATA.with(|d| {
+                    let mut d = d.borrow_mut();
+                    d.accounts = list;
+                    d.login_id = None;
+                });
+                st.set_waiting(false);
+                st.set_code_open(false);
+                st.set_add_step(0);
+                note(app, "ログインしました");
+                render(app);
+            } else if ticks > 100 {
+                // Five minutes: stop waiting.
+                cancel_login_now(app);
+                login_note(app, "時間切れです。もう一度ログインしてください");
+            }
+        }
         "acct.login.start" => {
+            start_poll();
             DATA.with(|d| {
                 let mut d = d.borrow_mut();
                 d.login_id = v.get("loginId").and_then(Value::as_str).map(str::to_string);
@@ -876,6 +951,7 @@ pub(crate) fn on_notify(app: &AppWindow, method: &str, params: &Value) {
         "inocode/accounts/loginCompleted" => {
             let st = app.global::<AccountsState>();
             DATA.with(|d| d.borrow_mut().login_id = None);
+            stop_poll();
             st.set_waiting(false);
             st.set_code_open(false);
             st.set_device_code("".into());
@@ -885,7 +961,11 @@ pub(crate) fn on_notify(app: &AppWindow, method: &str, params: &Value) {
                 refresh(false);
             } else {
                 let e = s(params, "error");
-                login_note(app, &format!("ログインできませんでした{}", if e.is_empty() { String::new() } else { format!(": {}", crate::errmsg::short(e)) }));
+                if e.is_empty() {
+                    login_note(app, "ログインできませんでした");
+                } else {
+                    login_error(app, e);
+                }
             }
         }
         _ => {}

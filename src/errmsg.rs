@@ -33,3 +33,38 @@ pub(crate) fn short(e: &str) -> String {
     }
     out
 }
+
+/// The port named in a "cannot listen on the callback port ..." error.
+fn port_of(e: &str) -> Option<String> {
+    let mut run = String::new();
+    let mut runs: Vec<String> = Vec::new();
+    for c in e.chars().chain(std::iter::once(' ')) {
+        if c.is_ascii_digit() {
+            run.push(c);
+        } else if !run.is_empty() {
+            runs.push(std::mem::take(&mut run));
+        }
+    }
+    runs.into_iter().find(|r| (4..=5).contains(&r.len()) && r != "10048")
+}
+
+/// The callback port of the sign-in is taken (another sign-in still listens).
+pub(crate) fn port_in_use(e: &str) -> bool {
+    let l = e.to_lowercase();
+    l.contains("10048") || l.contains("callback port") || l.contains("address already in use")
+}
+
+/// A sign-in error as one line.
+pub(crate) fn login_short(e: &str) -> String {
+    let l = e.to_lowercase();
+    if port_in_use(e) {
+        return match port_of(e) {
+            Some(p) => format!("ログインできませんでした: ポート {p} が使われています。コードを貼り付けてログインしてください"),
+            None => "ログインできませんでした: ポートが使われています。コードを貼り付けてログインしてください".to_string(),
+        };
+    }
+    if l.contains("state did not match") {
+        return "ログインできませんでした: ログインの確認が一致しませんでした。もう一度試してください".to_string();
+    }
+    format!("ログインできませんでした: {}", short(e))
+}
