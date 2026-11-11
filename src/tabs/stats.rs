@@ -26,6 +26,8 @@ const MIN_SAMPLES: i64 = 5;
 #[derive(Default)]
 struct S {
     summary: Value,
+    hourly: Value,
+    daily: Value,
     selected_model: String,
     job_id: String,
 }
@@ -130,9 +132,16 @@ fn model_rows(summary: &Value, selected: &str) -> Vec<StatsModel> {
         .collect()
 }
 
-/// hourly -> 24 本の棒。件数の少ない時間帯は薄く、件数 0 の時間帯は棒なし。
-fn hour_bars(hourly: &Value) -> Vec<StatsBar> {
-    let hours = hourly.get("hours").and_then(Value::as_array).cloned().unwrap_or_default();
+/// hourly(モデルごとの系列)から、そのモデルの 24 本の棒。件数の少ない時間帯は薄く、件数 0 の時間帯は棒なし。
+fn hour_bars(hourly: &Value, model: &str) -> Vec<StatsBar> {
+    let hours = hourly
+        .get("series")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().find(|x| str_of(x, "model") == model))
+        .and_then(|x| x.get("hours"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let max = hours.iter().filter_map(|h| num(h, "avgTokensPerSecond")).fold(0.0_f64, f64::max);
     hours
         .iter()
@@ -154,18 +163,23 @@ fn hour_bars(hourly: &Value) -> Vec<StatsBar> {
         .collect()
 }
 
-/// daily -> 日ごとの棒(5時間枠の消費)。下に日付と tok/s。
-fn day_bars(daily: &Value) -> Vec<StatsBar> {
+/// daily(各日の models[])から、そのモデルの日ごとの棒(5時間枠の消費)。下に日付と、そのモデルの tok/s。
+/// そのモデルを使わなかった日は棒なし。
+fn day_bars(daily: &Value, model: &str) -> Vec<StatsBar> {
     let days = daily.get("days").and_then(Value::as_array).cloned().unwrap_or_default();
-    let max = days.iter().filter_map(|d| num(d, "quotaPrimaryPercent")).fold(0.0_f64, f64::max);
+    let entry = |d: &Value| -> Option<Value> {
+        d.get("models").and_then(Value::as_array).and_then(|a| a.iter().find(|m| str_of(m, "model") == model)).cloned()
+    };
+    let max = days.iter().filter_map(|d| entry(d)).filter_map(|m| num(&m, "quotaPrimaryPercent")).fold(0.0_f64, f64::max);
     days.iter()
         .map(|d| {
             let date = str_of(d, "date");
-            let q = num(d, "quotaPrimaryPercent");
+            let m = entry(d);
+            let q = m.as_ref().and_then(|m| num(m, "quotaPrimaryPercent"));
             StatsBar {
                 top: q.map(pct_label).unwrap_or_default().into(),
                 label: date.get(5..).unwrap_or(date).into(),
-                sub: num(d, "avgTokensPerSecond").map(|s| format!("{} tok/s", s.round() as i64)).unwrap_or_default().into(),
+                sub: m.as_ref().and_then(|m| num(m, "avgTokensPerSecond")).map(|s| format!("{} tok/s", s.round() as i64)).unwrap_or_default().into(),
                 ratio: match q {
                     Some(q) if max > 0.0 => (q / max) as f32,
                     _ => 0.0,
@@ -236,27 +250,44 @@ fn days_of(app: &AppWindow) -> i64 {
     PERIODS[(app.global::<StatsState>().get_period().max(0) as usize).min(PERIODS.len() - 1)]
 }
 
-fn request_hourly(app: &AppWindow, host: &Host) {
-    let model = S.with(|s| s.borrow().selected_model.clone());
-    let model = if model.is_empty() { Value::Null } else { json!(model) };
-    host.rpc(TAG_HOURLY, "inocode/stats/hourly", json!({ "days": days_of(app), "model": model }));
-}
-
 fn refresh(app: &AppWindow, host: &Host) {
     host.rpc(TAG_SUMMARY, "inocode/stats/summary", json!({ "days": days_of(app), "model": Value::Null, "provider": Value::Null }));
-    request_hourly(app, host);
+    host.rpc(TAG_HOURLY, "inocode/stats/hourly", json!({ "days": days_of(app), "model": Value::Null }));
     host.rpc(TAG_DAILY, "inocode/stats/daily", json!({ "days": DAILY_DAYS }));
+}
+
+/// グラフに出すモデル: 選んだモデル。選んでいない(またはこの期間に無い)ときは、表の先頭のモデル。
+fn effective_model(selected: &str, names: &[String]) -> String {
+    if names.iter().any(|n| n == selected) {
+        selected.to_string()
+    } else {
+        names.first().cloned().unwrap_or_default()
+    }
+}
+
+fn render_charts(app: &AppWindow) {
+    let st = app.global::<StatsState>();
+    let (hours, days) = S.with(|s| {
+        let s = s.borrow();
+        let model = effective_model(&s.selected_model, &model_names(&s.summary));
+        (hour_bars(&s.hourly, &model), day_bars(&s.daily, &model))
+    });
+    st.set_hours(ModelRc::from(Rc::new(VecModel::from(hours))));
+    st.set_days(ModelRc::from(Rc::new(VecModel::from(days))));
 }
 
 fn render_models(app: &AppWindow) {
     let st = app.global::<StatsState>();
     let (rows, selected, names) = S.with(|s| {
         let s = s.borrow();
-        (model_rows(&s.summary, &s.selected_model), s.selected_model.clone(), model_names(&s.summary))
+        let names = model_names(&s.summary);
+        let selected = effective_model(&s.selected_model, &names);
+        (model_rows(&s.summary, &selected), selected, names)
     });
     st.set_empty(rows.is_empty());
     st.set_models(ModelRc::from(Rc::new(VecModel::from(rows))));
     st.set_selected_model(selected.into());
+    render_charts(app);
     let est = st.get_est_model().to_string();
     if !names.contains(&est) {
         st.set_est_model(names.first().cloned().unwrap_or_default().into());
@@ -280,15 +311,11 @@ pub fn install(app: &AppWindow, host: &Host) {
         refresh(&app, &h);
     });
 
-    let (weak, h) = (app.as_weak(), host.clone());
+    let weak = app.as_weak();
     st.on_select_model(move |name| {
         let Some(app) = weak.upgrade() else { return };
-        S.with(|s| {
-            let mut s = s.borrow_mut();
-            s.selected_model = if s.selected_model == name.as_str() { String::new() } else { name.to_string() };
-        });
+        S.with(|s| s.borrow_mut().selected_model = name.to_string());
         render_models(&app);
-        request_hourly(&app, &h);
     });
 
     let (weak, h) = (app.as_weak(), host.clone());
@@ -321,8 +348,14 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
                 S.with(|s| s.borrow_mut().summary = payload(v).clone());
                 render_models(app);
             }
-            (TAG_HOURLY, Ok(v)) => st.set_hours(ModelRc::from(Rc::new(VecModel::from(hour_bars(payload(v)))))),
-            (TAG_DAILY, Ok(v)) => st.set_days(ModelRc::from(Rc::new(VecModel::from(day_bars(payload(v)))))),
+            (TAG_HOURLY, Ok(v)) => {
+                S.with(|s| s.borrow_mut().hourly = payload(v).clone());
+                render_charts(app);
+            }
+            (TAG_DAILY, Ok(v)) => {
+                S.with(|s| s.borrow_mut().daily = payload(v).clone());
+                render_charts(app);
+            }
             (TAG_ESTIMATE, Ok(v)) => st.set_est_result(estimate_label(payload(v)).into()),
             (TAG_ESTIMATE, Err(e)) => st.set_est_result(e.as_str().into()),
             (TAG_SEED, Ok(v)) => {
@@ -390,27 +423,48 @@ mod tests {
 
     #[test]
     fn hourly_bars_fade_with_few_samples() {
-        let bars = hour_bars(&fixture("stats-hourly.json"));
+        let hourly = fixture("stats-hourly.json");
+        let bars = hour_bars(&hourly, "gpt-5.6-luna");
         assert_eq!(bars.len(), 24);
         // 件数 0 の時間は棒なし
         assert_eq!(bars[0].ratio, 0.0);
         assert_eq!(bars[0].top, "");
-        // 件数が少ない(2 件)時間は薄い、多い時間は濃い
-        assert!(bars[1].faint && bars[1].ratio > 0.0);
-        assert!(!bars[3].faint);
+        // 件数が少ない時間は薄い、多い時間は濃い
+        assert!(bars.iter().any(|b| b.faint && b.ratio > 0.0));
+        assert!(bars.iter().any(|b| !b.faint && b.ratio > 0.0));
         assert!(bars.iter().any(|b| (b.ratio - 1.0).abs() < 1e-6));
         assert_eq!(bars[6].label, "6時");
         assert_eq!(bars[7].label, "");
-        assert_eq!(bars[5].ratio, 0.0);
+        // モデルごとに別の系列(混ぜない)。系列の無いモデルは空
+        let sol = hour_bars(&hourly, "gpt-5.6-sol");
+        assert_eq!(sol.len(), 24);
+        assert_ne!(bars[10].top, sol[10].top);
+        assert!(hour_bars(&hourly, "none").is_empty());
     }
 
     #[test]
     fn daily_bars_show_date_and_speed() {
-        let bars = day_bars(&fixture("stats-daily.json"));
-        assert_eq!(bars.len(), 1);
-        assert_eq!(bars[0].label, "11-11");
+        let daily = fixture("stats-daily.json");
+        let bars = day_bars(&daily, "gpt-5.6-luna");
+        assert_eq!(bars.len(), 7);
+        assert_eq!(bars[0].label, "11-05");
         assert!(bars[0].sub.ends_with("tok/s"));
         assert!(bars.iter().any(|b| (b.ratio - 1.0).abs() < 1e-6));
+        // そのモデルを使わなかった日は棒なし(最初の日は luna だけ)
+        let sol = day_bars(&daily, "gpt-5.6-sol");
+        assert_eq!((sol[0].ratio, sol[0].sub.as_str()), (0.0, ""));
+        assert!(sol[1].sub.ends_with("tok/s"));
+        // 速度はモデルごと(同じ日でも値が違う)
+        assert_ne!(bars[1].sub, sol[1].sub);
+    }
+
+    #[test]
+    fn chart_model_falls_back_to_the_first_one() {
+        let names = vec!["a".to_string(), "b".to_string()];
+        assert_eq!(effective_model("b", &names), "b");
+        assert_eq!(effective_model("", &names), "a");
+        assert_eq!(effective_model("gone", &names), "a");
+        assert_eq!(effective_model("x", &[]), "");
     }
 
     #[test]

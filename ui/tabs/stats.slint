@@ -159,11 +159,20 @@ export component StatsPage inherits Rectangle {
             }
 
             Rectangle { height: 8px; }
-            Heading { text: StatsState.selected-model == "" ? "時間帯ごとの速度(tok/s)" : "時間帯ごとの速度(tok/s) · " + StatsState.selected-model; }
+            Heading { text: "時間帯ごとの速度(tok/s)"; }
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for m in StatsState.models: Tag {
+                    label: m.name;
+                    selected: m.selected;
+                    clicked => { StatsState.select-model(m.name); }
+                }
+            }
             Bars { bars: StatsState.hours; }
 
             Rectangle { height: 8px; }
-            Heading { text: "日ごとの推移(5時間枠の消費)"; }
+            Heading { text: "日ごとの推移(5時間枠の消費と速度) · " + StatsState.selected-model; }
             Bars { bars: StatsState.days; }
 
             Rectangle { height: 8px; }
