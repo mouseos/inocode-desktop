@@ -283,7 +283,7 @@ export component AccountsView inherits Rectangle {
                     }
                 }
                 Group {
-                    Row { label: "プロバイダを追加"; chevron: true; separator: false; clicked => { AccountsState.open-providers(); } }
+                    Row { label: "プロバイダを追加"; chevron: true; separator: false; clicked => { AccountsState.begin(""); } }
                 }
             }
 

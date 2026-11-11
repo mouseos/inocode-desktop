@@ -193,15 +193,23 @@ pub(crate) fn show_at(app: &AppWindow, provider: &str, account: &str) {
 fn set_rows(app: &AppWindow) {
     let pid = app.global::<AccountsState>().get_provider_id().to_string();
     let q = if pid.is_empty() { app.global::<AccountsState>().get_search().to_lowercase() } else { String::new() };
-    let providers = DATA.with(|d| d.borrow().providers.clone());
-    let providers = if providers.is_empty() {
-        vec![
-            ("openai".to_string(), "OpenAI".to_string(), vec!["chatgpt".to_string(), "apiKey".to_string()]),
-            ("claude".to_string(), "Claude".to_string(), vec!["claudeOauth".to_string(), "apiKey".to_string()]),
-        ]
-    } else {
-        providers
-    };
+    let mut providers = DATA.with(|d| d.borrow().providers.clone());
+    // The ways to sign in that each known provider always has, whatever the server lists.
+    for (id, name, kinds) in [
+        ("openai", "OpenAI", ["chatgpt", "apiKey"]),
+        ("claude", "Claude", ["claudeOauth", "apiKey"]),
+    ] {
+        match providers.iter_mut().find(|p| p.0 == id) {
+            Some(p) => {
+                for k in kinds {
+                    if !p.2.iter().any(|x| x == k) {
+                        p.2.push(k.to_string());
+                    }
+                }
+            }
+            None => providers.push((id.to_string(), name.to_string(), kinds.iter().map(|k| k.to_string()).collect())),
+        }
+    }
     let mut rows = Vec::new();
     for (id, name, kinds) in providers.iter().filter(|p| pid.is_empty() || p.0 == pid) {
         for k in kinds {
@@ -287,8 +295,11 @@ fn summary(accounts: &[Value]) -> String {
 /// The rows of the top level: the providers of the server plus any provider an account names.
 fn render_providers(app: &AppWindow, all: &[Value]) {
     let mut list: Vec<(String, String)> = DATA.with(|d| d.borrow().providers.iter().map(|p| (p.0.clone(), p.1.clone())).collect());
-    if list.is_empty() {
-        list = vec![("openai".into(), "OpenAI".into()), ("claude".into(), "Claude".into())];
+    // OpenAI and Claude are always there, even when the server does not list them.
+    for (id, name) in [("openai", "OpenAI"), ("claude", "Claude")] {
+        if !list.iter().any(|p| p.0 == id) {
+            list.push((id.into(), name.into()));
+        }
     }
     for a in all {
         let id = provider_of(a);
