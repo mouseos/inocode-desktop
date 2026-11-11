@@ -447,15 +447,18 @@ export component AccountsView inherits Rectangle {
                         sub: "上のアカウントの使用量が、この値を超える前に、次のアカウントへ切り替えます。";
                         separator: false;
                         clickable: false;
-                        VerticalLayout {
-                            alignment: center;
-                            width: 56px;
-                            Field {
-                                text <=> AccountsState.threshold;
-                                accepted(t) => { AccountsState.commit-threshold(t); }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                width: 56px;
+                                Field {
+                                    text <=> AccountsState.threshold;
+                                    accepted(t) => { AccountsState.commit-threshold(t); }
+                                }
                             }
+                            Text { text: "%"; color: Theme.fg-secondary; font-size: 14px; vertical-alignment: center; }
                         }
-                        Text { text: "%"; color: Theme.fg-secondary; font-size: 14px; vertical-alignment: center; }
                     }
                 }
             }
