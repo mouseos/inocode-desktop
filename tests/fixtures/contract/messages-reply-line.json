@@ -1,0 +1,16 @@
+{
+  "method": "inocode/messages/replyLine",
+  "request": {},
+  "response": {
+    "patterns": {
+      "user": "^\[返信 #(\d+)\.(\d+)「(.*)」\]$",
+      "agentFreeText": "^\[返信 #(\d+)\.(@?\d+)(?:「(.*)」)?(?: thread:(\S+))?\]$",
+      "agentTelegraphicReplyTo": "^#\d+\.@?\d+$"
+    },
+    "examples": [
+      "[返信 #12.3「SQLite の並行…」]",
+      "[返信 #4.@1「Can you check」 thread:019db3ea-fe9e-7441-b385-70f80f1ffc50]\nok, done",
+      "ANSWER\na: use WAL\nreply_to: #4.2\nreply_thread: 019db3ea-fe9e-7441-b385-70f80f1ffc50\nconf: high"
+    ]
+  }
+}

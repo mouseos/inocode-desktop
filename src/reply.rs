@@ -89,10 +89,15 @@ fn parse_ref_line(line: &str) -> Option<Ref> {
     if turn.is_empty() || item.is_empty() || !turn.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    let inner = tail.strip_prefix('「')?.strip_suffix(']')?;
-    let close = inner.rfind('」')?;
-    let hint = &inner[..close];
-    let after = &inner[close + '」'.len_utf8()..];
+    let inner = tail.strip_suffix(']')?;
+    // The marker is optional in the lines of the agents: `[返信 #12.3 thread:abc]`.
+    let (hint, after) = match inner.strip_prefix('「') {
+        Some(rest) => {
+            let close = rest.rfind('」')?;
+            (&rest[..close], &rest[close + '」'.len_utf8()..])
+        }
+        None => ("", inner),
+    };
     let thread = match after {
         "" => "",
         a => {
@@ -433,6 +438,10 @@ mod tests {
         assert!(parse_ref_line("[返信 #3.@1「x」 thread:]").is_none());
         assert!(parse_ref_line("[返信 #3.@1「x」 thread:a b]").is_none());
         assert!(parse_ref_line("[返信 #3.@1「x」 other]").is_none());
+        // the agents may leave the marker out
+        assert_eq!(parse_ref_line("[返信 #12.3 thread:abc]"), Some(("#12.3".to_string(), String::new(), "abc".to_string())));
+        assert_eq!(parse_ref_line("[返信 #12.@2]"), Some(("#12.@2".to_string(), String::new(), String::new())));
+        assert!(parse_ref_line("[返信 #12.3 abc]").is_none());
     }
 
     #[test]
