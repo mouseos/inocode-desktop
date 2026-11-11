@@ -107,6 +107,43 @@ pub fn tool_text(item: &Value) -> Option<String> {
     }
 }
 
+/// The changes of a fileChange item (what an apply_patch writes, also while it is still being
+/// written) as one unified diff: a new file is all added lines, a deleted one all removed lines,
+/// and a changed one keeps its own hunks.
+pub fn file_changes_diff(changes: &Value) -> String {
+    let mut out = String::new();
+    for c in changes.as_array().map(Vec::as_slice).unwrap_or(&[]) {
+        let path = c.get("path").and_then(Value::as_str).unwrap_or("");
+        let diff = c.get("diff").and_then(Value::as_str).unwrap_or("");
+        out.push_str(&format!("diff --git a/{path} b/{path}\n"));
+        let lines: Vec<&str> = diff.lines().collect();
+        match c.pointer("/kind/type").and_then(Value::as_str) {
+            Some("add") => {
+                out.push_str(&format!("@@ -0,0 +1,{} @@\n", lines.len()));
+                for l in lines {
+                    out.push_str(&format!("+{l}\n"));
+                }
+            }
+            Some("delete") => {
+                out.push_str(&format!("@@ -1,{} +0,0 @@\n", lines.len()));
+                for l in lines {
+                    out.push_str(&format!("-{l}\n"));
+                }
+            }
+            _ => {
+                if !diff.contains("@@") {
+                    out.push_str(&format!("@@ -1,{0} +1,{0} @@\n", lines.len()));
+                }
+                out.push_str(diff);
+                if !diff.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+        }
+    }
+    out
+}
+
 /// The body shown when a tool row is expanded.
 pub fn tool_detail(item: &Value) -> String {
     let text = |k: &str| item.get(k).and_then(Value::as_str).unwrap_or("").to_string();
@@ -119,27 +156,7 @@ pub fn tool_detail(item: &Value) -> String {
                 format!("$ {}\n{}", text("command"), out)
             }
         }
-        "fileChange" => item
-            .get("changes")
-            .and_then(Value::as_array)
-            .map(|list| {
-                list.iter()
-                    .map(|c| {
-                        let kind = match c.pointer("/kind/type").and_then(Value::as_str) {
-                            Some("add") => "追加",
-                            Some("delete") => "削除",
-                            _ => "変更",
-                        };
-                        format!(
-                            "{kind} {}\n{}",
-                            c.get("path").and_then(Value::as_str).unwrap_or(""),
-                            c.get("diff").and_then(Value::as_str).unwrap_or("")
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })
-            .unwrap_or_default(),
+        "fileChange" => item.get("changes").map(file_changes_diff).unwrap_or_default(),
         "mcpToolCall" | "dynamicToolCall" => {
             let mut out = String::new();
             if let Some(a) = item.get("arguments").filter(|a| !a.is_null()) {

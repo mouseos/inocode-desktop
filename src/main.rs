@@ -8,6 +8,7 @@ mod accounts_page;
 mod model_init;
 mod attach;
 mod callbacks;
+mod diff_rows;
 mod discovery;
 mod errmsg;
 mod git_panel;

@@ -2,15 +2,17 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton } from "widgets.slint";
 import { MessageActions } from "chat_actions.slint";
+import { DiffRow, AppState } from "state.slint";
 
 // One tool / thinking / plan / diff row. A row with a body opens on click and shows the body
 // (command output, changed files, reasoning summary, plan steps) with a copy button.
 export component ToolRow inherits VerticalLayout {
     in property <string> text;
     in property <string> detail;
+    in property <[DiffRow]> diff;
     in property <int> index;
-    property <bool> open: false;
-    property <bool> expandable: root.detail != "";
+    property <bool> open: AppState.tools-open;
+    property <bool> expandable: root.detail != "" || root.diff.length > 0;
     spacing: 4px;
 
     Rectangle {
@@ -45,7 +47,38 @@ export component ToolRow inherits VerticalLayout {
             clicked => { root.open = !root.open; }
         }
     }
-    if root.open && root.expandable: Rectangle {
+    if root.open && root.diff.length > 0: Rectangle {
+        border-radius: 8px;
+        background: Theme.bubble;
+        VerticalLayout {
+            padding: 8px;
+            for d in root.diff: Rectangle {
+                background: d.kind == 1 ? (Theme.dark ? #3fb95022 : #2da44e22) : d.kind == 2 ? (Theme.dark ? #ff5a5f22 : #cd205422) : transparent;
+                HorizontalLayout {
+                    spacing: 8px;
+                    if d.kind == 3: Text { height: 30px; text: d.text; color: Theme.fg; font-size: 12px; font-weight: 600; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                    if d.kind == 3: Text { height: 30px; text: d.added; color: Theme.dark ? #3fb950 : #1a7f37; font-size: 12px; vertical-alignment: center; }
+                    if d.kind == 3: Text { height: 30px; text: d.removed; color: Theme.danger; font-size: 12px; vertical-alignment: center; }
+                    if d.kind == 4: Rectangle {
+                        height: 8px;
+                        horizontal-stretch: 1;
+                        Rectangle { y: 4px; height: 1px; background: Theme.border; }
+                    }
+                    if d.kind == 5: Text { height: 22px; text: d.text; color: Theme.fg-tertiary; font-size: 12px; vertical-alignment: center; }
+                    if d.kind < 3: Text { text: d.num; width: 34px; color: Theme.fg-tertiary; font-family: "Consolas"; font-size: 12px; horizontal-alignment: right; }
+                    if d.kind < 3: Text {
+                        text: d.text == "" ? " " : d.text;
+                        wrap: char-wrap;
+                        color: Theme.fg;
+                        font-family: "Consolas";
+                        font-size: 12px;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+        }
+    }
+    if root.open && root.expandable && root.diff.length == 0: Rectangle {
         border-radius: 8px;
         background: Theme.bubble;
         VerticalLayout {

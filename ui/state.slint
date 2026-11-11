@@ -4,6 +4,16 @@ import { DiscoveryState } from "settings.slint";
 import { MdRow } from "markdown.slint";
 import { ReplyRef } from "reply.slint";
 
+// One row of a diff in the chat. kind: 0 context, 1 added, 2 removed, 3 file heading (text = the
+// name, added / removed = "+3" / "−1"), 4 gap between hunks, 5 note.
+export struct DiffRow {
+    kind: int,
+    num: string,
+    text: string,
+    added: string,
+    removed: string,
+}
+
 // One line of an approval's body (command, diff, permissions). kind: 0 plain, 1 added,
 // 2 removed, 3 file header, 4 note.
 export struct ALine {
@@ -43,12 +53,16 @@ export struct Message {
     shown: string,
     // The pictures sent with a user message
     images: [image],
+    // The body of a tool row that is a diff, row by row
+    diff: [DiffRow],
 }
 
 // チャット画面の状態とコールバックをここに集約する。Rust は app.global::<AppState>() で触り、
 // 各コンポーネントは AppState を直接読む(AppWindow → Home → Composer の受け渡しはしない)。
 export global AppState {
     in property <[Message]> messages;
+    // Tool rows start open (the snapshot entry INOCODE_GUI_DIFF shows a diff this way)
+    in property <bool> tools-open: false;
     in property <[Approval]> approvals;
     in property <[ProjectItem]> projects;
     in property <bool> busy: false;

@@ -166,8 +166,14 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         }
         Event::Tool { id, text, detail } => {
             crate::chat_md::sync_last(app, true);
-            // A finished item brings its whole body; an empty one keeps what streamed in.
-            messages_with(app, |model| upsert_tool(model, &id, &text, if detail.is_empty() { None } else { Some(&detail) }));
+            // A finished item brings its whole body; an empty one keeps what streamed in. The single
+            // changes of a turn that has its diff row are not shown again.
+            messages_with(app, |model| {
+                if text.starts_with("ファイル変更") && has_tool(model, "turn-diff") {
+                    return;
+                }
+                upsert_tool(model, &id, &text, if detail.is_empty() { None } else { Some(&detail) });
+            });
             app.invoke_scroll_bottom();
         }
         Event::ToolDelta { id, delta } => {
@@ -176,6 +182,10 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
                 for i in 0..model.row_count() {
                     if let Some(mut row) = model.row_data(i) {
                         if row.role == "tool" && row.id == id.as_str() {
+                            // The body of a diff is the diff; the output of the patch is not added to it.
+                            if row.diff.row_count() > 0 {
+                                return;
+                            }
                             let joined = format!("{}{}", row.detail, delta);
                             row.detail = clip_detail(&joined).into();
                             model.set_row_data(i, row);
@@ -186,7 +196,17 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             });
         }
         Event::Note { id, text, detail } => {
-            messages_with(app, |model| upsert_tool(model, &id, &text, Some(&detail)));
+            messages_with(app, |model| {
+                // The edits of the turn are one row: the rows of the single changes go.
+                if id == "turn-diff" {
+                    for i in (0..model.row_count()).rev() {
+                        if model.row_data(i).map(|r| r.role == "tool" && r.text.starts_with("ファイル変更")).unwrap_or(false) {
+                            model.remove(i);
+                        }
+                    }
+                }
+                upsert_tool(model, &id, &text, Some(&detail));
+            });
             app.invoke_scroll_bottom();
         }
         Event::TurnStarted => {

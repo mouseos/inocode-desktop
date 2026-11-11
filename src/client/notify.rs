@@ -80,7 +80,18 @@ impl<F: Fn(Event)> Session<'_, F> {
                     }
                 }
             }
-            "item/commandExecution/outputDelta" | "item/reasoning/summaryTextDelta" | "item/plan/delta" => {
+            // The changes of a patch that is still being written (item/fileChange/patchUpdated).
+            "item/fileChange/patchUpdated" => {
+                let id = params.get("itemId").and_then(Value::as_str);
+                if let (Some(id), Some(changes)) = (id, params.get("changes").filter(|c| c.is_array())) {
+                    self.file_changes.insert(id.to_string(), changes.clone());
+                    let item = json!({ "type": "fileChange", "id": id, "changes": changes, "status": "inProgress" });
+                    if let Some(text) = tool_text(&item) {
+                        (self.on_event)(Event::Tool { id: id.to_string(), text, detail: tool_detail(&item) });
+                    }
+                }
+            }
+            "item/commandExecution/outputDelta" | "item/reasoning/summaryTextDelta" | "item/plan/delta" | "item/fileChange/outputDelta" => {
                 let (id, delta) = (
                     params.get("itemId").and_then(Value::as_str),
                     params.get("delta").and_then(Value::as_str),

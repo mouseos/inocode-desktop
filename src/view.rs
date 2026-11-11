@@ -340,6 +340,7 @@ pub(crate) fn upsert_tool(model: &VecModel<Message>, id: &str, text: &str, detai
                 row.text = text.into();
                 if let Some(d) = detail {
                     row.detail = clip_detail(d).into();
+                    row.diff = diff_model(d);
                 }
                 model.set_row_data(i, row);
                 return;
@@ -351,8 +352,23 @@ pub(crate) fn upsert_tool(model: &VecModel<Message>, id: &str, text: &str, detai
         role: "tool".into(),
         text: text.into(),
         detail: detail.map(clip_detail).unwrap_or_default().into(),
+        diff: detail.map(diff_model).unwrap_or_default(),
         ..Default::default()
     });
+}
+
+/// The rows of a body that is a diff (none for any other body).
+fn diff_model(detail: &str) -> ModelRc<DiffRow> {
+    if crate::diff_rows::is_diff(detail) {
+        ModelRc::from(Rc::new(VecModel::from(crate::diff_rows::rows(detail))))
+    } else {
+        ModelRc::default()
+    }
+}
+
+/// Whether the chat has a tool row with this id.
+pub(crate) fn has_tool(model: &VecModel<Message>, id: &str) -> bool {
+    (0..model.row_count()).any(|i| model.row_data(i).map(|r| r.role == "tool" && r.id == id).unwrap_or(false))
 }
 
 /// Current git branch of a folder, or "" when it is not a repository (or git is missing).

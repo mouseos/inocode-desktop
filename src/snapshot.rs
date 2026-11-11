@@ -37,6 +37,20 @@ pub(crate) fn install(app: &AppWindow) {
         });
         extra.push(t);
     }
+    // INOCODE_GUI_DIFF=1: the edits of a turn as the chat shows them, open.
+    if std::env::var("INOCODE_GUI_DIFF").is_ok() {
+        let weak = app.as_weak();
+        let t = slint::Timer::default();
+        t.start(slint::TimerMode::SingleShot, Duration::from_secs(delay + 1), move || {
+            let Some(app) = weak.upgrade() else { return };
+            app.global::<AppState>().set_tools_open(true);
+            crate::view::messages_with(&app, |m| {
+                crate::view::push(m, "", "user", "src/main.rs を直して、NOTES.md を足して");
+                crate::view::upsert_tool(m, "turn-diff", "2 件のファイルを編集しました", Some(DEMO_DIFF));
+            });
+        });
+        extra.push(t);
+    }
     // INOCODE_GUI_MODELS=<file>: a model/list reply (the `result`) that is shown as the list of
     // models; INOCODE_GUI_OPEN=picker opens the model popup.
     if let Ok(file) = std::env::var("INOCODE_GUI_MODELS") {
@@ -123,3 +137,33 @@ pub(crate) fn install(app: &AppWindow) {
     TIMERS.with(|t| t.borrow_mut().extend([open, shot]));
     TIMERS.with(|t| t.borrow_mut().extend(extra));
 }
+
+const DEMO_DIFF: &str = "diff --git a/src/main.rs b/src/main.rs
+index 6ea728c..b1a5ac8 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,6 +1,7 @@
+ fn main() {
+-    println!(\"hello\");
++    let name = std::env::args().nth(1).unwrap_or_default();
++    println!(\"hello {name}\");
+     run();
+ }
+ 
+ fn run() {}
+@@ -20,4 +21,5 @@ fn helper() {
+     let a = 1;
+-    let b = 2;
++    let b = a + 1;
++    let c = b * 2;
+     drop((a, b));
+diff --git a/NOTES.md b/NOTES.md
+new file mode 100644
+index 0000000..e69de29
+--- /dev/null
++++ b/NOTES.md
+@@ -0,0 +1,3 @@
++# Notes
++
++The first line of a new file.
+";

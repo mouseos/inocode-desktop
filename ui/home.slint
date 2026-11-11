@@ -444,7 +444,7 @@ component ChatView inherits Rectangle {
                             }
                         }
                     }
-                    if m.role == "tool": ToolRow { text: m.text; detail: m.detail; index: mi; }
+                    if m.role == "tool": ToolRow { text: m.text; detail: m.detail; diff: m.diff; index: mi; }
                     if m.role != "tool": ActionRow {
                         user: m.role == "user";
                         index: mi;
