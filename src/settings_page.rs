@@ -371,11 +371,11 @@ fn personal_rows(config: &Value) -> Vec<SRow> {
     let b = |k: &str, d: bool| lookup(config, k).and_then(Value::as_bool).unwrap_or(d);
     vec![
         row("", "メモリ", "", "", 6, false),
-        row("cfgb:memories.use_memories", "Codex のメモリを有効にする", "過去のチャットから作ったメモリを、新しいチャットで使います。", "", 1, b("memories.use_memories", false)),
+        row("cfgb:memories.use_memories", "InoCode のメモリを有効にする", "過去のチャットから作ったメモリを、新しいチャットで使います。", "", 1, b("memories.use_memories", false)),
         row("cfgb:memories.generate_memories", "メモリを生成する", "チャットの内容から、メモリを作ります。", "", 1, b("memories.generate_memories", false)),
         // The config key says the opposite: disable_on_external_context.
         row("cfgi:memories.disable_on_external_context", "ツールを使ったチャットからのメモリ生成を許可", "", "", 1, !b("memories.disable_on_external_context", false)),
-        row("memory-reset", "Codex のメモリをすべて削除", "", "削除", 2, false),
+        row("memory-reset", "InoCode のメモリをすべて削除", "", "削除", 2, false),
     ]
 }
 
@@ -514,7 +514,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
                 &app,
                 "spage.memory.reset",
                 "memory/reset",
-                "Codex のメモリをすべて削除しますか？",
+                "InoCode のメモリをすべて削除しますか？",
                 "保存されているメモリを消去します。この操作は元に戻せません。",
                 "削除",
             ),
