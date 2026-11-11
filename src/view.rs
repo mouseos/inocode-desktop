@@ -113,7 +113,13 @@ pub(crate) fn refresh_pickers(app: &AppWindow, st: &State) {
     let project_rows: Vec<MenuRow> = cwds.iter().map(|c| row(&base(c), c, *c == chosen, false)).collect();
     app.global::<AppState>().set_project(ProjectState {
         location: "ローカルで作業".into(),
-        project: if chosen.is_empty() { "プロジェクトを選択".into() } else { base(&chosen).into() },
+        project: if chosen.is_empty() {
+            "プロジェクトを選択".into()
+        } else if st.branch.is_empty() || chosen != st.active_cwd {
+            base(&chosen).into()
+        } else {
+            format!("{} · {}", base(&chosen), st.branch).into()
+        },
         projects: rows(project_rows),
     });
     // (kept in State by the caller through project_cwds)
@@ -335,4 +341,22 @@ pub(crate) fn upsert_tool(model: &VecModel<Message>, id: &str, text: &str, detai
         text: text.into(),
         detail: detail.map(clip_detail).unwrap_or_default().into(),
     });
+}
+
+/// Current git branch of a folder, or "" when it is not a repository (or git is missing).
+pub(crate) fn git_branch(cwd: &str) -> String {
+    if cwd.is_empty() {
+        return String::new();
+    }
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    match cmd.output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        _ => String::new(),
+    }
 }

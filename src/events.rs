@@ -49,6 +49,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
                 st.applied_perm = Some(Perm::from_server(&approval, &sandbox, &reviewer));
             }
             let _ = sandbox_label(&sandbox);
+            st.branch = git_branch(&cwd);
             st.active_cwd = cwd.clone();
             app.global::<AppState>().set_cwd_text(cwd.into());
             refresh_pickers(app, &st);
@@ -186,6 +187,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         // Rpc / Notify are delivered to the screen tabs (src/tabs) before apply().
         Event::Rpc { tag, result } => {
             crate::prompts::on_rpc(app, &tag, &result);
+            crate::attach::on_rpc(app, &tag, &result);
             crate::sidebar::on_rpc(app, &tag, &result);
             crate::chat_actions::on_rpc(app, &tag, &result);
         }

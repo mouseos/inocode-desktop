@@ -418,6 +418,7 @@ export component FullAccessDialog inherits Rectangle {
 export component LocationRow inherits HorizontalLayout {
     in property <ProjectState> state;
     callback pick-project(int);
+    callback choose-folder;
     spacing: 2px;
     padding-left: 6px;
     alignment: start;
@@ -485,6 +486,10 @@ export component LocationRow inherits HorizontalLayout {
                     for r[i] in root.state.projects: MenuItem {
                         item: r;
                         picked => { root.pick-project(i); ppop.close(); }
+                    }
+                    MenuItem {
+                        item: { label: "別のフォルダを選択…", desc: "", selected: false, disabled: false, locked: false };
+                        picked => { ppop.close(); root.choose-folder(); }
                     }
                 }
             }

@@ -267,6 +267,8 @@ impl Decision {
 
 pub enum Command {
     Prompt(String),
+    /// A prompt with extra UserInput items (images, mentions, skills).
+    PromptWith(String, Vec<Value>),
     NewThread,
     NewThreadIn(String),
     SetSettings(Settings),

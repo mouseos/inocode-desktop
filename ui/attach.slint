@@ -1,0 +1,101 @@
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+import { IconButton } from "widgets.slint";
+
+export struct AttachItem {
+    id: string,
+    label: string,
+    // "image", "file" or "skill"
+    kind: string,
+}
+
+export struct SuggestRow {
+    id: string,
+    label: string,
+    sub: string,
+}
+
+// Attachments, @ mentions and slash commands of the composer. Rust: src/attach.rs.
+export global AttachState {
+    in property <[AttachItem]> items;
+    // Suggestions above the composer: "mention" (@) or "slash" (/).
+    in property <string> suggest-kind;
+    in property <[SuggestRow]> suggestions;
+
+    // The composer text changed (for the @ and / popups).
+    callback text-changed(string);
+    callback remove(string);
+    callback pick-suggestion(string);
+    // The "+" button: window position for the popup menu.
+    callback open-plus(length, length);
+    // "別のフォルダを選択…" in the work-place chip.
+    callback choose-folder;
+}
+
+export component AttachChips inherits HorizontalLayout {
+    spacing: 4px;
+    alignment: start;
+    for a in AttachState.items: Rectangle {
+        height: 24px;
+        width: lbl.preferred-width + 44px;
+        border-radius: 12px;
+        background: Theme.hover;
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 2px;
+            spacing: 4px;
+            Icon {
+                width: 14px;
+                text: a.kind == "image" ? Glyph.category : a.kind == "skill" ? Glyph.extension : Glyph.folder;
+                font-size: 13px;
+                color: Theme.fg-secondary;
+            }
+            lbl := Text {
+                text: a.label;
+                color: Theme.fg;
+                font-size: 12px;
+                vertical-alignment: center;
+                overflow: elide;
+                max-width: 180px;
+            }
+            IconButton { glyph: Glyph.close; box-size: 20px; icon-size: 12px; y: 2px; clicked => { AttachState.remove(a.id); } }
+        }
+    }
+}
+
+export component SuggestList inherits Rectangle {
+    height: col.preferred-height + 8px;
+    border-radius: 10px;
+    background: Theme.composer;
+    border-width: 1px;
+    border-color: Theme.border;
+    col := VerticalLayout {
+        padding: 4px;
+        for s in AttachState.suggestions: Rectangle {
+            height: 28px;
+            border-radius: 6px;
+            background: sa.has-hover ? Theme.hover : transparent;
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 8px;
+                Text {
+                    text: s.label;
+                    color: Theme.fg;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Text {
+                    text: s.sub;
+                    color: Theme.fg-tertiary;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+            sa := TouchArea { mouse-cursor: pointer; clicked => { AttachState.pick-suggestion(s.id); } }
+        }
+    }
+}

@@ -5,6 +5,7 @@ import { IntelligenceMenu, PermMenu, LocationRow, IntelligenceState, PermState, 
 import { AppState, Message, Approval } from "state.slint";
 import { MessageActions } from "chat_actions.slint";
 import { ToolRow } from "chat_items.slint";
+import { AttachState, AttachChips, SuggestList } from "attach.slint";
 import { PromptState, QuestionCard, QueueList, ErrorBanner } from "prompts.slint";
 
 // InoCode mark: a ring with a dot, drawn as vector paths.
@@ -170,6 +171,7 @@ component Composer inherits VerticalLayout {
                 padding-left: 14px;
                 spacing: 4px;
 
+                if AttachState.items.length > 0: AttachChips { }
                 Rectangle {
                     min-height: max(40px, input.preferred-height + 8px);
                     max-height: 240px;
@@ -182,6 +184,7 @@ component Composer inherits VerticalLayout {
                         color: Theme.fg;
                         font-size: Theme.body-font;
                         selection-background-color: #4d8ff566;
+                        edited => { AttachState.text-changed(self.text); }
                     }
                     if root.text == "": Text {
                         y: 4px;
@@ -197,7 +200,13 @@ component Composer inherits VerticalLayout {
                 HorizontalLayout {
                     height: 30px;
                     spacing: 2px;
-                    IconButton { glyph: Glyph.add; box-size: 28px; icon-size: 20px; y: 1px; }
+                    plus := IconButton {
+                        glyph: Glyph.add;
+                        box-size: 28px;
+                        icon-size: 20px;
+                        y: 1px;
+                        clicked => { AttachState.open-plus(self.absolute-position.x, self.absolute-position.y); }
+                    }
                     PermMenu {
                         y: 1px;
                         state: root.perm;
@@ -233,6 +242,7 @@ component Composer inherits VerticalLayout {
         height: 28px;
         state: root.project;
         pick-project(i) => { root.pick-project(i); }
+        choose-folder => { AttachState.choose-folder(); }
     }
 }
 
@@ -354,6 +364,7 @@ export component Home inherits Rectangle {
                 if PromptState.question-open: QuestionCard { max-width: Theme.composer-max-width; }
                 if PromptState.banner-level != 0: ErrorBanner { max-width: Theme.composer-max-width; }
                 if PromptState.queue.length > 0: QueueList { max-width: Theme.composer-max-width; }
+                if AttachState.suggestions.length > 0: SuggestList { max-width: Theme.composer-max-width; }
 
                 if !root.chat-active: HorizontalLayout {
                     alignment: center;

@@ -14,6 +14,11 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         if text.is_empty() {
             return;
         }
+        // "/compact" and the like run a command instead of sending text.
+        if crate::attach::try_slash(&app, &h, &text) {
+            app.set_prompt("".into());
+            return;
+        }
         // A message queued behind a running turn shows in the chat when it starts.
         if !app.global::<AppState>().get_busy() {
             messages_with(&app, |m| push(m, "", "user", &text));

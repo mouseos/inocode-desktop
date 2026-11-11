@@ -238,6 +238,17 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 turn_overrides(self.settings, self.settings_update_unsupported, &mut params);
                 self.request("turn/start", params, Pending::TurnStart)?;
             }
+            Command::PromptWith(text, extra) => {
+                let Some(tid) = self.active_thread.clone() else {
+                    (self.on_event)(Event::Error("スレッドがまだ開始されていません".into()));
+                    return Ok(None);
+                };
+                let mut input = vec![json!({ "type": "text", "text": text, "text_elements": [] })];
+                input.extend(extra);
+                let mut params = json!({ "threadId": tid, "input": input });
+                turn_overrides(self.settings, self.settings_update_unsupported, &mut params);
+                self.request("turn/start", params, Pending::TurnStart)?;
+            }
             Command::NewThread => {
                 let params = thread_start_params(self.settings);
                 self.request("thread/start", params, Pending::ThreadStart)?;

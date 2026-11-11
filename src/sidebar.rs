@@ -113,7 +113,15 @@ fn item(id: &str, label: &str, glyph: &str, danger: bool, disabled: bool) -> Men
     MenuItem { id: id.into(), label: label.into(), glyph: glyph.into(), danger, disabled, separator: false, checked: false }
 }
 
-fn separator() -> MenuItem {
+pub(crate) fn simple_item(id: &str, label: &str, glyph: &str) -> MenuItem {
+    item(id, label, glyph, false, false)
+}
+
+pub(crate) fn open_menu(app: &AppWindow, items: Vec<MenuItem>, x: f32, y: f32) {
+    set_menu(app, items, x, y);
+}
+
+pub(crate) fn separator() -> MenuItem {
     MenuItem { id: "".into(), label: "".into(), glyph: "".into(), danger: false, disabled: false, separator: true, checked: false }
 }
 
@@ -181,6 +189,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     crate::palette::register(app, handle);
     crate::chat_actions::register(app, handle);
     crate::prompts::register(app, handle);
+    crate::attach::register(app, handle);
     let weak = app.as_weak();
     app.global::<SidebarState>().on_open_menu(move |kind, id, x, y| {
         let Some(app) = weak.upgrade() else { return };
@@ -215,6 +224,9 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     let h = handle.clone();
     app.global::<SidebarState>().on_menu_pick(move |action| {
         let Some(app) = weak.upgrade() else { return };
+        if crate::attach::menu_pick(&app, &action) {
+            return;
+        }
         let id = MENU_FOR.with(|m| m.borrow().clone());
         if let Some((kind, v)) = action.split_once(':') {
             DATA.with(|d| {

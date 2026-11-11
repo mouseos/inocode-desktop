@@ -9,6 +9,8 @@ pub(crate) struct State {
     pub(crate) threads: Vec<ThreadInfo>,
     pub(crate) active: String,
     pub(crate) active_cwd: String,
+    /// Current git branch of `active_cwd` (empty when not a repository).
+    pub(crate) branch: String,
     pub(crate) busy: bool,
     pub(crate) models: Vec<ModelInfo>,
     pub(crate) models_loaded: bool,

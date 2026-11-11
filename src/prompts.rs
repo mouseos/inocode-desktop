@@ -116,17 +116,23 @@ pub(crate) fn show_banner(app: &AppWindow, text: &str, level: i32) {
 /// Called by the composer: send now, or queue behind the running turn.
 pub(crate) fn submit(app: &AppWindow, h: &client::Handle, text: String) {
     DATA.with(|d| d.borrow_mut().last_prompt = text.clone());
+    let extra = crate::attach::take_inputs(app);
     if app.global::<AppState>().get_busy() {
-        // The row the composer pushed is a bubble in the chat; the queue shows it until it starts.
         if let Some(tid) = active() {
+            let mut inputs = input(&text);
+            if let Some(a) = inputs.as_array_mut() {
+                a.extend(extra);
+            }
             rpc(
                 "prompt.queue.add",
                 "thread/queue/add",
-                json!({ "threadId": tid, "input": input(&text), "clientUserMessageId": format!("ino-{}", now_nanos()) }),
+                json!({ "threadId": tid, "input": inputs, "clientUserMessageId": format!("ino-{}", now_nanos()) }),
             );
         }
-    } else {
+    } else if extra.is_empty() {
         h.send(Command::Prompt(text));
+    } else {
+        h.send(Command::PromptWith(text, extra));
     }
 }
 
