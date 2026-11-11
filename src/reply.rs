@@ -18,8 +18,8 @@ const IN_FLIGHT: usize = 6;
 
 thread_local! {
     static HANDLE: RefCell<Option<Rc<client::Handle>>> = const { RefCell::new(None) };
-    /// The replies that are ready: (number, marker).
-    static CHIPS: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+    /// The replies that are ready: (number, marker, thread of the sender or empty).
+    static CHIPS: RefCell<Vec<Ref>> = const { RefCell::new(Vec::new()) };
     /// Messages whose number is still to be asked: (turn id, item index).
     static QUEUE: RefCell<VecDeque<(String, i32)>> = const { RefCell::new(VecDeque::new()) };
     static ASKED: RefCell<usize> = const { RefCell::new(0) };
@@ -41,13 +41,21 @@ pub(crate) fn hint_of(text: &str) -> String {
     }
 }
 
-/// One line of the message: `[返信 #12.3「…」]`.
-pub(crate) fn ref_line(id: &str, hint: &str) -> String {
-    format!("[返信 {id}「{hint}」]")
+/// A reply: the number, the marker, and (a message between agents) the thread of the sender.
+pub(crate) type Ref = (String, String, String);
+
+/// One line of the message: `[返信 #12.3「…」]`; for a message between agents, the number is
+/// `#12.@2` and the line ends with ` thread:<thread of the sender>`.
+pub(crate) fn ref_line(id: &str, hint: &str, thread: &str) -> String {
+    if thread.is_empty() {
+        format!("[返信 {id}「{hint}」]")
+    } else {
+        format!("[返信 {id}「{hint}」 thread:{thread}]")
+    }
 }
 
 /// The reply lines at the start of a message and the text after them.
-pub(crate) fn parse_ref_lines(text: &str) -> (Vec<(String, String)>, String) {
+pub(crate) fn parse_ref_lines(text: &str) -> (Vec<Ref>, String) {
     let mut refs = Vec::new();
     let mut rest = text;
     loop {
@@ -69,24 +77,41 @@ pub(crate) fn parse_ref_lines(text: &str) -> (Vec<(String, String)>, String) {
     (refs, rest.to_string())
 }
 
-fn parse_ref_line(line: &str) -> Option<(String, String)> {
+fn parse_ref_line(line: &str) -> Option<Ref> {
     let body = line.strip_prefix("[返信 #")?;
     let (turn, tail) = body.split_once('.')?;
+    let (at, tail) = match tail.strip_prefix('@') {
+        Some(t) => ("@", t),
+        None => ("", tail),
+    };
     let item_len = tail.chars().take_while(|c| c.is_ascii_digit()).count();
     let (item, tail) = tail.split_at(item_len);
     if turn.is_empty() || item.is_empty() || !turn.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    let hint = tail.strip_prefix('「')?.strip_suffix("」]")?;
-    Some((format!("#{turn}.{item}"), hint.to_string()))
+    let inner = tail.strip_prefix('「')?.strip_suffix(']')?;
+    let close = inner.rfind('」')?;
+    let hint = &inner[..close];
+    let after = &inner[close + '」'.len_utf8()..];
+    let thread = match after {
+        "" => "",
+        a => {
+            let t = a.strip_prefix(" thread:")?;
+            if t.is_empty() || t.contains(char::is_whitespace) {
+                return None;
+            }
+            t
+        }
+    };
+    Some((format!("#{turn}.{at}{item}"), hint.to_string(), thread.to_string()))
 }
 
 /// The text to send: the reply lines, then the text.
-pub(crate) fn with_refs(chips: &[(String, String)], text: &str) -> String {
+pub(crate) fn with_refs(chips: &[Ref], text: &str) -> String {
     if chips.is_empty() {
         return text.to_string();
     }
-    let mut out: Vec<String> = chips.iter().map(|(id, hint)| ref_line(id, hint)).collect();
+    let mut out: Vec<String> = chips.iter().map(|(id, hint, thread)| ref_line(id, hint, thread)).collect();
     out.push(text.to_string());
     out.join("\n")
 }
@@ -109,7 +134,7 @@ pub(crate) fn align(rows: &[(String, String)], thread: &[(String, String)]) -> V
 // ------------------------------------------------------------------ screen
 
 fn render_chips(app: &AppWindow) {
-    let rows: Vec<ReplyRef> = CHIPS.with(|c| c.borrow().iter().map(|(id, hint)| ReplyRef { id: id.as_str().into(), hint: hint.as_str().into() }).collect());
+    let rows: Vec<ReplyRef> = CHIPS.with(|c| c.borrow().iter().map(|(id, hint, _)| ReplyRef { id: id.as_str().into(), hint: hint.as_str().into() }).collect());
     app.global::<ReplyState>().set_chips(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 
@@ -127,7 +152,7 @@ pub(crate) fn decorate(m: &mut Message) {
     if refs.is_empty() {
         return;
     }
-    let rows: Vec<ReplyRef> = refs.into_iter().map(|(id, hint)| ReplyRef { id: id.into(), hint: hint.into() }).collect();
+    let rows: Vec<ReplyRef> = refs.into_iter().map(|(id, hint, _)| ReplyRef { id: id.into(), hint: hint.into() }).collect();
     m.refs = ModelRc::from(Rc::new(VecModel::from(rows)));
     m.shown = body.into();
 }
@@ -139,11 +164,11 @@ pub(crate) fn compose(app: &AppWindow, text: String) -> String {
     with_refs(&chips, &text)
 }
 
-fn add_chip(app: &AppWindow, id: &str, hint: &str) {
+pub(crate) fn add_chip(app: &AppWindow, id: &str, hint: &str, thread: &str) {
     CHIPS.with(|c| {
         let mut c = c.borrow_mut();
-        if !c.iter().any(|(i, h)| i == id && h == hint) {
-            c.push((id.to_string(), hint.to_string()));
+        if !c.iter().any(|(i, h, t)| i == id && h == hint && t == thread) {
+            c.push((id.to_string(), hint.to_string(), thread.to_string()));
         }
     });
     render_chips(app);
@@ -163,7 +188,7 @@ fn reply_to(app: &AppWindow, index: usize, part: Option<(usize, usize)>) {
     };
     let hint = hint_of(&source);
     if !m.ref_id.is_empty() {
-        add_chip(app, m.ref_id.as_str(), &hint);
+        add_chip(app, m.ref_id.as_str(), &hint, "");
         return;
     }
     // Not named yet: ask now.
@@ -281,7 +306,7 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
         let hint = rest.splitn(3, '|').nth(2).unwrap_or("");
         match result {
             Ok(v) => match number_of(v) {
-                Some(id) => add_chip(app, &id, hint),
+                Some(id) => add_chip(app, &id, hint, ""),
                 None => status(app, "この発言の番号を取得できません"),
             },
             Err(e) => status(app, &format!("この発言の番号を取得できません: {e}")),
@@ -382,22 +407,32 @@ mod tests {
 
     #[test]
     fn reply_lines_are_written_and_read_back() {
-        let chips = vec![("#12.3".to_string(), "SQLite の並行…".to_string()), ("#2.1".to_string(), "x".to_string())];
+        let chips = vec![
+            ("#12.3".to_string(), "SQLite の並行…".to_string(), String::new()),
+            ("#2.1".to_string(), "x".to_string(), String::new()),
+            ("#4.@2".to_string(), "完了です".to_string(), "thr_sender".to_string()),
+        ];
         let sent = with_refs(&chips, "ありがとう\n続き");
-        assert_eq!(sent, "[返信 #12.3「SQLite の並行…」]\n[返信 #2.1「x」]\nありがとう\n続き");
+        assert_eq!(sent, "[返信 #12.3「SQLite の並行…」]\n[返信 #2.1「x」]\n[返信 #4.@2「完了です」 thread:thr_sender]\nありがとう\n続き");
         let (refs, body) = parse_ref_lines(&sent);
         assert_eq!(refs, chips);
         assert_eq!(body, "ありがとう\n続き");
         assert_eq!(with_refs(&[], "text"), "text");
         // no reply lines
-        assert_eq!(parse_ref_lines("hello\n[返信 #1.1「x」]"), (vec![], "hello\n[返信 #1.1「x」]".to_string()));
+        assert_eq!(parse_ref_lines("hello\n[返信 #1.1「x」]"), (Vec::<Ref>::new(), "hello\n[返信 #1.1「x」]".to_string()));
         // only reply lines
         assert_eq!(parse_ref_lines("[返信 #1.1「x」]").1, "");
         // something that only looks like one
         assert!(parse_ref_line("[返信 #a.1「x」]").is_none());
         assert!(parse_ref_line("[返信 #1.「x」]").is_none());
         assert!(parse_ref_line("[返信 #1.1 x]").is_none());
-        assert_eq!(parse_ref_line("[返信 #10.22「a」b」]"), Some(("#10.22".to_string(), "a」b".to_string())));
+        assert_eq!(parse_ref_line("[返信 #10.22「a」b」]"), Some(("#10.22".to_string(), "a」b".to_string(), String::new())));
+        // a message between agents: "@" before the number in the turn, and the thread of the sender
+        assert_eq!(parse_ref_line("[返信 #3.@1「依頼」 thread:abc-1]"), Some(("#3.@1".to_string(), "依頼".to_string(), "abc-1".to_string())));
+        assert!(parse_ref_line("[返信 #3.@「x」]").is_none());
+        assert!(parse_ref_line("[返信 #3.@1「x」 thread:]").is_none());
+        assert!(parse_ref_line("[返信 #3.@1「x」 thread:a b]").is_none());
+        assert!(parse_ref_line("[返信 #3.@1「x」 other]").is_none());
     }
 
     #[test]
