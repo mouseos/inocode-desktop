@@ -392,6 +392,19 @@ component ChatView inherits Rectangle {
                                 padding-right: 12px;
                                 spacing: 4px;
                                 for r in m.refs: RefChip { item: r; }
+                                if m.images.length > 0: HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+                                    for im in m.images: Rectangle {
+                                        width: 96px;
+                                        height: 96px;
+                                        border-radius: 10px;
+                                        clip: true;
+                                        background: Theme.hover;
+                                        Image { width: parent.width; height: parent.height; source: im; image-fit: ImageFit.cover; }
+                                        TouchArea { mouse-cursor: pointer; clicked => { AttachState.preview-image = im; AttachState.preview-open = true; } }
+                                    }
+                                }
                                 if m.refs.length == 0 || m.shown != "": Text {
                                     text: m.refs.length > 0 ? m.shown : m.text;
                                     wrap: word-wrap;

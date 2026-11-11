@@ -15,6 +15,8 @@ struct Attach {
     id: String,
     label: String,
     kind: &'static str,
+    /// The picture of an image attachment, when it could be read.
+    thumb: Option<slint::Image>,
     /// "mention", "localImage" or "skill" (the UserInput type) and its fields.
     input: Value,
 }
@@ -65,7 +67,13 @@ fn refresh_chips(app: &AppWindow) {
         d.borrow()
             .items
             .iter()
-            .map(|a| AttachItem { id: a.id.as_str().into(), label: a.label.as_str().into(), kind: a.kind.into() })
+            .map(|a| AttachItem {
+                id: a.id.as_str().into(),
+                label: a.label.as_str().into(),
+                kind: a.kind.into(),
+                thumb: a.thumb.clone().unwrap_or_default(),
+                has_thumb: a.thumb.is_some(),
+            })
             .collect()
     });
     app.global::<AttachState>().set_items(ModelRc::from(Rc::new(VecModel::from(rows))));
@@ -78,11 +86,17 @@ fn set_suggestions(app: &AppWindow, kind: &str, rows: Vec<SuggestRow>) {
 }
 
 fn add(app: &AppWindow, label: String, kind: &'static str, input: Value) {
+    // A picture is shown as itself; one that cannot be read stays a pill with its name.
+    let thumb = if kind == "image" {
+        input.get("path").and_then(Value::as_str).and_then(|p| slint::Image::load_from_path(std::path::Path::new(p)).ok())
+    } else {
+        None
+    };
     DATA.with(|d| {
         let mut d = d.borrow_mut();
         d.next += 1;
         let id = format!("a{}", d.next);
-        d.items.push(Attach { id, label, kind, input });
+        d.items.push(Attach { id, label, kind, thumb, input });
     });
     refresh_chips(app);
 }
@@ -341,6 +355,29 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
         .collect();
     DATA.with(|d| d.borrow_mut().hits = hits.into_iter().map(|(n, p, _)| (n, p)).collect());
     set_suggestions(app, "mention", rows);
+}
+
+/// For the snapshot entry (INOCODE_GUI_ATTACH=<picture file>): a message that was sent with the
+/// picture, then the picture and a file attached in the composer.
+pub(crate) fn demo(app: &AppWindow, picture: &std::path::Path) {
+    attach_file(app, picture);
+    let images = peek_images();
+    crate::view::messages_with(app, |m| {
+        crate::view::push(m, "", "user", "この画像を見てください");
+        let n = m.row_count() - 1;
+        if let Some(mut row) = m.row_data(n) {
+            row.images = ModelRc::from(Rc::new(VecModel::from(images)));
+            m.set_row_data(n, row);
+        }
+    });
+    take_inputs(app);
+    attach_file(app, picture);
+    attach_file(app, std::path::Path::new("Cargo.toml"));
+}
+
+/// The pictures that go with the next message (what the chips show), for the chat to show too.
+pub(crate) fn peek_images() -> Vec<slint::Image> {
+    DATA.with(|d| d.borrow().items.iter().filter_map(|a| a.thumb.clone()).collect())
 }
 
 /// Attachments to send with the next message (clears the chips).

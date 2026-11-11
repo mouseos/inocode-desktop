@@ -36,7 +36,18 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         let text = crate::reply::compose(&app, text);
         // A message queued behind a running turn shows in the chat when it starts.
         if !app.global::<AppState>().get_busy() {
-            messages_with(&app, |m| push(m, "", "user", &text));
+            let images = crate::attach::peek_images();
+            messages_with(&app, |m| {
+                push(m, "", "user", &text);
+                // The pictures sent with it are shown in the message too.
+                if !images.is_empty() {
+                    let n = m.row_count() - 1;
+                    if let Some(mut row) = m.row_data(n) {
+                        row.images = ModelRc::from(Rc::new(VecModel::from(images)));
+                        m.set_row_data(n, row);
+                    }
+                }
+            });
         }
         // While a turn runs the message goes to the queue; otherwise it starts a turn.
         crate::prompts::submit(&app, &h, text);

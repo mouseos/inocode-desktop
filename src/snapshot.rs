@@ -25,9 +25,20 @@ pub(crate) fn install(app: &AppWindow) {
             app.global::<Tabs>().invoke_select(tab);
         }
     });
+    // INOCODE_GUI_ATTACH=<picture>: a sent message with the picture, and chips in the composer.
+    let mut extra: Vec<slint::Timer> = Vec::new();
+    if let Ok(file) = std::env::var("INOCODE_GUI_ATTACH") {
+        let weak = app.as_weak();
+        let t = slint::Timer::default();
+        t.start(slint::TimerMode::SingleShot, Duration::from_secs(delay + 1), move || {
+            if let Some(app) = weak.upgrade() {
+                crate::attach::demo(&app, std::path::Path::new(&file));
+            }
+        });
+        extra.push(t);
+    }
     // INOCODE_GUI_MODELS=<file>: a model/list reply (the `result`) that is shown as the list of
     // models; INOCODE_GUI_OPEN=picker opens the model popup.
-    let mut extra: Vec<slint::Timer> = Vec::new();
     if let Ok(file) = std::env::var("INOCODE_GUI_MODELS") {
         let weak = app.as_weak();
         let t = slint::Timer::default();

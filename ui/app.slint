@@ -13,6 +13,7 @@ import { PaletteOverlay, PaletteState } from "palette.slint";
 import { PanelState } from "panel_data.slint";
 import { SettingsPage, SettingsPageState } from "settings_page.slint";
 import { AccountsState } from "accounts_page.slint";
+import { AttachState, ImagePreview } from "attach.slint";
 import { ShortcutState } from "shortcuts.slint";
 import { NavState } from "nav.slint";
 import { SidebarState } from "menus.slint";
@@ -204,6 +205,13 @@ export component AppWindow inherits Window {
         }
     }
 
+    }
+
+    if AttachState.preview-open: ImagePreview {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
     }
 
     if AppState.settings-open: SettingsDialog {

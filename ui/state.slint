@@ -41,6 +41,8 @@ export struct Message {
     // A user message that replies to others: those, and the text without the reply lines.
     refs: [ReplyRef],
     shown: string,
+    // The pictures sent with a user message
+    images: [image],
 }
 
 // チャット画面の状態とコールバックをここに集約する。Rust は app.global::<AppState>() で触り、

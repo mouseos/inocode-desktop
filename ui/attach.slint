@@ -7,6 +7,9 @@ export struct AttachItem {
     label: string,
     // "image", "file" or "skill"
     kind: string,
+    // The picture itself (an image that could be read): shown as a thumbnail
+    thumb: image,
+    has-thumb: bool,
 }
 
 export struct SuggestRow {
@@ -18,6 +21,9 @@ export struct SuggestRow {
 // Attachments, @ mentions and slash commands of the composer. Rust: src/attach.rs.
 export global AttachState {
     in property <[AttachItem]> items;
+    // The picture shown large (a click on a thumbnail, in the composer or in the chat)
+    in-out property <bool> preview-open: false;
+    in-out property <image> preview-image;
     // Suggestions above the composer: "mention" (@) or "slash" (/).
     in property <string> suggest-kind;
     in property <[SuggestRow]> suggestions;
@@ -36,34 +42,98 @@ export global AttachState {
     callback files-dropped(data-transfer);
 }
 
-export component AttachChips inherits HorizontalLayout {
-    spacing: 4px;
-    alignment: start;
-    for a in AttachState.items: Rectangle {
-        height: 24px;
-        width: lbl.preferred-width + 44px;
-        border-radius: 12px;
-        background: Theme.hover;
-        HorizontalLayout {
-            padding-left: 8px;
-            padding-right: 2px;
-            spacing: 4px;
-            Icon {
-                width: 14px;
-                text: a.kind == "image" ? Glyph.category : a.kind == "skill" ? Glyph.extension : Glyph.folder;
-                font-size: 13px;
-                color: Theme.fg-secondary;
-            }
-            lbl := Text {
-                text: a.label;
-                color: Theme.fg;
-                font-size: 12px;
-                vertical-alignment: center;
-                overflow: elide;
-                max-width: 180px;
-            }
-            IconButton { glyph: Glyph.close; box-size: 20px; icon-size: 12px; y: 2px; clicked => { AttachState.remove(a.id); } }
+// A picture attached: its thumbnail, with an x at the corner; a click shows it large.
+component AttachThumb inherits Rectangle {
+    in property <AttachItem> a;
+    width: 56px;
+    height: 56px;
+    border-radius: 10px;
+    background: Theme.hover;
+    clip: true;
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.a.thumb;
+        image-fit: ImageFit.cover;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { AttachState.preview-image = root.a.thumb; AttachState.preview-open = true; }
+    }
+    Rectangle {
+        x: parent.width - 22px;
+        y: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: #000000a0;
+        Icon { text: Glyph.close; font-size: 12px; color: #ffffff; }
+        TouchArea { mouse-cursor: pointer; clicked => { AttachState.remove(root.a.id); } }
+    }
+}
+
+// A file or a skill attached: its name with an x.
+component AttachPill inherits Rectangle {
+    in property <AttachItem> a;
+    height: 24px;
+    width: lbl.preferred-width + 62px;
+    border-radius: 12px;
+    background: Theme.hover;
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 2px;
+        spacing: 4px;
+        Icon {
+            width: 14px;
+            text: root.a.kind == "skill" ? Glyph.extension : root.a.kind == "image" ? Glyph.category : Glyph.file;
+            font-size: 13px;
+            color: Theme.fg-secondary;
         }
+        lbl := Text {
+            text: root.a.label;
+            color: Theme.fg;
+            font-size: 12px;
+            vertical-alignment: center;
+            overflow: elide;
+            max-width: 180px;
+        }
+        IconButton { glyph: Glyph.close; box-size: 20px; icon-size: 12px; y: 2px; clicked => { AttachState.remove(root.a.id); } }
+    }
+}
+
+export component AttachChips inherits HorizontalLayout {
+    spacing: 6px;
+    alignment: start;
+    for a in AttachState.items: HorizontalLayout {
+        if a.has-thumb: AttachThumb { a: a; }
+        if !a.has-thumb: VerticalLayout {
+            alignment: center;
+            AttachPill { a: a; }
+        }
+    }
+}
+
+// A picture shown large over the window; a click or the x closes it.
+export component ImagePreview inherits Rectangle {
+    background: #000000cc;
+    TouchArea { clicked => { AttachState.preview-open = false; } }
+    Image {
+        x: 48px;
+        y: 48px;
+        width: parent.width - 96px;
+        height: parent.height - 96px;
+        source: AttachState.preview-image;
+        image-fit: ImageFit.contain;
+    }
+    Rectangle {
+        x: parent.width - 52px;
+        y: 12px;
+        width: 32px;
+        height: 32px;
+        border-radius: 16px;
+        background: #ffffff26;
+        Icon { text: Glyph.close; font-size: 18px; color: #ffffff; }
+        TouchArea { mouse-cursor: pointer; clicked => { AttachState.preview-open = false; } }
     }
 }
 
