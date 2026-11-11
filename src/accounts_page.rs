@@ -437,8 +437,10 @@ fn card(a: &Value, now: i64) -> AcctCard {
         "cooldown" if full => ("上限に達しています", "warn"),
         "cooldown" => ("今は使えません", "warn"),
         "disabled" => ("停止中", "off"),
-        _ if in_use => ("使用中", "ok"),
-        _ => ("使用できます", "ok"),
+        "active" | "" if in_use => ("使用中", "ok"),
+        "active" | "" => ("使用できます", "ok"),
+        // A state this version does not know: not shown as it is.
+        _ => ("状態を取得できません", "off"),
     };
     AcctCard {
         id: s(a, "id").into(),
