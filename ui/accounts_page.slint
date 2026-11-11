@@ -16,6 +16,15 @@ export struct CreditRow {
     value: string,
 }
 
+// A line of the reset-credit history.
+export struct HistRow {
+    when: string,
+    // "付与された", "使った(このアプリから)", ...
+    kind: string,
+    title: string,
+    detail: string,
+}
+
 export struct AcctCard {
     id: string,
     alias: string,
@@ -108,6 +117,11 @@ export global AccountsState {
     in-out property <string> credit-confirm-id;
     in property <string> credit-result;
     in-out property <string> rename-text;
+    // The history of the reset credits (a modal): open, loading, what the server sent, a failure
+    in-out property <bool> history-open: false;
+    in property <bool> history-loading: false;
+    in property <[HistRow]> history;
+    in property <string> history-error;
     // The add dialog: 0 closed, 1 list, 2 form
     in-out property <int> add-step: 0;
     in-out property <string> add-kind;
@@ -150,7 +164,62 @@ export global AccountsState {
     callback choose-setting(string, int);
     callback make-default;
     callback use-credit(string);
+    callback open-history(string);
     callback add-compatible;
+}
+
+// The history of the reset credits of one account, newest first.
+component HistoryDialog inherits Rectangle {
+    background: #00000066;
+    TouchArea { clicked => { AccountsState.history-open = false; } }
+    Rectangle {
+        width: min(560px, root.width - 32px);
+        height: min(520px, root.height - 48px);
+        border-radius: 14px;
+        background: Theme.composer;
+        border-width: 1px;
+        border-color: Theme.border;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: #00000066;
+        TouchArea { }
+        VerticalLayout {
+            padding: 20px;
+            spacing: 10px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "リセット券の履歴"; color: Theme.fg; font-size: 16px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+                IconButton { glyph: Glyph.close; clicked => { AccountsState.history-open = false; } }
+            }
+            if AccountsState.history-loading: Text { text: "読み込み中…"; color: Theme.fg-tertiary; font-size: 13px; }
+            if !AccountsState.history-loading && AccountsState.history-error != "": Text { text: AccountsState.history-error; color: Theme.fg-secondary; font-size: 13px; wrap: word-wrap; }
+            if !AccountsState.history-loading && AccountsState.history-error == "" && AccountsState.history.length == 0: Text { text: "記録はまだありません"; color: Theme.fg-secondary; font-size: 13px; }
+            Flickable {
+                content-height: hcol.preferred-height;
+                hcol := VerticalLayout {
+                    for h[i] in AccountsState.history: Rectangle {
+                        height: hrow.preferred-height + 20px;
+                        hrow := VerticalLayout {
+                            padding-top: 10px;
+                            padding-bottom: 10px;
+                            spacing: 3px;
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Text { text: h.kind; color: Theme.fg; font-size: 14px; font-weight: 600; horizontal-stretch: 1; wrap: word-wrap; }
+                                Text { text: h.when; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+                            }
+                            if h.title != "": Text { text: h.title; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
+                            if h.detail != "": Text { text: h.detail; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
+                        }
+                        if i < AccountsState.history.length - 1: Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+                    }
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                Chip { label: "閉じる"; clicked => { AccountsState.history-open = false; } }
+            }
+        }
+    }
 }
 
 component AddDialog inherits Rectangle {
@@ -516,7 +585,7 @@ export component AccountsView inherits Rectangle {
                         }
                         if AccountsState.cur.credit-usable && AccountsState.credit-confirm-id != AccountsState.cur.id: Row {
                             label: "リセット券を使う";
-                            separator: AccountsState.credit-result != "";
+                            separator: true;
                             clicked => { AccountsState.credit-confirm-id = AccountsState.cur.id; }
                         }
                         if AccountsState.credit-confirm-id == AccountsState.cur.id: Row {
@@ -530,10 +599,11 @@ export component AccountsView inherits Rectangle {
                         }
                         if AccountsState.credit-confirm-id == AccountsState.cur.id: Row {
                             label: "やめる";
-                            separator: AccountsState.credit-result != "";
+                            separator: true;
                             clicked => { AccountsState.credit-confirm-id = ""; }
                         }
-                        if AccountsState.credit-result != "": Row { label: AccountsState.credit-result; clickable: false; separator: false; }
+                        if AccountsState.credit-result != "": Row { label: AccountsState.credit-result; clickable: false; }
+                        Row { label: "履歴"; chevron: true; separator: false; clicked => { AccountsState.open-history(AccountsState.cur.id); } }
                     }
                 }
                 Group {
@@ -563,4 +633,5 @@ export component AccountsView inherits Rectangle {
         }
     }
     if AccountsState.add-step != 0: AddDialog { }
+    if AccountsState.history-open: HistoryDialog { }
 }

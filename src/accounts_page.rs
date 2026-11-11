@@ -440,6 +440,95 @@ pub(crate) fn credit_lines(a: &Value) -> Vec<(String, String)> {
     out
 }
 
+/// Minutes east of UTC of this computer's time zone (0 where it cannot be read).
+fn local_offset_minutes() -> i64 {
+    #[cfg(windows)]
+    {
+        #[repr(C)]
+        struct Tzi {
+            bias: i32,
+            std_name: [u16; 32],
+            std_date: [u16; 8],
+            std_bias: i32,
+            dst_name: [u16; 32],
+            dst_date: [u16; 8],
+            dst_bias: i32,
+        }
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetTimeZoneInformation(info: *mut Tzi) -> u32;
+        }
+        let mut t = Tzi { bias: 0, std_name: [0; 32], std_date: [0; 8], std_bias: 0, dst_name: [0; 32], dst_date: [0; 8], dst_bias: 0 };
+        // 1 standard time, 2 daylight time
+        let r = unsafe { GetTimeZoneInformation(&mut t) };
+        if r == 0xFFFF_FFFF {
+            return 0;
+        }
+        let extra = if r == 2 { t.dst_bias } else { t.std_bias };
+        return -((t.bias + extra) as i64);
+    }
+    #[cfg(not(windows))]
+    {
+        0
+    }
+}
+
+/// "2026/11/11 09:46" in this computer's time zone, from seconds (or milliseconds) since 1970.
+fn local_stamp(ts: i64) -> String {
+    let secs = if ts > 100_000_000_000 { ts / 1000 } else { ts } + local_offset_minutes() * 60;
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    // civil-from-days (proleptic Gregorian)
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y}/{m:02}/{d:02} {:02}:{:02}", rem / 3600, (rem % 3600) / 60)
+}
+
+/// The lines of a reset-credit history reply, newest first.
+fn history_rows(v: &Value) -> Vec<HistRow> {
+    let list = v
+        .get("entries")
+        .or_else(|| v.get("history"))
+        .or_else(|| v.get("events"))
+        .and_then(Value::as_array)
+        .or_else(|| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut list: Vec<&Value> = list.iter().collect();
+    list.sort_by_key(|e| std::cmp::Reverse(e.get("ts").and_then(Value::as_i64).unwrap_or(0)));
+    list.into_iter()
+        .map(|e| {
+            let kind = match s(e, "kind") {
+                "granted" => "付与された".to_string(),
+                "used" => "使った(このアプリから)".to_string(),
+                "usedElsewhere" => "使われた(ほかで)".to_string(),
+                "expired" => "期限切れ".to_string(),
+                "quotaReset" => "枠がリセットされた".to_string(),
+                "error" => "取得失敗".to_string(),
+                other if !other.is_empty() => other.to_string(),
+                _ => "不明".to_string(),
+            };
+            // A use whose result was never confirmed says so.
+            let unknown = s(e, "kind") == "used"
+                && (matches!(s(e, "result"), "unknown" | "pending") || e.get("ok").is_some_and(Value::is_null) || e.get("confirmed").and_then(Value::as_bool) == Some(false));
+            let detail = if unknown && s(e, "detail").is_empty() { "結果を確認できていません".to_string() } else { s(e, "detail").to_string() };
+            HistRow {
+                when: e.get("ts").and_then(Value::as_i64).map(local_stamp).unwrap_or_default().into(),
+                kind: kind.into(),
+                title: s(e, "label").into(),
+                detail: detail.into(),
+            }
+        })
+        .collect()
+}
+
 fn card(a: &Value, now: i64) -> AcctCard {
     let kind = s(a, "kind");
     let provider = provider_of(a);
@@ -777,6 +866,17 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         rpc("acct.credit", "inocode/accounts/resetCredit/consume", p);
     });
     let weak = app.as_weak();
+    st.on_open_history(move |id| {
+        if let Some(app) = weak.upgrade() {
+            let st = app.global::<AccountsState>();
+            st.set_history(ModelRc::default());
+            st.set_history_error("".into());
+            st.set_history_loading(true);
+            st.set_history_open(true);
+        }
+        rpc("acct.history", "inocode/accounts/resetCredit/history", json!({ "id": id.to_string() }));
+    });
+    let weak = app.as_weak();
     st.on_make_default(move || {
         if let Some(app) = weak.upgrade() {
             let pid = app.global::<AccountsState>().get_provider_id().to_string();
@@ -843,6 +943,10 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                 "acct.login.start" | "acct.login.complete" => login_error(app, e),
                 "acct.login.key" => login_note(app, &format!("できませんでした: {}", crate::errmsg::short(e))),
                 "acct.poll" => {}
+                "acct.history" => {
+                    st.set_history_loading(false);
+                    st.set_history_error(format!("履歴を取得できませんでした: {}", crate::errmsg::short(e)).into());
+                }
                 "acct.credit" => {
                     st.set_credit_result(format!("リセット券を使えませんでした: {}", crate::errmsg::short(e)).into());
                 }
@@ -929,6 +1033,10 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
             render(app);
         }
         "acct.act" => refresh(false),
+        "acct.history" => {
+            st.set_history_loading(false);
+            st.set_history(ModelRc::from(Rc::new(VecModel::from(history_rows(&v)))));
+        }
         "acct.credit" => {
             if v.get("ok").and_then(Value::as_bool).unwrap_or(true) {
                 DATA.with(|d| d.borrow_mut().credit_op = None);

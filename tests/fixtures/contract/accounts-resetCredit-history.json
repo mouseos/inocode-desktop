@@ -1,0 +1,15 @@
+{
+  "method": "inocode/accounts/resetCredit/history",
+  "request": { "id": "acc-main" },
+  "response": {
+    "entries": [
+      { "kind": "granted", "ts": 1783000000, "grantId": "g1", "label": "週のリセット券", "detail": "あと 30 日で期限", "source": "server" },
+      { "kind": "used", "ts": 1783400000, "grantId": "g1", "label": "週のリセット券", "detail": "", "source": "inocode", "result": "unknown" },
+      { "kind": "usedElsewhere", "ts": 1783500000, "grantId": "g2", "label": "", "detail": "", "source": "server" },
+      { "kind": "quotaReset", "ts": 1783600000, "detail": "5時間と週の使用量が 0% になりました", "source": "server" },
+      { "kind": "expired", "ts": 1783700000, "grantId": "g3", "label": "月のリセット券", "detail": "", "source": "server" },
+      { "kind": "error", "ts": 1783800000, "detail": "通信できませんでした", "source": "inocode" }
+    ]
+  },
+  "note": "Provisional shape (kind, ts, grantId, label, detail, source) until the server contract is out."
+}
