@@ -13,6 +13,8 @@ pub(crate) enum Entry {
     Thread(String),
     Tab(i32),
     Settings(i32),
+    /// A screen of the account section: (provider, account), empty strings for the levels above.
+    Account(String, String),
 }
 
 #[derive(Default)]
@@ -112,6 +114,11 @@ fn go(app: &AppWindow, back: bool) {
         Entry::Tab(i) => {
             s.set_open(false);
             app.global::<Tabs>().invoke_select(*i);
+        }
+        Entry::Account(provider, account) => {
+            app.global::<Tabs>().set_current(0);
+            s.set_open(true);
+            crate::accounts_page::show_at(app, provider, account);
         }
         Entry::Settings(section) => {
             app.global::<Tabs>().set_current(0);

@@ -2,6 +2,7 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Switch } from "widgets.slint";
 import { Chip, Field } from "controls.slint";
+import { Group, GroupTitle, Row, ScreenHead } from "ios.slint";
 
 export struct AcctBar {
     label: string,
@@ -14,16 +15,31 @@ export struct AcctCard {
     alias: string,
     email: string,
     owner: string,
-    // "OpenAI · ChatGPT · pro"
-    meta: string,
-    // What is going on, in plain words ("" when nothing to say)
-    status: string,
-    // "ok", "warn", "danger" or "off"
+    provider: string,
+    // "ChatGPT", "サブスク" or "API キー"
+    kind-label: string,
+    plan: string,
+    // The state in a few words: 使用中, 待機中, 上限に達しています, 今は使えません, 停止中
+    badge: string,
+    // "あと1時間20分で回復" or ""
+    recover: string,
+    // "ok", "warn" or "off"
     tone: string,
     in-use: bool,
     enabled: bool,
     can-reauth: bool,
     bars: [AcctBar],
+}
+
+// A row of the top level: one provider.
+export struct ProvRow {
+    id: string,
+    name: string,
+    count: int,
+    // "5時間 平均 42%、週 平均 31%" or ""
+    summary: string,
+    // "ok", "warn" or "off"
+    tone: string,
 }
 
 export struct AddRow {
@@ -34,14 +50,21 @@ export struct AddRow {
     provider: string,
 }
 
-// The account page (src/accounts_page.rs): the accounts of the pool grouped by provider, how to
-// add one (ChatGPT, Claude, API key) and the selection policy.
+// The account screens (src/accounts_page.rs), three levels: the providers, the accounts of one
+// provider, one account. Each level is a screen of its own with a way back to the one above.
 export global AccountsState {
     in property <[AcctCard]> cards;
+    in property <AcctCard> cur;
+    in property <[ProvRow]> provs;
     in property <bool> loading: false;
     in property <string> note;
-    // The card whose "⋯" panel is open and the card asking to be deleted
-    in-out property <string> open-id;
+    // Where we are: "" for the top level; the provider; then the account
+    in-out property <string> provider-id;
+    in property <string> provider-name;
+    in-out property <string> account-id;
+    in-out property <bool> reorder: false;
+    in property <string> total;
+    in-out property <string> threshold;
     in-out property <string> confirm-id;
     in-out property <string> rename-text;
     // The add dialog: 0 closed, 1 list, 2 form
@@ -60,10 +83,6 @@ export global AccountsState {
     in property <string> login-note;
     in-out property <bool> code-open: false;
     in-out property <string> code-value;
-    // The order of use: open or closed, the total usage, the switching threshold
-    in-out property <bool> order-open: false;
-    in property <string> total;
-    in-out property <string> threshold;
 
     callback refresh;
     callback begin(string);
@@ -83,182 +102,9 @@ export global AccountsState {
     callback remove(string);
     callback commit-threshold(string);
     callback open-providers;
-}
-
-component Tile inherits Rectangle {
-    in property <string> label;
-    callback clicked;
-    height: 64px;
-    border-radius: Theme.radius-row + 2px;
-    background: ta.has-hover ? Theme.pressed : Theme.bubble;
-    Text { text: root.label; color: Theme.fg; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
-    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
-}
-
-component UsageBar inherits VerticalLayout {
-    in property <AcctBar> b;
-    spacing: 3px;
-    HorizontalLayout {
-        Text { text: root.b.label; color: Theme.fg; font-size: 12px; horizontal-stretch: 1; }
-        Text { text: root.b.pct >= 99.5 ? "上限に達しました" : Math.round(root.b.pct) + "%"; color: root.b.pct >= 99.5 ? Theme.danger : Theme.fg-secondary; font-size: 12px; }
-    }
-    Rectangle {
-        height: 6px;
-        border-radius: 3px;
-        background: Theme.pressed;
-        Rectangle {
-            width: parent.width * max(0, min(100, root.b.pct)) / 100;
-            x: 0px;
-            border-radius: 3px;
-            background: root.b.pct >= 99.5 ? Theme.danger : root.b.pct >= 80 ? Theme.warning : #3fb950;
-        }
-    }
-    if root.b.reset != "": Text { text: root.b.reset; color: Theme.fg-tertiary; font-size: 11px; }
-}
-
-// Who the account is: name, then the e-mail address and the owner when known.
-component Who inherits VerticalLayout {
-    in property <AcctCard> c;
-    spacing: 1px;
-    Text { text: root.c.alias; color: Theme.fg; font-size: 14px; font-weight: 600; overflow: elide; }
-    if root.c.email != "" || root.c.owner != "": Text {
-        text: root.c.email != "" && root.c.owner != "" ? root.c.email + " · " + root.c.owner : root.c.email + root.c.owner;
-        color: Theme.fg-secondary;
-        font-size: 12px;
-        overflow: elide;
-    }
-    Text { text: root.c.meta; color: Theme.fg-tertiary; font-size: 11px; overflow: elide; }
-}
-
-component Card inherits Rectangle {
-    in property <AcctCard> c;
-    height: col.preferred-height + 24px;
-    border-radius: Theme.radius-row + 2px;
-    background: Theme.bubble;
-    col := VerticalLayout {
-        padding: 12px;
-        padding-left: 16px;
-        padding-right: 12px;
-        spacing: 8px;
-        HorizontalLayout {
-            spacing: 10px;
-            Rectangle {
-                width: 8px;
-                VerticalLayout {
-                    alignment: start;
-                    padding-top: 7px;
-                    Rectangle {
-                        height: 8px;
-                        border-radius: 4px;
-                        background: root.c.tone == "ok" ? #3fb950 : root.c.tone == "warn" || root.c.tone == "danger" ? Theme.warning : Theme.fg-tertiary;
-                    }
-                }
-            }
-            Who { c: root.c; horizontal-stretch: 1; }
-            VerticalLayout {
-                alignment: start;
-                HorizontalLayout {
-                    spacing: 4px;
-                    if !root.c.in-use && root.c.enabled: Chip { label: "切り替える"; clicked => { AccountsState.use-next(root.c.id); } }
-                    Chip { label: root.c.enabled ? "停止" : "再開"; clicked => { AccountsState.toggle(root.c.id, !root.c.enabled); } }
-                    IconButton {
-                        glyph: Glyph.more-horiz;
-                        box-size: 26px;
-                        icon-size: 16px;
-                        selected: AccountsState.open-id == root.c.id;
-                        clicked => {
-                            AccountsState.confirm-id = "";
-                            if AccountsState.open-id == root.c.id {
-                                AccountsState.open-id = "";
-                            } else {
-                                AccountsState.open-id = root.c.id;
-                                AccountsState.rename-text = root.c.alias;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if root.c.status != "": Text {
-            text: root.c.status;
-            color: root.c.tone == "danger" ? Theme.danger : root.c.tone == "warn" ? Theme.warning : root.c.tone == "ok" ? Theme.accent : Theme.fg-secondary;
-            font-size: 12px;
-            wrap: word-wrap;
-        }
-        for b in root.c.bars: UsageBar { b: b; }
-        if AccountsState.open-id == root.c.id: VerticalLayout {
-            spacing: 8px;
-            HorizontalLayout {
-                spacing: 8px;
-                Text { text: "別名"; color: Theme.fg; font-size: 12px; vertical-alignment: center; width: 70px; }
-                Field { horizontal-stretch: 1; text <=> AccountsState.rename-text; accepted(t) => { AccountsState.rename(root.c.id, t); } }
-                Chip { label: "保存"; clicked => { AccountsState.rename(root.c.id, AccountsState.rename-text); } }
-            }
-            if AccountsState.confirm-id != root.c.id: HorizontalLayout {
-                spacing: 8px;
-                alignment: end;
-                if root.c.can-reauth: Chip { label: "ログインし直す"; clicked => { AccountsState.reauth(root.c.id); } }
-                Chip { label: "削除"; clicked => { AccountsState.confirm-id = root.c.id; } }
-            }
-            if AccountsState.confirm-id == root.c.id: HorizontalLayout {
-                spacing: 8px;
-                Text { text: "このアカウントのログイン情報が削除されます。"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
-                Chip { label: "やめる"; clicked => { AccountsState.confirm-id = ""; } }
-                Chip { label: "削除する"; active: true; clicked => { AccountsState.remove(root.c.id); } }
-            }
-        }
-    }
-}
-
-// One row of the order of use: the account, its usage and the buttons to move it.
-component OrderRow inherits Rectangle {
-    in property <AcctCard> c;
-    in property <int> index;
-    in property <int> count;
-    height: 60px;
-    HorizontalLayout {
-        padding-left: 8px;
-        padding-right: 4px;
-        spacing: 10px;
-        Text { text: root.index + 1; color: Theme.fg-tertiary; font-size: 13px; width: 18px; vertical-alignment: center; horizontal-alignment: center; }
-        Who { c: root.c; horizontal-stretch: 1; alignment: center; }
-        VerticalLayout {
-            alignment: center;
-            spacing: 4px;
-            width: 130px;
-            for b in root.c.bars: HorizontalLayout {
-                spacing: 6px;
-                Text { text: b.label; color: Theme.fg-secondary; font-size: 11px; width: 30px; vertical-alignment: center; }
-                Rectangle {
-                    height: 5px;
-                    border-radius: 2.5px;
-                    background: Theme.pressed;
-                    Rectangle {
-                        width: parent.width * max(0, min(100, b.pct)) / 100;
-                        x: 0px;
-                        border-radius: 2.5px;
-                        background: b.pct >= 99.5 ? Theme.danger : b.pct >= 80 ? Theme.warning : #3fb950;
-                    }
-                }
-                Text { text: Math.round(b.pct) + "%"; color: Theme.fg-secondary; font-size: 11px; width: 28px; horizontal-alignment: right; vertical-alignment: center; }
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            width: 40px;
-            Text {
-                text: root.c.tone == "danger" ? "上限" : root.c.tone == "off" ? "停止中" : root.c.in-use ? "使用中" : "";
-                color: root.c.tone == "danger" ? Theme.danger : root.c.tone == "off" ? Theme.fg-tertiary : Theme.accent;
-                font-size: 11px;
-            }
-        }
-        HorizontalLayout {
-            spacing: 0px;
-            alignment: center;
-            IconButton { glyph: Glyph.expand-less; box-size: 26px; icon-size: 18px; enabled: root.index > 0; clicked => { AccountsState.move-account(root.c.id, -1); } }
-            IconButton { glyph: Glyph.expand-more; box-size: 26px; icon-size: 18px; enabled: root.index < root.count - 1; clicked => { AccountsState.move-account(root.c.id, 1); } }
-        }
-    }
+    callback open-provider(string);
+    callback open-account(string);
+    callback back;
 }
 
 component AddDialog inherits Rectangle {
@@ -292,7 +138,7 @@ component AddDialog inherits Rectangle {
             }
             if AccountsState.add-step == 1: VerticalLayout {
                 spacing: 8px;
-                Field {
+                if AccountsState.provider-id == "": Field {
                     placeholder: "プロバイダーを検索";
                     text <=> AccountsState.search;
                     edited(t) => { AccountsState.search-changed(t); }
@@ -319,7 +165,7 @@ component AddDialog inherits Rectangle {
                     }
                     ra := TouchArea { mouse-cursor: pointer; clicked => { AccountsState.pick-row(r.id); } }
                 }
-                Rectangle {
+                if AccountsState.provider-id == "": Rectangle {
                     height: 32px;
                     border-radius: Theme.radius-row;
                     background: fa.has-hover ? Theme.hover : transparent;
@@ -405,82 +251,152 @@ export component AccountsView inherits Rectangle {
             padding-right: 40px;
             spacing: 10px;
             alignment: start;
-            HorizontalLayout {
-                spacing: 8px;
-                Text { text: "アカウント"; color: Theme.fg; font-size: 20px; font-weight: 600; height: 40px; vertical-alignment: center; horizontal-stretch: 1; }
-                VerticalLayout {
-                    alignment: center;
-                    HorizontalLayout {
-                        spacing: 6px;
-                        Chip { label: "更新"; clicked => { AccountsState.refresh(); } }
-                        Chip { label: "アカウントを追加"; active: true; clicked => { AccountsState.begin(""); } }
-                    }
-                }
-            }
             if AccountsState.note != "": Text { text: AccountsState.note; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
-            if AccountsState.loading && AccountsState.cards.length == 0: Text { text: "読み込み中…"; color: Theme.fg-tertiary; font-size: 13px; }
-            if !AccountsState.loading && AccountsState.cards.length == 0: VerticalLayout {
+
+            // Level 1: the providers
+            if AccountsState.provider-id == "": VerticalLayout {
                 spacing: 10px;
-                Text { text: "アカウントがまだありません"; color: Theme.fg-secondary; font-size: 13px; }
-                HorizontalLayout {
-                    spacing: 10px;
-                    Tile { horizontal-stretch: 1; label: "ChatGPT でログイン"; clicked => { AccountsState.begin("chatgpt"); } }
-                    Tile { horizontal-stretch: 1; label: "Claude でログイン"; clicked => { AccountsState.begin("claude"); } }
-                    Tile { horizontal-stretch: 1; label: "API キーを追加"; clicked => { AccountsState.begin("key"); } }
+                ScreenHead { title: "アカウント"; }
+                if AccountsState.loading && AccountsState.provs.length == 0: Text { text: "読み込み中…"; color: Theme.fg-tertiary; font-size: 13px; }
+                Group {
+                    for p[i] in AccountsState.provs: Row {
+                        label: p.name;
+                        sub: p.summary;
+                        value: p.count + " アカウント";
+                        tone: p.tone;
+                        chevron: true;
+                        separator: i < AccountsState.provs.length - 1;
+                        clicked => { AccountsState.open-provider(p.id); }
+                    }
+                }
+                Group {
+                    Row { label: "プロバイダを追加"; chevron: true; separator: false; clicked => { AccountsState.open-providers(); } }
                 }
             }
-            // The order of use: closed it shows the total usage, open the accounts in order.
-            if AccountsState.cards.length > 0: Rectangle {
-                border-radius: Theme.radius-row + 2px;
-                background: Theme.bubble;
-                height: ocol.preferred-height;
-                ocol := VerticalLayout {
-                    padding: 4px;
-                    Rectangle {
-                        height: 56px;
-                        border-radius: Theme.radius-row;
-                        background: oh.has-hover ? Theme.hover : transparent;
-                        HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 12px;
-                            spacing: 10px;
-                            VerticalLayout {
-                                alignment: center;
-                                spacing: 2px;
-                                horizontal-stretch: 1;
-                                Text { text: "使う順番"; color: Theme.fg; font-size: 14px; font-weight: 600; }
-                                if AccountsState.total != "": Text { text: AccountsState.total; color: Theme.fg-secondary; font-size: 12px; }
-                            }
-                            Icon {
-                                width: 20px;
-                                text: AccountsState.order-open ? Glyph.expand-less : Glyph.expand-more;
-                                font-size: 20px;
-                                color: Theme.fg-tertiary;
-                            }
-                        }
-                        oh := TouchArea { mouse-cursor: pointer; clicked => { AccountsState.order-open = !AccountsState.order-open; } }
+
+            // Level 2: the accounts of one provider
+            if AccountsState.provider-id != "" && AccountsState.account-id == "": VerticalLayout {
+                spacing: 10px;
+                ScreenHead { back-label: "アカウント"; title: AccountsState.provider-name; back => { AccountsState.back(); } }
+                if AccountsState.total != "": Text { text: AccountsState.total; color: Theme.fg-secondary; font-size: 12px; }
+                if AccountsState.cards.length == 0 && !AccountsState.loading: Group {
+                    for r[i] in AccountsState.add-rows: Row {
+                        label: r.title;
+                        value: r.kind;
+                        chevron: true;
+                        separator: i < AccountsState.add-rows.length - 1;
+                        clicked => { AccountsState.pick-row(r.id); }
                     }
-                    if AccountsState.order-open: VerticalLayout {
-                        padding: 4px;
-                        spacing: 2px;
-                        for c[i] in AccountsState.cards: OrderRow { c: c; index: i; count: AccountsState.cards.length; }
-                        HorizontalLayout {
-                            height: 44px;
-                            spacing: 8px;
-                            padding-left: 8px;
-                            Text { text: "使用量が"; color: Theme.fg; font-size: 13px; vertical-alignment: center; }
+                }
+                if AccountsState.cards.length > 0: Group {
+                    for c[i] in AccountsState.cards: Row {
+                        label: c.alias;
+                        sub: c.email != "" ? c.email : c.kind-label;
+                        value: c.badge;
+                        value-color: c.tone == "warn" ? Theme.warning : c.in-use ? Theme.accent : Theme.fg-secondary;
+                        pct: c.bars.length > 0 ? c.bars[0].pct : -1;
+                        chevron: !AccountsState.reorder;
+                        separator: i < AccountsState.cards.length - 1;
+                        clicked => { if !AccountsState.reorder { AccountsState.open-account(c.id); } }
+                        if AccountsState.reorder: IconButton { glyph: Glyph.expand-less; box-size: 28px; icon-size: 20px; enabled: i > 0; clicked => { AccountsState.move-account(c.id, -1); } }
+                        if AccountsState.reorder: IconButton { glyph: Glyph.expand-more; box-size: 28px; icon-size: 20px; enabled: i < AccountsState.cards.length - 1; clicked => { AccountsState.move-account(c.id, 1); } }
+                    }
+                }
+                Group {
+                    Row { label: "アカウントを追加"; chevron: true; separator: AccountsState.cards.length > 1; clicked => { AccountsState.begin(""); } }
+                    if AccountsState.cards.length > 1: Row {
+                        label: "並べ替え";
+                        value: AccountsState.reorder ? "完了" : "";
+                        value-color: Theme.accent;
+                        chevron: !AccountsState.reorder;
+                        separator: false;
+                        clicked => { AccountsState.reorder = !AccountsState.reorder; }
+                    }
+                }
+                if AccountsState.cards.length > 0: Group {
+                    Row {
+                        label: "使用量が超える前に次のアカウントへ";
+                        sub: "上から順に使います";
+                        separator: false;
+                        clickable: false;
+                        VerticalLayout {
+                            alignment: center;
+                            width: 56px;
                             Field {
-                                width: 64px;
                                 text <=> AccountsState.threshold;
                                 accepted(t) => { AccountsState.commit-threshold(t); }
                             }
-                            Text { text: "% を超える前に次のアカウントへ"; color: Theme.fg; font-size: 13px; vertical-alignment: center; }
-                            Rectangle { horizontal-stretch: 1; }
                         }
+                        Text { text: "%"; color: Theme.fg-secondary; font-size: 14px; vertical-alignment: center; }
                     }
                 }
             }
-            for c in AccountsState.cards: Card { c: c; }
+
+            // Level 3: one account
+            if AccountsState.account-id != "": VerticalLayout {
+                spacing: 10px;
+                ScreenHead { back-label: AccountsState.provider-name; title: AccountsState.cur.alias; back => { AccountsState.back(); } }
+                Group {
+                    Row {
+                        label: "別名";
+                        clickable: false;
+                        VerticalLayout {
+                            alignment: center;
+                            width: 200px;
+                            Field {
+                                text <=> AccountsState.rename-text;
+                                accepted(t) => { AccountsState.rename(AccountsState.cur.id, t); }
+                            }
+                        }
+                    }
+                    if AccountsState.cur.email != "": Row { label: "メールアドレス"; value: AccountsState.cur.email; clickable: false; }
+                    if AccountsState.cur.owner != "": Row { label: "所有者"; value: AccountsState.cur.owner; clickable: false; }
+                    Row { label: "プロバイダ"; value: AccountsState.provider-name; clickable: false; }
+                    Row { label: "認証"; value: AccountsState.cur.plan != "" ? AccountsState.cur.kind-label + " · " + AccountsState.cur.plan : AccountsState.cur.kind-label; clickable: false; }
+                    Row {
+                        label: "状態";
+                        sub: AccountsState.cur.recover;
+                        value: AccountsState.cur.badge;
+                        value-color: AccountsState.cur.tone == "warn" ? Theme.warning : AccountsState.cur.in-use ? Theme.accent : Theme.fg-secondary;
+                        clickable: false;
+                        separator: false;
+                    }
+                }
+                if AccountsState.cur.bars.length > 0: Group {
+                    for b[i] in AccountsState.cur.bars: Row {
+                        label: b.label + "の使用量";
+                        sub: b.reset;
+                        value: b.pct >= 99.5 ? "上限に達しました" : Math.round(b.pct) + "%";
+                        value-color: b.pct >= 99.5 ? Theme.danger : Theme.fg-secondary;
+                        pct: b.pct;
+                        clickable: false;
+                        separator: i < AccountsState.cur.bars.length - 1;
+                    }
+                }
+                Group {
+                    if !AccountsState.cur.in-use && AccountsState.cur.enabled: Row { label: "このアカウントを使う"; clicked => { AccountsState.use-next(AccountsState.cur.id); } }
+                    Row {
+                        label: AccountsState.cur.enabled ? "一時停止する" : "再開する";
+                        separator: AccountsState.cur.can-reauth;
+                        clicked => { AccountsState.toggle(AccountsState.cur.id, !AccountsState.cur.enabled); }
+                    }
+                    if AccountsState.cur.can-reauth: Row { label: "ログインし直す"; separator: false; clicked => { AccountsState.reauth(AccountsState.cur.id); } }
+                }
+                Group {
+                    if AccountsState.confirm-id != AccountsState.cur.id: Row {
+                        label: "このアカウントを削除";
+                        danger: true;
+                        separator: false;
+                        clicked => { AccountsState.confirm-id = AccountsState.cur.id; }
+                    }
+                    if AccountsState.confirm-id == AccountsState.cur.id: Row {
+                        label: "削除する(ログイン情報も消えます)";
+                        danger: true;
+                        clicked => { AccountsState.remove(AccountsState.cur.id); }
+                    }
+                    if AccountsState.confirm-id == AccountsState.cur.id: Row { label: "やめる"; separator: false; clicked => { AccountsState.confirm-id = ""; } }
+                }
+            }
         }
     }
     if AccountsState.add-step != 0: AddDialog { }

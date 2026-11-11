@@ -24,8 +24,6 @@ struct Data {
     pending_key: Option<String>,
     /// The account being signed in again (re-login), when the dialog is for that.
     reauth_id: Option<String>,
-    /// The policy was set to "use in the listed order" once in this run.
-    policy_fixed: bool,
 }
 
 thread_local! {
@@ -53,7 +51,13 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
 
 /// The page was opened: load the accounts, the providers and the policy.
 pub(crate) fn open(app: &AppWindow) {
-    app.global::<AccountsState>().set_loading(true);
+    {
+        let st = app.global::<AccountsState>();
+        st.set_provider_id("".into());
+        st.set_account_id("".into());
+        st.set_reorder(false);
+        st.set_loading(true);
+    }
     note(app, "");
     refresh(false);
     rpc("acct.providers", "inocode/providers/list", json!({}));
@@ -68,7 +72,18 @@ fn refresh(force: bool) {
 /// the home screen and the sidebar.
 pub(crate) fn begin(app: &AppWindow, kind: &str) {
     app.global::<SettingsPageState>().set_open(true);
+    let (pid, aid) = {
+        let st = app.global::<AccountsState>();
+        (st.get_provider_id().to_string(), st.get_account_id().to_string())
+    };
     crate::settings_page::show_accounts(app);
+    // Showing the page starts at the top; an entry used inside a provider stays there.
+    if !pid.is_empty() {
+        enter_provider(app, &pid, false);
+        if !aid.is_empty() {
+            enter_account(app, &aid, false);
+        }
+    }
     let st = app.global::<AccountsState>();
     DATA.with(|d| d.borrow_mut().reauth_id = None);
     st.set_add_alias("".into());
@@ -83,6 +98,18 @@ pub(crate) fn begin(app: &AppWindow, kind: &str) {
         d.login_id = None;
         d.auth_url.clear();
     });
+    // A sign-in entry of a known provider opens that provider's screen.
+    let known = match kind {
+        "chatgpt" => Some("openai"),
+        "claude" => Some("claude"),
+        k if k.starts_with("key:") => Some(&k[4..]),
+        _ => None,
+    };
+    if let Some(id) = known {
+        if st.get_provider_id().as_str() != id {
+            enter_provider(app, id, false);
+        }
+    }
     match kind {
         "chatgpt" => {
             st.set_add_kind("chatgpt".into());
@@ -107,9 +134,53 @@ pub(crate) fn begin(app: &AppWindow, kind: &str) {
     }
 }
 
+fn visit(app: &AppWindow) {
+    let st = app.global::<AccountsState>();
+    crate::nav::visit(app, crate::nav::Entry::Account(st.get_provider_id().to_string(), st.get_account_id().to_string()));
+}
+
+/// Open a provider's screen.
+fn enter_provider(app: &AppWindow, id: &str, record: bool) {
+    let st = app.global::<AccountsState>();
+    st.set_provider_id(id.into());
+    st.set_provider_name(crate::settings_page::provider_name(id).into());
+    st.set_account_id("".into());
+    st.set_confirm_id("".into());
+    st.set_reorder(false);
+    render(app);
+    set_rows(app);
+    if record {
+        visit(app);
+    }
+}
+
+fn enter_account(app: &AppWindow, id: &str, record: bool) {
+    let st = app.global::<AccountsState>();
+    st.set_account_id(id.into());
+    st.set_confirm_id("".into());
+    render(app);
+    st.set_rename_text(st.get_cur().alias);
+    if record {
+        visit(app);
+    }
+}
+
+/// The history stepped to a screen of the account section.
+pub(crate) fn show_at(app: &AppWindow, provider: &str, account: &str) {
+    crate::settings_page::show_accounts(app);
+    if provider.is_empty() {
+        return;
+    }
+    enter_provider(app, provider, false);
+    if !account.is_empty() {
+        enter_account(app, account, false);
+    }
+}
+
 /// The dialog's list: one row per sign-in method of each provider, filtered by the search text.
 fn set_rows(app: &AppWindow) {
-    let q = app.global::<AccountsState>().get_search().to_lowercase();
+    let pid = app.global::<AccountsState>().get_provider_id().to_string();
+    let q = if pid.is_empty() { app.global::<AccountsState>().get_search().to_lowercase() } else { String::new() };
     let providers = DATA.with(|d| d.borrow().providers.clone());
     let providers = if providers.is_empty() {
         vec![
@@ -120,7 +191,7 @@ fn set_rows(app: &AppWindow) {
         providers
     };
     let mut rows = Vec::new();
-    for (id, name, kinds) in &providers {
+    for (id, name, kinds) in providers.iter().filter(|p| pid.is_empty() || p.0 == pid) {
         for k in kinds {
             let (rid, title, kind) = match k.as_str() {
                 "chatgpt" => ("chatgpt".to_string(), "ChatGPT".to_string(), "ログイン"),
@@ -182,96 +253,129 @@ fn mean(accounts: &[Value], key: &str) -> Option<i64> {
     }
 }
 
-fn render(app: &AppWindow) {
-    let all = DATA.with(|d| d.borrow().accounts.clone());
-    let accounts = ordered(&all);
-    let now = now_secs();
-    let cards: Vec<AcctCard> = accounts
-        .iter()
-        .map(|a| {
-            let kind = s(a, "kind");
-            let provider = if s(a, "provider").is_empty() { "openai" } else { s(a, "provider") };
-            let mut bars = Vec::new();
-            if let Some(u) = a.get("usage").filter(|u| u.is_object()) {
-                for (key, name) in [("fiveHour", "5時間"), ("weekly", "週")] {
-                    if let Some(b) = u.get(key).filter(|w| !w.is_null()).and_then(|w| bar(name, w)) {
-                        bars.push(b);
-                    }
-                }
-            }
-            let full = bars.iter().any(|b| b.pct >= 99.5);
-            let back = a
-                .get("cooldownUntil")
-                .and_then(Value::as_i64)
-                .filter(|t| *t > now)
-                .map(|t| format!(" · あと{}で回復", span_jp(t - now)))
-                .unwrap_or_default();
-            let in_use = a.get("inUse").and_then(Value::as_bool).unwrap_or(false);
-            let state = s(a, "state");
-            let (status, tone) = match state {
-                "cooldown" if full => (format!("上限に達しています{back}"), "danger"),
-                "cooldown" => (format!("今は使えません{back}"), "warn"),
-                "disabled" => ("停止中です。自動では使われません".to_string(), "off"),
-                _ if in_use => ("使用中".to_string(), "ok"),
-                _ => (String::new(), "ok"),
-            };
-            let kind_label = match kind {
-                "apiKey" => "API キー",
-                "claudeOauth" => "サブスク",
-                _ => "ChatGPT",
-            };
-            let plan = s(a, "plan");
-            let meta = if plan.is_empty() {
-                format!("{} · {}", crate::settings_page::provider_name(provider), kind_label)
-            } else {
-                format!("{} · {} · {}", crate::settings_page::provider_name(provider), kind_label, plan)
-            };
-            AcctCard {
-                id: s(a, "id").into(),
-                alias: s(a, "alias").into(),
-                email: s(a, "email").into(),
-                owner: s(a, "name").into(),
-                meta: meta.into(),
-                status: status.into(),
-                tone: tone.into(),
-                in_use,
-                enabled: state != "disabled",
-                can_reauth: kind != "apiKey" && !a.get("isDefault").and_then(Value::as_bool).unwrap_or(false),
-                bars: ModelRc::from(Rc::new(VecModel::from(bars))),
-            }
-        })
-        .collect();
-    let st = app.global::<AccountsState>();
-    st.set_cards(ModelRc::from(Rc::new(VecModel::from(cards))));
-    st.set_loading(false);
-    // The total usage: the mean of every account that reports it.
-    let mut parts = Vec::new();
-    if let Some(n) = mean(&all, "fiveHour") {
-        parts.push(format!("5時間 平均 {n}%"));
-    }
-    if let Some(n) = mean(&all, "weekly") {
-        parts.push(format!("週 平均 {n}%"));
-    }
-    st.set_total(format!("総使用量  {}", parts.join("、")).trim_end().into());
-    if parts.is_empty() {
-        st.set_total("".into());
+fn provider_of(a: &Value) -> &str {
+    if s(a, "provider").is_empty() {
+        "openai"
+    } else {
+        s(a, "provider")
     }
 }
 
-/// The page's one rule is "use the accounts in the listed order"; the policy is set to that once.
+fn summary(accounts: &[Value]) -> String {
+    let mut parts = Vec::new();
+    if let Some(n) = mean(accounts, "fiveHour") {
+        parts.push(format!("5時間 平均 {n}%"));
+    }
+    if let Some(n) = mean(accounts, "weekly") {
+        parts.push(format!("週 平均 {n}%"));
+    }
+    parts.join("、")
+}
+
+/// The rows of the top level: the providers of the server plus any provider an account names.
+fn render_providers(app: &AppWindow, all: &[Value]) {
+    let mut list: Vec<(String, String)> = DATA.with(|d| d.borrow().providers.iter().map(|p| (p.0.clone(), p.1.clone())).collect());
+    if list.is_empty() {
+        list = vec![("openai".into(), "OpenAI".into()), ("claude".into(), "Claude".into())];
+    }
+    for a in all {
+        let id = provider_of(a);
+        if !list.iter().any(|p| p.0 == id) {
+            list.push((id.to_string(), crate::settings_page::provider_name(id)));
+        }
+    }
+    let rows: Vec<ProvRow> = list
+        .iter()
+        .map(|(id, name)| {
+            let mine: Vec<Value> = all.iter().filter(|a| provider_of(a) == id).cloned().collect();
+            let tone = if mine.is_empty() {
+                "off"
+            } else if mine.iter().any(|a| s(a, "state") == "active") {
+                "ok"
+            } else {
+                "warn"
+            };
+            ProvRow { id: id.as_str().into(), name: name.as_str().into(), count: mine.len() as i32, summary: summary(&mine).into(), tone: tone.into() }
+        })
+        .collect();
+    app.global::<AccountsState>().set_provs(ModelRc::from(Rc::new(VecModel::from(rows))));
+}
+
+fn card(a: &Value, now: i64) -> AcctCard {
+    let kind = s(a, "kind");
+    let provider = provider_of(a);
+    let mut bars = Vec::new();
+    if let Some(u) = a.get("usage").filter(|u| u.is_object()) {
+        for (key, name) in [("fiveHour", "5時間"), ("weekly", "週")] {
+            if let Some(b) = u.get(key).filter(|w| !w.is_null()).and_then(|w| bar(name, w)) {
+                bars.push(b);
+            }
+        }
+    }
+    let full = bars.iter().any(|b| b.pct >= 99.5);
+    let recover = a
+        .get("cooldownUntil")
+        .and_then(Value::as_i64)
+        .filter(|t| *t > now)
+        .map(|t| format!("あと{}で回復", span_jp(t - now)))
+        .unwrap_or_default();
+    let in_use = a.get("inUse").and_then(Value::as_bool).unwrap_or(false);
+    let (badge, tone) = match s(a, "state") {
+        "cooldown" if full => ("上限に達しています", "warn"),
+        "cooldown" => ("今は使えません", "warn"),
+        "disabled" => ("停止中", "off"),
+        _ if in_use => ("使用中", "ok"),
+        _ => ("待機中", "ok"),
+    };
+    AcctCard {
+        id: s(a, "id").into(),
+        alias: s(a, "alias").into(),
+        email: s(a, "email").into(),
+        owner: s(a, "name").into(),
+        provider: crate::settings_page::provider_name(provider).into(),
+        kind_label: match kind {
+            "apiKey" => "API キー",
+            "claudeOauth" => "サブスク",
+            _ => "ChatGPT",
+        }
+        .into(),
+        plan: s(a, "plan").into(),
+        badge: badge.into(),
+        recover: recover.into(),
+        tone: tone.into(),
+        in_use,
+        enabled: s(a, "state") != "disabled",
+        can_reauth: kind != "apiKey" && !a.get("isDefault").and_then(Value::as_bool).unwrap_or(false),
+        bars: ModelRc::from(Rc::new(VecModel::from(bars))),
+    }
+}
+
+fn render(app: &AppWindow) {
+    let everything = DATA.with(|d| d.borrow().accounts.clone());
+    render_providers(app, &everything);
+    let st = app.global::<AccountsState>();
+    let pid = st.get_provider_id().to_string();
+    let mine: Vec<Value> = everything.into_iter().filter(|a| pid.is_empty() || provider_of(a) == pid).collect();
+    let now = now_secs();
+    let cards: Vec<AcctCard> = ordered(&mine).iter().map(|a| card(a, now)).collect();
+    let aid = st.get_account_id().to_string();
+    if !aid.is_empty() {
+        match cards.iter().find(|c| c.id.as_str() == aid) {
+            Some(c) => st.set_cur(c.clone()),
+            // Deleted or gone: back to the provider's screen.
+            None => st.set_account_id("".into()),
+        }
+    }
+    st.set_cards(ModelRc::from(Rc::new(VecModel::from(cards))));
+    st.set_loading(false);
+    let total = summary(&mine);
+    st.set_total(if total.is_empty() { "".into() } else { format!("全体の使用量  {total}").into() });
+}
+
 fn show_policy(app: &AppWindow) {
     let p = DATA.with(|d| d.borrow().policy.clone());
-    let st = app.global::<AccountsState>();
-    st.set_threshold(p.get("thresholdPercent").and_then(Value::as_f64).map(|n| (n.round() as i64).to_string()).unwrap_or_default().into());
-    let fixed = DATA.with(|d| d.borrow().policy_fixed);
-    if !fixed && p.is_object() && (s(&p, "selection") != "fillFirst" || s(&p, "apiKeyOrder") != "mixed" || p.get("autoSwitch").and_then(Value::as_bool) == Some(false)) {
-        DATA.with(|d| d.borrow_mut().policy_fixed = true);
-        write_policy(|p| {
-            p["selection"] = json!("fillFirst");
-            p["apiKeyOrder"] = json!("mixed");
-            p["autoSwitch"] = json!(true);
-        });
-    }
+    app.global::<AccountsState>()
+        .set_threshold(p.get("thresholdPercent").and_then(Value::as_f64).map(|n| (n.round() as i64).to_string()).unwrap_or_default().into());
 }
 
 fn write_policy(change: impl FnOnce(&mut Value)) {
@@ -415,8 +519,11 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             rpc("acct.act", "inocode/accounts/rename", json!({ "id": id.to_string(), "alias": alias }));
         }
     });
-    st.on_move_account(|id, delta| {
-        let list = DATA.with(|d| ordered(&d.borrow().accounts));
+    let weak = app.as_weak();
+    let weak_pid = move || weak.upgrade().map(|a| a.global::<AccountsState>().get_provider_id().to_string()).unwrap_or_default();
+    st.on_move_account(move |id, delta| {
+        let pid = weak_pid();
+        let list = DATA.with(|d| ordered(&d.borrow().accounts.iter().filter(|a| pid.is_empty() || provider_of(a) == pid).cloned().collect::<Vec<_>>()));
         let ids: Vec<String> = list.iter().map(|a| s(a, "id").to_string()).collect();
         let Some(i) = ids.iter().position(|x| x == id.as_str()) else { return };
         let j = i as i64 + delta as i64;
@@ -449,7 +556,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         if let Some(app) = weak.upgrade() {
             let st = app.global::<AccountsState>();
             st.set_confirm_id("".into());
-            st.set_open_id("".into());
+            st.set_account_id("".into());
         }
         rpc("acct.act", "inocode/accounts/remove", json!({ "id": id.to_string() }));
     });
@@ -461,6 +568,32 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
                 note(&app, "しきい値は 1 から 100 の数で入力してください");
             }
         }
+    });
+    let weak = app.as_weak();
+    st.on_open_provider(move |id| {
+        if let Some(app) = weak.upgrade() {
+            enter_provider(&app, &id, true);
+        }
+    });
+    let weak = app.as_weak();
+    st.on_open_account(move |id| {
+        if let Some(app) = weak.upgrade() {
+            enter_account(&app, &id, true);
+        }
+    });
+    let weak = app.as_weak();
+    st.on_back(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<AccountsState>();
+        if !st.get_account_id().is_empty() {
+            st.set_account_id("".into());
+            st.set_confirm_id("".into());
+        } else {
+            st.set_provider_id("".into());
+            st.set_reorder(false);
+        }
+        render(&app);
+        visit(&app);
     });
     let weak = app.as_weak();
     st.on_open_providers(move || {
@@ -519,7 +652,8 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
                 })
                 .collect();
             DATA.with(|d| d.borrow_mut().providers = list);
-            if st.get_add_step() == 1 {
+            render(app);
+            if st.get_add_step() == 1 || !st.get_provider_id().is_empty() {
                 set_rows(app);
             }
         }
