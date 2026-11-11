@@ -36,6 +36,10 @@ pub(crate) struct State {
     pub(crate) model_filter: String,
     /// Providers whose section of the model list the user opened (true) or closed (false).
     pub(crate) provider_open: std::collections::HashMap<String, bool>,
+    /// The models of each provider that has an account (model/list { modelProvider }).
+    pub(crate) provider_models: std::collections::HashMap<String, Vec<ModelInfo>>,
+    /// The provider the open thread runs with (a thread keeps it): None until known.
+    pub(crate) thread_provider: Option<String>,
     /// A thread was just opened: the model it reports is the one to show (and use).
     pub(crate) sync_model: bool,
     /// The open thread is an existing one: what it has recorded is the choice, even none.
@@ -80,7 +84,21 @@ pub(crate) fn effort_label(e: &str) -> String {
 /// Models offered in the picker: the ones the server lists as visible (not hidden).
 pub(crate) fn visible_models(st: &State) -> Vec<&ModelInfo> {
     let extra = st.extra.iter().filter(|e| !st.models.iter().any(|m| m.id == e.id));
-    st.models.iter().chain(extra).filter(|m| !m.hidden).collect()
+    let mut all: Vec<&ModelInfo> = Vec::new();
+    // The lists asked per provider first, then what the server lists on its own (the default
+    // provider's); a model is in once.
+    let mut keys: Vec<&String> = st.provider_models.keys().collect();
+    keys.sort();
+    for k in keys {
+        all.extend(st.provider_models[k].iter());
+    }
+    for m in st.models.iter().chain(extra) {
+        if !all.iter().any(|x| x.id == m.id && x.provider == m.provider) {
+            all.push(m);
+        }
+    }
+    all.retain(|m| !m.hidden);
+    all
 }
 
 #[derive(Clone, Copy, PartialEq)]

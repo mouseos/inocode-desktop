@@ -83,7 +83,7 @@ fn fixture_named(method: &str, suffix: Option<&str>) -> Option<Result<Value, Str
             };
             return Some(Ok(match value {
                 // ref/contract-fixtures files are {method, request, response, note}: the response is the result.
-                Value::Object(mut o) if o.contains_key("response") && o.contains_key("method") => {
+                Value::Object(mut o) if o.contains_key("response") && (o.contains_key("method") || o.contains_key("request")) => {
                     o.remove("response").unwrap()
                 }
                 Value::Object(mut o) if o.len() == 1 && o.contains_key("result") => o.remove("result").unwrap(),

@@ -369,12 +369,9 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
         let old = self.sent.clone();
         let mut p = json!({ "threadId": tid });
         let mut any = false;
-        if new.model != old.model || new.model_provider != old.model_provider {
+        if new.model != old.model {
             if let Some(m) = &new.model {
                 p["model"] = json!(m);
-                if let Some(pr) = &new.model_provider {
-                    p["modelProvider"] = json!(pr);
-                }
                 any = true;
             }
         }

@@ -59,6 +59,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             if st.sync_model && !st.applied_model.is_empty() {
                 st.sync_model = false;
                 let found = visible_models(&st).iter().find(|m| m.id == st.applied_model).map(|m| (m.id.clone(), m.provider.clone()));
+                st.thread_provider = found.as_ref().map(|f| f.1.clone());
                 match found {
                     Some((id, provider)) => {
                         st.settings.model = Some(id);
@@ -112,6 +113,10 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             // the server's default recorded, which is not a choice.
             st.sync_model = !title.is_empty();
             st.model_locked = !title.is_empty();
+            // A thread of ours was started with the chosen provider; an old one is told by its model.
+            if title.is_empty() {
+                st.thread_provider = st.settings.model_provider.clone();
+            }
             st.busy = false;
             app.global::<AppState>().set_busy(false);
             // Each thread has its own approvals: show the ones of this thread.

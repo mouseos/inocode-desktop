@@ -76,11 +76,16 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         if heading {
             return;
         }
+        let mut switch_thread = false;
         change(&app, &h, |st| {
             let Some((m, kind)) = shown_models(st).get(i as usize).and_then(|it| match it {
                 Item::Model(m, k) => Some(((*m).clone(), *k)),
                 Item::Heading(..) => None,
             }) else { return };
+            // A thread keeps its provider: the model of another one is for a new thread.
+            if crate::model_init::provider_changed(st, &m.provider) {
+                switch_thread = true;
+            }
             st.settings.model = Some(m.id.clone());
             st.settings.model_provider = Some(m.provider.clone());
             crate::gui_prefs::save_last_model(&m.id, &m.provider);
@@ -99,6 +104,9 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         let after = STATE.with(|s| s.borrow().settings.daybreak);
         if after != before {
             h.send(Command::SetDaybreak(after));
+        }
+        if switch_thread {
+            h.send(Command::NewThread);
         }
     });
     let weak = app.as_weak();

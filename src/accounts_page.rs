@@ -1202,6 +1202,9 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
 
 /// `inocode/accounts/updated` and `loginCompleted`.
 pub(crate) fn on_notify(app: &AppWindow, method: &str, params: &Value) {
+    if method == "inocode/accounts/updated" || method == "inocode/accounts/loginCompleted" {
+        crate::model_init::refresh_providers();
+    }
     match method {
         "inocode/accounts/updated" => {
             if let Some(list) = params.get("accounts").and_then(Value::as_array) {

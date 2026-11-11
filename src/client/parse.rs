@@ -343,9 +343,6 @@ pub(super) fn turn_overrides(s: &Settings, with_permissions: bool, params: &mut 
     }
     if let Some(m) = &s.model {
         params["model"] = json!(m);
-        if let Some(pr) = &s.model_provider {
-            params["modelProvider"] = json!(pr);
-        }
         if let Some(program) = s.programs.iter().find(|x| &x.id == m).and_then(|x| x.program_for(s.daybreak)) {
             params["cyberAccessProgram"] = json!(program);
         }

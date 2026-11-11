@@ -1,15 +1,57 @@
 {
-  "method": "inocode/accounts/resetCredit/history",
-  "request": { "id": "acc-main" },
+  "_comment": "inocode/accounts/resetCredit/history. Params: {id, limit?}. Newest first. kinds: granted, used, usedElsewhere, expired, quotaReset, error. sources: observed (two reads compared), journal (this app's own spends), endpoint (the server's listing). detail is Japanese display text. ts: unix seconds.",
+  "request": {
+    "method": "inocode/accounts/resetCredit/history",
+    "params": {
+      "id": "claude-5d2a7e0b91c3f4a8",
+      "limit": 50
+    }
+  },
   "response": {
     "entries": [
-      { "kind": "granted", "ts": 1783000000, "grantId": "g1", "label": "週のリセット券", "detail": "あと 30 日で期限", "source": "server" },
-      { "kind": "used", "ts": 1783400000, "grantId": "g1", "label": "週のリセット券", "detail": "", "source": "inocode", "result": "unknown" },
-      { "kind": "usedElsewhere", "ts": 1783500000, "grantId": "g2", "label": "", "detail": "", "source": "server" },
-      { "kind": "quotaReset", "ts": 1783600000, "detail": "5時間と週の使用量が 0% になりました", "source": "server" },
-      { "kind": "expired", "ts": 1783700000, "grantId": "g3", "label": "月のリセット券", "detail": "", "source": "server" },
-      { "kind": "error", "ts": 1783800000, "detail": "通信できませんでした", "source": "inocode" }
+      {
+        "ts": 1794391200,
+        "kind": "quotaReset",
+        "detail": "5 時間の枠: 使用率 88% → 2%(期限どおりに切り替わりました)",
+        "source": "observed"
+      },
+      {
+        "ts": 1794390000,
+        "kind": "used",
+        "grantId": "launch-2610-fable",
+        "detail": "このアプリから使いました: リセットされました",
+        "source": "journal"
+      },
+      {
+        "ts": 1794385000,
+        "kind": "usedElsewhere",
+        "grantId": "launch-2610-fable-6mo",
+        "label": "New model launch: one more Fable reset at 6 months' tenure",
+        "detail": "券が減りました(残り 1 → 0 回)。このアプリの記録にはありません",
+        "source": "observed"
+      },
+      {
+        "ts": 1794384000,
+        "kind": "error",
+        "detail": "券の情報を取得できませんでした(request_failed)",
+        "source": "observed"
+      },
+      {
+        "ts": 1794300000,
+        "kind": "expired",
+        "grantId": "full-reset-2610",
+        "label": "One full limit reset (October 2026)",
+        "detail": "期限が切れました",
+        "source": "observed"
+      },
+      {
+        "ts": 1794200000,
+        "kind": "granted",
+        "grantId": "full-reset-2611",
+        "label": "One full limit reset (November 2026)",
+        "detail": "初めての取得で券が見えました(付与の時刻は不明): 残り 1/1 回",
+        "source": "observed"
+      }
     ]
-  },
-  "note": "Provisional shape (kind, ts, grantId, label, detail, source) until the server contract is out."
+  }
 }
