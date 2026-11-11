@@ -51,6 +51,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             let _ = sandbox_label(&sandbox);
             st.branch = git_branch(&cwd);
             st.active_cwd = cwd.clone();
+            crate::panel_data::on_thread_active(app, &st.active.clone(), &cwd);
             app.global::<AppState>().set_cwd_text(cwd.into());
             refresh_pickers(app, &st);
         }
@@ -142,6 +143,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             st.busy = false;
             app.global::<AppState>().set_busy(false);
             rebuild_projects(app, &st);
+            crate::panel_data::refresh_terminals();
             crate::prompts::on_turn_done(app, &st.active.clone(), interrupted);
             // The turn's plan and file changes end up at the bottom, and the next turn starts new rows.
             messages_with(app, |model| {
@@ -188,10 +190,12 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::Rpc { tag, result } => {
             crate::prompts::on_rpc(app, &tag, &result);
             crate::attach::on_rpc(app, &tag, &result);
+            crate::panel_data::on_rpc(app, &tag, &result);
             crate::sidebar::on_rpc(app, &tag, &result);
             crate::chat_actions::on_rpc(app, &tag, &result);
         }
-        Event::Notify { method, .. } => {
+        Event::Notify { method, params } => {
+            crate::panel_data::on_notify(app, &method, &params);
             crate::sidebar::on_notify(&method);
             crate::prompts::on_notify(&method);
         }

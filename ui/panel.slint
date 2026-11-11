@@ -2,22 +2,26 @@ import { Theme } from "theme.slint";
 import { PromptState } from "prompts.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Switch } from "widgets.slint";
+import { PanelState } from "panel_data.slint";
 
-component SectionTitle inherits HorizontalLayout {
+component SectionTitle inherits Rectangle {
     in property <string> label;
     in property <string> trailing;
-    in property <bool> open: true;
+    in-out property <bool> open: true;
     height: 26px;
-    spacing: 2px;
-    Text { text: root.label; color: Theme.fg; font-size: 12px; font-weight: 600; vertical-alignment: center; }
-    Icon {
-        width: 14px;
-        text: root.open ? Glyph.expand-more : Glyph.chevron-right;
-        font-size: 14px;
-        color: Theme.fg-tertiary;
+    HorizontalLayout {
+        spacing: 2px;
+        Text { text: root.label; color: Theme.fg; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+        Icon {
+            width: 14px;
+            text: root.open ? Glyph.expand-more : Glyph.chevron-right;
+            font-size: 14px;
+            color: Theme.fg-tertiary;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        if root.trailing != "": Text { text: root.trailing; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
     }
-    Rectangle { horizontal-stretch: 1; }
-    if root.trailing != "": Text { text: root.trailing; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+    TouchArea { mouse-cursor: pointer; clicked => { root.open = !root.open; } }
 }
 
 component PanelRow inherits HorizontalLayout {
@@ -63,16 +67,21 @@ export component TaskPanel inherits Rectangle {
         spacing: 2px;
         alignment: start;
 
-        SectionTitle { label: "環境"; }
-        PanelRow { glyph: Glyph.computer; label: "このコンピューター"; trailing: "保存"; }
-        PanelRow { glyph: Glyph.folder; label: root.folder; detail: root.cwd; }
-        HorizontalLayout {
+        env := SectionTitle { label: "環境"; }
+        if env.open: PanelRow { glyph: Glyph.computer; label: "このコンピューター"; }
+        if env.open: PanelRow { glyph: Glyph.folder; label: PanelState.folder-name != "" ? PanelState.folder-name : root.folder; detail: root.cwd; }
+        if env.open: HorizontalLayout {
             height: 26px;
             spacing: 8px;
             Icon { width: 16px; text: Glyph.computer; font-size: 15px; color: Theme.fg-secondary; }
             Text { text: "Remote Control"; color: Theme.fg; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
-            Icon { width: 16px; text: Glyph.more-horiz; font-size: 15px; color: Theme.fg-secondary; }
-            Switch { y: 5px; }
+            if PanelState.remote-status == "connecting": Text { text: "接続中…"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
+            if PanelState.remote-status == "errored": Text { text: "エラー"; color: Theme.danger; font-size: 12px; vertical-alignment: center; }
+            Switch {
+                y: 5px;
+                on <=> PanelState.remote-on;
+                toggled(v) => { PanelState.toggle-remote(v); }
+            }
         }
 
         Rectangle { height: 10px; }
@@ -112,10 +121,37 @@ export component TaskPanel inherits Rectangle {
         }
         Rectangle { height: 6px; }
         SectionTitle { label: "使用量"; trailing: root.rate-text == "" ? "—" : root.rate-text; }
-        SectionTitle { label: "コネクタ"; open: false; }
+        conn := SectionTitle { label: "コネクタ"; open: false; trailing: PanelState.mcp-summary; }
+        if conn.open: VerticalLayout {
+            for m in PanelState.mcp: PanelRow { glyph: Glyph.extension; label: m.name; detail: m.status; }
+            if PanelState.mcp.length == 0: PanelRow { glyph: Glyph.extension; label: "接続されたコネクタはありません"; }
+            Rectangle {
+                height: 26px;
+                border-radius: Theme.radius-row;
+                background: ra.has-hover ? Theme.hover : transparent;
+                Text { text: "再読み込み"; color: Theme.fg-secondary; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                ra := TouchArea { mouse-cursor: pointer; clicked => { PanelState.reload-mcp(); } }
+            }
+        }
 
         Rectangle { height: 10px; }
-        SectionTitle { label: "バックグラウンドタスク"; }
-        PanelRow { glyph: Glyph.terminal; label: "起動中のコマンドはありません"; }
+        bg := SectionTitle { label: "バックグラウンドタスク"; trailing: PanelState.terminals.length > 0 ? PanelState.terminals.length + " 件" : ""; }
+        if bg.open: VerticalLayout {
+            for t in PanelState.terminals: HorizontalLayout {
+                height: 26px;
+                spacing: 4px;
+                Icon { width: 16px; text: Glyph.terminal; font-size: 15px; color: Theme.fg-secondary; }
+                Text { text: t.text; color: Theme.fg; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                IconButton { glyph: Glyph.stop; box-size: 22px; icon-size: 14px; y: 2px; clicked => { PanelState.stop-terminal(t.id); } }
+            }
+            if PanelState.terminals.length == 0: PanelRow { glyph: Glyph.terminal; label: "起動中のコマンドはありません"; }
+            if PanelState.terminals.length > 1: Rectangle {
+                height: 26px;
+                border-radius: Theme.radius-row;
+                background: sa.has-hover ? Theme.hover : transparent;
+                Text { text: "すべて停止"; color: Theme.fg-secondary; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                sa := TouchArea { mouse-cursor: pointer; clicked => { PanelState.stop-all-terminals(); } }
+            }
+        }
     }
 }

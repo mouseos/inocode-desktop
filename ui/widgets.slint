@@ -288,6 +288,7 @@ export component SelectChip inherits Rectangle {
 
 export component Switch inherits Rectangle {
     in-out property <bool> on: true;
+    callback toggled(bool);
     width: 28px;
     height: 16px;
     border-radius: 8px;
@@ -303,6 +304,9 @@ export component Switch inherits Rectangle {
     }
     TouchArea {
         mouse-cursor: pointer;
-        clicked => { root.on = !root.on; }
+        clicked => {
+            root.on = !root.on;
+            root.toggled(root.on);
+        }
     }
 }

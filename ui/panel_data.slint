@@ -1,0 +1,27 @@
+export struct McpRow {
+    name: string,
+    status: string,
+}
+
+export struct TermRow {
+    id: string,
+    text: string,
+}
+
+// Live data of the right-hand panel (src/panel_data.rs).
+export global PanelState {
+    in property <string> folder-name;
+    // Connection of the Remote Control service: "disabled", "connecting", "connected", "errored".
+    in property <string> remote-status: "disabled";
+    in-out property <bool> remote-on: false;
+    in property <[McpRow]> mcp;
+    in property <string> mcp-summary;
+    in property <[TermRow]> terminals;
+    // Thread open in the chat (for the header menu).
+    in property <string> thread-id;
+
+    callback toggle-remote(bool);
+    callback reload-mcp;
+    callback stop-terminal(string);
+    callback stop-all-terminals;
+}

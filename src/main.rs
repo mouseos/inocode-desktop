@@ -7,6 +7,7 @@ mod callbacks;
 mod discovery;
 mod events;
 mod palette;
+mod panel_data;
 mod prompts;
 mod sidebar;
 mod state;

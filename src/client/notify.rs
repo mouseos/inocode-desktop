@@ -218,7 +218,7 @@ impl<F: Fn(Event)> Session<'_, F> {
                 }
             }
             // Session list changes (name, status, read state, archive, section) reach the sidebar.
-            m if m.starts_with("inocode/") || m.starts_with("thread/") => {
+            m if m.starts_with("inocode/") || m.starts_with("thread/") || m.starts_with("remoteControl/") || m.starts_with("mcpServer/") => {
                 (self.on_event)(Event::Notify { method: m.to_string(), params: params.clone() });
             }
             _ => {}

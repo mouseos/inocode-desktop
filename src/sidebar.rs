@@ -190,10 +190,19 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     crate::chat_actions::register(app, handle);
     crate::prompts::register(app, handle);
     crate::attach::register(app, handle);
+    crate::panel_data::register(app, handle);
     let weak = app.as_weak();
     app.global::<SidebarState>().on_open_menu(move |kind, id, x, y| {
         let Some(app) = weak.upgrade() else { return };
         match kind.as_str() {
+            "head" | "head-more" => {
+                // The header's title and "…" use the same menu as a session row.
+                let active = STATE.with(|s| s.borrow().active.clone());
+                let mut items = STATE.with(|s| thread_menu(&s.borrow(), &active));
+                items.extend(crate::panel_data::thread_menu_extras(kind == "head-more"));
+                set_menu(&app, items, x, y);
+                MENU_FOR.with(|m| *m.borrow_mut() = active);
+            }
             "sort" => set_menu(&app, sort_menu(), x, y),
             "more" => set_menu(&app, filter_menu(), x, y),
             "thread" => {
@@ -224,7 +233,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     let h = handle.clone();
     app.global::<SidebarState>().on_menu_pick(move |action| {
         let Some(app) = weak.upgrade() else { return };
-        if crate::attach::menu_pick(&app, &action) {
+        if crate::attach::menu_pick(&app, &action) || crate::panel_data::menu_pick(&app, &action) {
             return;
         }
         let id = MENU_FOR.with(|m| m.borrow().clone());

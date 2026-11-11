@@ -10,6 +10,8 @@ import { DiscoveryState, SettingsDialog } from "settings.slint";
 import { Tabs, TabStrip, TabHost } from "tabs.slint";
 import { MenuOverlay } from "menus.slint";
 import { PaletteOverlay, PaletteState } from "palette.slint";
+import { PanelState } from "panel_data.slint";
+import { SidebarState } from "menus.slint";
 
 // Rust から各タブの状態へ届くように、ここで書き出す(タブを足したら 1 行足す)。
 export { Tabs } from "tabs.slint";
@@ -18,6 +20,7 @@ export { SidebarState } from "menus.slint";
 export { PaletteState } from "palette.slint";
 export { MessageActions } from "chat_actions.slint";
 export { PromptState } from "prompts.slint";
+export { PanelState } from "panel_data.slint";
 export { AttachState } from "attach.slint";
 export { KnowledgeState } from "tabs/knowledge.slint";
 export { EvidenceState } from "tabs/evidence.slint";
@@ -92,7 +95,12 @@ export component AppWindow inherits Window {
                         vertical-alignment: center;
                         overflow: elide;
                     }
-                    if Tabs.current == 0: Icon { width: 16px; text: Glyph.expand-more; font-size: 16px; color: Theme.fg-secondary; }
+                    if Tabs.current == 0: IconButton {
+                        glyph: Glyph.expand-more;
+                        icon-size: 16px;
+                        box-size: 22px;
+                        clicked => { SidebarState.open-menu("head", PanelState.thread-id, self.absolute-position.x, self.absolute-position.y + self.height); }
+                    }
                     Rectangle { horizontal-stretch: 1; }
                     Rectangle {
                         width: st.preferred-width + 12px;
@@ -121,7 +129,10 @@ export component AppWindow inherits Window {
                     if Tabs.current == 0: IconButton { glyph: Glyph.terminal; }
                     if Tabs.current == 0: IconButton { glyph: Glyph.language; }
                     if Tabs.current == 0: IconButton { glyph: Glyph.folder; }
-                    if Tabs.current == 0: IconButton { glyph: Glyph.more-horiz; }
+                    if Tabs.current == 0: IconButton {
+                        glyph: Glyph.more-horiz;
+                        clicked => { SidebarState.open-menu("head-more", PanelState.thread-id, self.absolute-position.x - 180px, self.absolute-position.y + self.height); }
+                    }
                 }
             }
         }
