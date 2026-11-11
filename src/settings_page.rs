@@ -30,6 +30,7 @@ enum S {
     Skills,
     Mcp,
     Inocode,
+    Stats,
 }
 
 fn nav() -> Vec<(S, &'static str)> {
@@ -50,6 +51,7 @@ fn nav() -> Vec<(S, &'static str)> {
         (S::Mcp, "MCP サーバー"),
         (S::Head, "InoCode"),
         (S::Inocode, "InoCode"),
+        (S::Stats, "統計"),
     ]
 }
 
@@ -344,6 +346,10 @@ fn load(app: &AppWindow, section: i32) {
             s.set_layout(1);
             s.set_loading(false);
             app.global::<Tabs>().invoke_opened(4);
+        }
+        S::Stats => {
+            s.set_layout(7);
+            s.set_loading(false);
         }
     }
 }

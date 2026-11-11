@@ -2,6 +2,7 @@ import { Theme } from "theme.slint";
 import { Icon, Glyph } from "icons.slint";
 import { IconButton, Switch } from "widgets.slint";
 import { InocodePage } from "tabs/settings.slint";
+import { StatsPage } from "tabs/stats.slint";
 import { Chip, Field } from "controls.slint";
 import { AccountsView } from "accounts_page.slint";
 
@@ -327,6 +328,7 @@ export component SettingsPage inherits Rectangle {
                         }
                     }
                     if SettingsPageState.layout == 2: AccountsView { }
+                    if SettingsPageState.layout == 7: StatsPage { }
                     if SettingsPageState.layout == 5: Flickable {
                         content-height: ub.preferred-height;
                         ub := VerticalLayout {
