@@ -6,6 +6,7 @@ import { AppState, Message, Approval } from "state.slint";
 import { MessageActions } from "chat_actions.slint";
 import { ToolRow } from "chat_items.slint";
 import { ShortcutState } from "shortcuts.slint";
+import { MetricsState } from "metrics.slint";
 import { SettingsPageState } from "settings_page.slint";
 import { AttachState, AttachChips, SuggestList } from "attach.slint";
 import { PromptState, QuestionCard, QueueList, ErrorBanner } from "prompts.slint";
@@ -302,6 +303,13 @@ component ChatView inherits Rectangle {
                     }
                     if m.role == "tool": ToolRow { text: m.text; detail: m.detail; index: mi; }
                     if m.role != "tool": ActionRow { user: m.role == "user"; index: mi; }
+                    // Tokens and speed of the turn, under the last answer.
+                    if mi == root.messages.length - 1 && m.role == "assistant" && MetricsState.text != "": Text {
+                        text: MetricsState.text;
+                        color: Theme.fg-tertiary;
+                        font-size: 11px;
+                        horizontal-alignment: right;
+                    }
                 }
                 Rectangle { horizontal-stretch: 1; }
             }

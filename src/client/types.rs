@@ -202,6 +202,8 @@ pub enum Event {
     /// Context usage of the active thread (percent of the window) and a text summary.
     Usage { percent: i32, text: String },
     RateLimits(String),
+    /// Cumulative token totals of the thread (total, last).
+    TokenTotals { total: i64, last_total: i64, last_output: i64 },
     /// configRequirements/read: allowed approval policies / sandbox modes (None = unrestricted).
     Requirements { policies: Option<Vec<String>>, sandboxes: Option<Vec<String>> },
     /// thread.daybreakEnabled as stored by the server.

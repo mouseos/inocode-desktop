@@ -77,6 +77,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::Threads(_) => crate::sidebar::refresh(),
         Event::ThreadActive { id, title } => {
             crate::sidebar::on_thread_active(&id);
+            crate::metrics::reset(app);
             crate::nav::visit(app, crate::nav::Entry::Thread(id.clone()));
             let mut st = state.borrow_mut();
             st.active = id;
@@ -97,7 +98,9 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::AssistantStart => {
             messages_with(app, |m| push(m, "", "assistant", ""));
         }
+        Event::TokenTotals { total, last_total, last_output } => crate::metrics::totals(app, total, last_total, last_output),
         Event::Delta(delta) => {
+            crate::metrics::chunk(app, &delta);
             messages_with(app, |model| {
                 let n = model.row_count();
                 match model.row_data(n.wrapping_sub(1)) {
@@ -116,6 +119,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             app.invoke_scroll_bottom();
         }
         Event::ToolDelta { id, delta } => {
+            crate::metrics::chunk(app, &delta);
             messages_with(app, |model| {
                 for i in 0..model.row_count() {
                     if let Some(mut row) = model.row_data(i) {
@@ -134,6 +138,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             app.invoke_scroll_bottom();
         }
         Event::TurnStarted => {
+            crate::metrics::turn_started(app);
             crate::prompts::clear_banner(app);
             let mut st = state.borrow_mut();
             st.busy = true;
@@ -141,6 +146,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             rebuild_projects(app, &st);
         }
         Event::TurnDone { interrupted } => {
+            crate::metrics::turn_done(app);
             let mut st = state.borrow_mut();
             st.busy = false;
             app.global::<AppState>().set_busy(false);

@@ -7,6 +7,7 @@ mod callbacks;
 mod discovery;
 mod gui_prefs;
 mod events;
+mod metrics;
 mod nav;
 mod palette;
 mod panel_data;
