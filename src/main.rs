@@ -9,6 +9,7 @@ mod events;
 mod palette;
 mod panel_data;
 mod prompts;
+mod settings_page;
 mod sidebar;
 mod state;
 mod tabs;

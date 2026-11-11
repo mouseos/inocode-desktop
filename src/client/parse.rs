@@ -436,7 +436,7 @@ pub fn parse_account(result: &Value) -> (bool, String) {
     }
 }
 
-pub(super) fn window_label(mins: Option<i64>) -> String {
+pub fn window_label(mins: Option<i64>) -> String {
     match mins {
         Some(m) if m >= 10_000 => "週".to_string(),
         Some(m) if m >= 60 => format!("{}時間", m / 60),

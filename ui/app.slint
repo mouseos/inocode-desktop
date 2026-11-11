@@ -11,6 +11,7 @@ import { Tabs, TabStrip, TabHost } from "tabs.slint";
 import { MenuOverlay } from "menus.slint";
 import { PaletteOverlay, PaletteState } from "palette.slint";
 import { PanelState } from "panel_data.slint";
+import { SettingsPage } from "settings_page.slint";
 import { SidebarState } from "menus.slint";
 
 // Rust から各タブの状態へ届くように、ここで書き出す(タブを足したら 1 行足す)。
@@ -21,6 +22,7 @@ export { PaletteState } from "palette.slint";
 export { MessageActions } from "chat_actions.slint";
 export { PromptState } from "prompts.slint";
 export { PanelState } from "panel_data.slint";
+export { SettingsPageState } from "settings_page.slint";
 export { AttachState } from "attach.slint";
 export { KnowledgeState } from "tabs/knowledge.slint";
 export { EvidenceState } from "tabs/evidence.slint";
@@ -195,6 +197,13 @@ export component AppWindow inherits Window {
         height: root.height;
         confirm => { AppState.confirm-full(); }
         cancel => { AppState.cancel-full(); }
+    }
+
+    SettingsPage {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
     }
 
     PaletteOverlay {

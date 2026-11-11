@@ -191,6 +191,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     crate::prompts::register(app, handle);
     crate::attach::register(app, handle);
     crate::panel_data::register(app, handle);
+    crate::settings_page::register(app, handle);
     let weak = app.as_weak();
     app.global::<SidebarState>().on_open_menu(move |kind, id, x, y| {
         let Some(app) = weak.upgrade() else { return };
@@ -286,7 +287,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
                     true,
                 );
             }
-            "settings" => app.global::<AppState>().set_settings_open(true),
+            "settings" => crate::settings_page::open(&app),
             "login" => app.global::<AppState>().invoke_login(),
             "switch" => rpc(&h, "chat.account.sessions".into(), "accountSession/list", json!({})),
             "logout" => confirm(

@@ -1,0 +1,113 @@
+import { Theme } from "theme.slint";
+import { Icon, Glyph } from "icons.slint";
+import { IconButton, Switch } from "widgets.slint";
+
+export struct SRow {
+    id: string,
+    title: string,
+    desc: string,
+    value: string,
+    // 0 text, 1 switch, 2 button (the button's label is `value`)
+    kind: int,
+    on: bool,
+}
+
+// Full-page settings opened from the account menu (src/settings_page.rs). The InoCode "設定" tab
+// and the version-discovery dialog are separate and untouched.
+export global SettingsPageState {
+    in-out property <bool> open: false;
+    in-out property <int> section: 0;
+    in property <[string]> sections;
+    in property <string> title;
+    in property <[SRow]> rows;
+    in property <bool> loading: false;
+
+    callback select(int);
+    callback row-action(string);
+    callback row-toggle(string, bool);
+}
+
+export component SettingsPage inherits Rectangle {
+    if SettingsPageState.open: Rectangle {
+        background: Theme.surface;
+        TouchArea { }
+        HorizontalLayout {
+            // Left: sections
+            Rectangle {
+                width: 220px;
+                background: Theme.sidebar;
+                VerticalLayout {
+                    padding: 8px;
+                    spacing: 2px;
+                    alignment: start;
+                    HorizontalLayout {
+                        height: 32px;
+                        IconButton { glyph: Glyph.arrow-back; clicked => { SettingsPageState.open = false; } }
+                        Text { text: "設定"; color: Theme.fg; font-size: 14px; font-weight: 600; vertical-alignment: center; }
+                    }
+                    for name[i] in SettingsPageState.sections: Rectangle {
+                        height: 28px;
+                        border-radius: Theme.radius-row;
+                        background: i == SettingsPageState.section ? Theme.selected : na.has-hover ? Theme.hover : transparent;
+                        Text { x: 10px; text: name; color: Theme.fg; font-size: 13px; vertical-alignment: center; }
+                        na := TouchArea { mouse-cursor: pointer; clicked => { SettingsPageState.select(i); } }
+                    }
+                }
+            }
+            // Right: rows of the section
+            Flickable {
+                content-height: body.preferred-height;
+                body := VerticalLayout {
+                    padding: 24px;
+                    padding-left: 40px;
+                    padding-right: 40px;
+                    spacing: 4px;
+                    alignment: start;
+                    Text { text: SettingsPageState.title; color: Theme.fg; font-size: 20px; font-weight: 600; height: 36px; }
+                    if SettingsPageState.loading: Text { text: "読み込み中…"; color: Theme.fg-tertiary; font-size: 13px; }
+                    for r in SettingsPageState.rows: Rectangle {
+                        height: max(40px, c.preferred-height + 12px);
+                        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+                        c := HorizontalLayout {
+                            padding-top: 6px;
+                            padding-bottom: 6px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text { text: r.title; color: Theme.fg; font-size: 13px; wrap: word-wrap; }
+                                if r.desc != "": Text { text: r.desc; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
+                            }
+                            if r.kind == 0: Text {
+                                text: r.value;
+                                color: Theme.fg-secondary;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                horizontal-alignment: right;
+                                overflow: elide;
+                                max-width: 320px;
+                            }
+                            if r.kind == 1: Rectangle {
+                                width: 28px;
+                                Switch {
+                                    y: 12px;
+                                    on: r.on;
+                                    toggled(v) => { SettingsPageState.row-toggle(r.id, v); }
+                                }
+                            }
+                            if r.kind == 2: Rectangle {
+                                width: bt.preferred-width + 24px;
+                                height: 28px;
+                                y: 6px;
+                                border-radius: Theme.radius-row;
+                                background: ba.has-hover ? Theme.pressed : Theme.selected;
+                                bt := Text { text: r.value; color: Theme.fg; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+                                ba := TouchArea { mouse-cursor: pointer; clicked => { SettingsPageState.row-action(r.id); } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

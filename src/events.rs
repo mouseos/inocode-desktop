@@ -191,6 +191,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             crate::prompts::on_rpc(app, &tag, &result);
             crate::attach::on_rpc(app, &tag, &result);
             crate::panel_data::on_rpc(app, &tag, &result);
+            crate::settings_page::on_rpc(app, &tag, &result);
             crate::sidebar::on_rpc(app, &tag, &result);
             crate::chat_actions::on_rpc(app, &tag, &result);
         }
