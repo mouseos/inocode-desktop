@@ -142,7 +142,7 @@ pub(crate) fn messages_with<R>(app: &AppWindow, f: impl FnOnce(&VecModel<Message
 }
 
 pub(crate) fn push(model: &VecModel<Message>, id: &str, role: &str, text: &str) {
-    model.push(Message { id: id.into(), role: role.into(), text: text.into(), detail: "".into() });
+    model.push(Message { id: id.into(), role: role.into(), text: text.into(), detail: "".into(), ..Default::default() });
 }
 
 pub(crate) fn rebuild_projects(app: &AppWindow, state: &State) {
@@ -340,6 +340,7 @@ pub(crate) fn upsert_tool(model: &VecModel<Message>, id: &str, text: &str, detai
         role: "tool".into(),
         text: text.into(),
         detail: detail.map(clip_detail).unwrap_or_default().into(),
+        ..Default::default()
     });
 }
 

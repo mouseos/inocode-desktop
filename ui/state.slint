@@ -1,6 +1,7 @@
 import { IntelligenceState, PermState, ProjectState } from "pickers.slint";
 import { ProjectItem } from "sidebar.slint";
 import { DiscoveryState } from "settings.slint";
+import { MdRow } from "markdown.slint";
 
 // One line of an approval's body (command, diff, permissions). kind: 0 plain, 1 added,
 // 2 removed, 3 file header, 4 note.
@@ -29,6 +30,8 @@ export struct Message {
     text: string,
     // Body of an expandable tool row (command output, file diff, reasoning summary, plan).
     detail: string,
+    // The blocks of an assistant answer (markdown).
+    blocks: [MdRow],
 }
 
 // チャット画面の状態とコールバックをここに集約する。Rust は app.global::<AppState>() で触り、

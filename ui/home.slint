@@ -11,6 +11,7 @@ import { SettingsPageState } from "settings_page.slint";
 import { AccountsState } from "accounts_page.slint";
 import { AttachState, AttachChips, SuggestList } from "attach.slint";
 import { PromptState, QuestionCard, QueueList, ErrorBanner } from "prompts.slint";
+import { MarkdownView } from "markdown.slint";
 
 component ApprovalButton inherits Rectangle {
     in property <string> label;
@@ -289,6 +290,9 @@ component Composer inherits VerticalLayout {
 component ActionRow inherits HorizontalLayout {
     in property <bool> user;
     in property <int> index;
+    // The answer is shown as plain text that can be selected.
+    in property <bool> selecting;
+    callback toggle-select;
     // Copy shows a check mark for 1.2 s, as in Claude Desktop.
     property <bool> copied: false;
     spacing: 2px;
@@ -311,6 +315,7 @@ component ActionRow inherits HorizontalLayout {
     if root.user: IconButton { glyph: Glyph.edit-note; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("edit", root.index); } }
     if root.user: IconButton { glyph: Glyph.replay; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("rewind", root.index); } }
     if !root.user: IconButton { glyph: Glyph.branch; box-size: 24px; icon-size: 14px; clicked => { MessageActions.act("fork", root.index); } }
+    if !root.user: IconButton { glyph: "\u{e162}"; selected: root.selecting; box-size: 24px; icon-size: 14px; clicked => { root.toggle-select(); } }
 }
 
 component ChatView inherits Rectangle {
@@ -328,6 +333,7 @@ component ChatView inherits Rectangle {
             spacing: 16px;
             alignment: start;
             for m[mi] in root.messages: HorizontalLayout {
+                property <bool> select-mode: false;
                 Rectangle { horizontal-stretch: 1; }
                 VerticalLayout {
                     max-width: Theme.composer-max-width;
@@ -353,14 +359,30 @@ component ChatView inherits Rectangle {
                             }
                         }
                     }
-                    if m.role == "assistant": Text {
+                    // The answer as blocks; "select" shows the plain text, which can be selected by dragging.
+                    if m.role == "assistant" && !select-mode && m.blocks.length > 0: MarkdownView { rows: m.blocks; }
+                    if m.role == "assistant" && !select-mode && m.blocks.length == 0 && m.text != "": Text {
                         text: m.text;
                         wrap: word-wrap;
                         color: Theme.fg;
                         font-size: Theme.body-font;
                     }
+                    if m.role == "assistant" && select-mode: TextInput {
+                        text: m.text;
+                        read-only: true;
+                        wrap: word-wrap;
+                        color: Theme.fg;
+                        font-size: Theme.body-font;
+                        selection-background-color: Theme.accent;
+                        selection-foreground-color: #ffffff;
+                    }
                     if m.role == "tool": ToolRow { text: m.text; detail: m.detail; index: mi; }
-                    if m.role != "tool": ActionRow { user: m.role == "user"; index: mi; }
+                    if m.role != "tool": ActionRow {
+                        user: m.role == "user";
+                        index: mi;
+                        selecting: select-mode;
+                        toggle-select => { select-mode = !select-mode; }
+                    }
                     // Tokens and speed of the turn, under the last answer.
                     if mi == root.messages.length - 1 && m.role == "assistant" && MetricsState.text != "": Text {
                         text: MetricsState.text;

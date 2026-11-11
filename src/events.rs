@@ -99,12 +99,19 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::History(list) => {
             let rows: Vec<Message> = list
                 .into_iter()
-                .map(|Msg { id, role, text, detail }| Message { id: id.into(), role: role.into(), text: text.into(), detail: clip_detail(&detail).into() })
+                .map(|Msg { id, role, text, detail }| {
+                    let blocks = if role == "assistant" { crate::chat_md::blocks_of(&text) } else { Default::default() };
+                    Message { id: id.into(), role: role.into(), text: text.into(), detail: clip_detail(&detail).into(), blocks }
+                })
                 .collect();
+            crate::chat_md::reset();
             app.global::<AppState>().set_messages(ModelRc::from(Rc::new(VecModel::from(rows))));
             app.invoke_scroll_bottom();
         }
         Event::AssistantStart => {
+            // The answer before is final now; a new one starts.
+            crate::chat_md::sync_last(app, true);
+            crate::chat_md::reset();
             messages_with(app, |m| push(m, "", "assistant", ""));
         }
         Event::TokenTotals { total, last_total, last_output } => crate::metrics::totals(app, total, last_total, last_output),
@@ -120,9 +127,11 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
                     _ => push(model, "", "assistant", &delta),
                 }
             });
+            crate::chat_md::sync_last(app, false);
             app.invoke_scroll_bottom();
         }
         Event::Tool { id, text, detail } => {
+            crate::chat_md::sync_last(app, true);
             // A finished item brings its whole body; an empty one keeps what streamed in.
             messages_with(app, |model| upsert_tool(model, &id, &text, if detail.is_empty() { None } else { Some(&detail) }));
             app.invoke_scroll_bottom();
@@ -155,6 +164,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             rebuild_projects(app, &st);
         }
         Event::TurnDone { interrupted } => {
+            crate::chat_md::sync_last(app, true);
             crate::metrics::turn_done(app);
             let mut st = state.borrow_mut();
             st.busy = false;

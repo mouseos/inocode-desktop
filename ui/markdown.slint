@@ -1,0 +1,147 @@
+import { Theme } from "theme.slint";
+
+// The blocks of an assistant answer (src/markdown.rs makes the rows, src/chat_md.rs fills them).
+// Slint's StyledText draws the inline text of a block; the blocks themselves are drawn here.
+
+export struct MdLine {
+    text: styled-text,
+}
+
+export struct MdRow {
+    // 0 paragraph, 1 heading, 2 list item, 3 code block, 4 table row, 5 rule
+    kind: int,
+    // heading level; table header row: 1
+    level: int,
+    // list nesting
+    depth: int,
+    // block quote nesting
+    quote: int,
+    marker: string,
+    text: styled-text,
+    lang: string,
+    // the code as written (what the copy button copies)
+    code: string,
+    lines: [MdLine],
+    cells: [styled-text],
+    // table row: the number of lines the longest cell needs (a guess)
+    est-lines: int,
+}
+
+export global MdState {
+    // A link was clicked: web address or a file.
+    callback link(string);
+    callback copy-code(string);
+}
+
+component CodeBlock inherits Rectangle {
+    in property <MdRow> item;
+    property <bool> copied: false;
+    border-radius: 8px;
+    background: Theme.bubble;
+    height: col.preferred-height;
+    Timer {
+        interval: 1400ms;
+        running: root.copied;
+        triggered => { root.copied = false; }
+    }
+    col := VerticalLayout {
+        HorizontalLayout {
+            height: 26px;
+            padding-left: 12px;
+            padding-right: 12px;
+            Text { text: root.item.lang; color: Theme.fg-tertiary; font-size: 11px; vertical-alignment: center; horizontal-stretch: 1; }
+            Text {
+                text: root.copied ? "コピーしました" : "コピー";
+                color: Theme.fg-secondary;
+                font-size: 11px;
+                vertical-alignment: center;
+                TouchArea {
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => {
+                        root.copied = true;
+                        MdState.copy-code(root.item.code);
+                    }
+                }
+            }
+        }
+        // Long lines scroll sideways; the block is as high as its lines.
+        Flickable {
+            height: lines.preferred-height;
+            content-width: lines.preferred-width;
+            content-height: lines.preferred-height;
+            lines := VerticalLayout {
+                padding: 12px;
+                padding-top: 4px;
+                for l in root.item.lines: StyledText {
+                    text: l.text;
+                    default-color: Theme.fg;
+                    default-font-family: "Consolas";
+                    default-font-size: 12.5px;
+                }
+            }
+        }
+    }
+}
+
+// The text of a block is a direct child of a vertical layout: only there the height of a text
+// follows its width. The indent is the layout's padding; the marker and the quote bar are drawn
+// over it.
+component Block inherits Rectangle {
+    in property <MdRow> item;
+    property <length> indent: max(root.item.depth - 1, 0) * 20px + (root.item.kind == 2 ? 26px : 0px) + (root.item.quote > 0 ? 12px : 0px);
+    height: col.preferred-height;
+    if root.item.quote > 0: Rectangle { x: 0px; width: 3px; border-radius: 2px; background: Theme.pressed; }
+    if root.item.kind == 2: Text {
+        x: root.indent - 26px;
+        y: 0px;
+        width: 22px;
+        text: root.item.marker;
+        color: Theme.fg-secondary;
+        font-size: Theme.body-font;
+        horizontal-alignment: right;
+    }
+    col := VerticalLayout {
+        padding-left: root.indent;
+        if root.item.kind == 0 || root.item.kind == 2: StyledText {
+            text: root.item.text;
+            default-color: root.item.quote > 0 ? Theme.fg-secondary : Theme.fg;
+            default-font-size: Theme.body-font;
+            link-color: Theme.accent;
+            link-clicked(l) => { MdState.link(l); }
+        }
+        if root.item.kind == 1: StyledText {
+            text: root.item.text;
+            default-color: Theme.fg;
+            default-font-size: root.item.level == 1 ? 22px : root.item.level == 2 ? 19px : root.item.level == 3 ? 17px : 15px;
+            link-color: Theme.accent;
+            link-clicked(l) => { MdState.link(l); }
+        }
+        if root.item.kind == 3: CodeBlock { item: root.item; }
+        // A table row: the cells share the width, placed by hand; the height is a guess from the
+        // length of the text (a text in a horizontal layout does not know its width).
+        if root.item.kind == 4: Rectangle {
+            property <int> n: max(root.item.cells.length, 1);
+            property <length> cell-w: (self.width - 12px * (self.n + 1)) / self.n;
+            background: root.item.level == 1 ? Theme.hover : transparent;
+            height: 14px + root.item.est-lines * 21px;
+            for c[i] in root.item.cells: StyledText {
+                x: 12px + i * (parent.cell-w + 12px);
+                y: 7px;
+                width: parent.cell-w;
+                text: c;
+                default-color: Theme.fg;
+                default-font-size: Theme.body-font;
+                link-color: Theme.accent;
+                link-clicked(l) => { MdState.link(l); }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+        if root.item.kind == 5: Rectangle { height: 1px; background: Theme.border; }
+    }
+}
+
+export component MarkdownView inherits VerticalLayout {
+    in property <[MdRow]> rows;
+    spacing: 6px;
+    for r in root.rows: Block { item: r; }
+}

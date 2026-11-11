@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod chat_actions;
+mod chat_md;
 mod coding;
 mod client;
 mod accounts_page;
@@ -9,6 +10,8 @@ mod callbacks;
 mod discovery;
 mod errmsg;
 mod gui_prefs;
+mod highlight;
+mod markdown;
 mod events;
 mod metrics;
 mod nav;

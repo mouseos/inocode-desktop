@@ -2094,6 +2094,7 @@ name = "inocode-desktop"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "pulldown-cmark",
  "rfd",
  "serde_json",
  "slint",

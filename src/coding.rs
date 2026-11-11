@@ -128,7 +128,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     st.on_sandbox_setup(move || {
         h.send(Command::Rpc { tag: "coding.sandbox.readiness".into(), method: "windowsSandbox/readiness".into(), params: Value::Null });
     });
-    if let Ok(which) = std::env::var("INOCODE_GUI_DEMO") {
+    if let Some(which) = std::env::var("INOCODE_GUI_DEMO").ok().filter(|v| v == "1" || v == "2") {
         // After the connection came up (it clears the requests of the old one).
         let weak = app.as_weak();
         slint::Timer::single_shot(std::time::Duration::from_secs(6), move || {
