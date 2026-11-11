@@ -134,7 +134,7 @@ component Composer inherits VerticalLayout {
 
         FocusScope {
             capture-key-pressed(event) => {
-                if (event.text == Key.Return && !event.modifiers.shift && root.text != "") {
+                if (event.text == Key.Return && !event.modifiers.shift && root.text != "" && input.preedit-text == "") {
                     root.submit(root.text);
                     return accept;
                 }
@@ -167,7 +167,7 @@ component Composer inherits VerticalLayout {
                         selection-background-color: #4d8ff566;
                         edited => { AttachState.text-changed(self.text); }
                     }
-                    if root.text == "": Text {
+                    if root.text == "" && input.preedit-text == "": Text {
                         x: 3px;
                         y: 4px;
                         width: parent.width - 3px;

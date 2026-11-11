@@ -121,7 +121,7 @@ export component QuestionCard inherits Rectangle {
                     }
                 }
             }
-            if other.text == "": Text {
+            if other.text == "" && other.preedit-text == "": Text {
                 x: 10px;
                 text: "その他";
                 color: Theme.fg-tertiary;

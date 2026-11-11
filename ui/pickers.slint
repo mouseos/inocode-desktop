@@ -243,7 +243,7 @@ export component IntelligenceMenu inherits Rectangle {
                                 single-line: true;
                                 edited => { root.search(self.text); }
                             }
-                            if si.text == "": Text {
+                            if si.text == "" && si.preedit-text == "": Text {
                                 x: 0px;
                                 y: 0px;
                                 height: parent.height;

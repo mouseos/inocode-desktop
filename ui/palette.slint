@@ -134,7 +134,7 @@ export component PaletteOverlay inherits Rectangle {
                         }
                         init => { self.focus(); self.select-all(); }
                     }
-                    if PaletteState.query == "": Text {
+                    if PaletteState.query == "" && input.preedit-text == "": Text {
                         x: 8px;
                         width: parent.width - 8px;
                         height: parent.height;

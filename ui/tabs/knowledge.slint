@@ -187,7 +187,7 @@ component SearchBox inherits Rectangle {
                 text <=> KnowledgeState.query;
                 edited => { KnowledgeState.search(self.text); }
             }
-            if si.text == "": Text {
+            if si.text == "" && si.preedit-text == "": Text {
                 text: "知識を検索";
                 color: Theme.fg-tertiary;
                 font-size: 12px;

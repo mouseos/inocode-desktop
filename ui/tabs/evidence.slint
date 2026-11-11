@@ -12,6 +12,11 @@ export struct ESource {
     selected: bool,
 }
 
+export struct ESpan {
+    id: string,
+    text: string,
+}
+
 export struct EClaim {
     id: string,
     text: string,
@@ -97,8 +102,10 @@ export global EvidenceState {
     in-out property <string> new-src-text;
     in-out property <int> new-src-kind: 1;
     out property <[string]> src-kinds: ["法令", "文書", "判例", "その他"];
-    in-out property <string> quote-text;
     in property <string> quote-note;
+    in property <[ESpan]> source-spans;
+    callback add-selection(int, int);
+    callback remove-quote(string);
     in-out property <bool> adding-claim: false;
     in-out property <string> new-claim-text;
     in-out property <int> new-claim-type: 0;
@@ -121,7 +128,6 @@ export global EvidenceState {
     callback add-source();
     callback save-source();
     callback cancel-source();
-    callback add-quote();
     callback add-claim();
     callback save-claim();
     callback cancel-claim();
@@ -149,6 +155,58 @@ component SourceRow inherits Rectangle {
         spacing: 3px;
         Text { text: root.item.title; color: Theme.fg; font-size: 13px; font-weight: 500; overflow: elide; }
         Text { text: root.item.meta; color: Theme.fg-tertiary; font-size: 11px; overflow: elide; }
+    }
+}
+
+// 原資料の原文。文字列をドラッグで選んで「引用にする」を押す(原文のとおりの一致は、アプリが選んだ範囲から取る)。
+component SourcePane inherits Rectangle {
+    // 引用の一覧が増えても、読んでいる位置は動かさない
+    Flickable {
+        interactive: false;
+        content-height: col.preferred-height + 24px;
+        col := VerticalLayout {
+            padding: 20px;
+            spacing: 8px;
+            alignment: start;
+            Text { text: EvidenceState.source-title; color: Theme.fg; font-size: 16px; font-weight: 600; wrap: word-wrap; }
+            Text { text: EvidenceState.source-meta; color: Theme.fg-tertiary; font-size: 11px; wrap: word-wrap; }
+            Rectangle { height: 1px; background: Theme.border; }
+            ti := TextInput {
+                text: EvidenceState.source-text;
+                read-only: true;
+                wrap: word-wrap;
+                color: Theme.fg;
+                font-size: 14px;
+                selection-background-color: Theme.accent;
+                selection-foreground-color: #ffffff;
+            }
+            if ti.anchor-position-byte-offset != ti.cursor-position-byte-offset: HorizontalLayout {
+                alignment: end;
+                Button {
+                    label: "引用にする";
+                    primary: true;
+                    clicked => {
+                        EvidenceState.add-selection(ti.anchor-position-byte-offset, ti.cursor-position-byte-offset);
+                        ti.clear-selection();
+                    }
+                }
+            }
+            if EvidenceState.quote-note != "": Text { text: EvidenceState.quote-note; color: Theme.danger; font-size: 12px; wrap: word-wrap; }
+            if EvidenceState.source-spans.length > 0: Rectangle { height: 1px; background: Theme.border; }
+            if EvidenceState.source-spans.length > 0: Text { text: "引用 " + EvidenceState.source-spans.length + " 件"; color: Theme.fg-tertiary; font-size: 11px; }
+            for sp in EvidenceState.source-spans: HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "「" + sp.text + "」";
+                    color: Theme.fg-secondary;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                Button { label: "捨てる"; clicked => { EvidenceState.remove-quote(sp.id); } }
+            }
+        }
     }
 }
 
@@ -278,34 +336,7 @@ component SourcesView inherits Rectangle {
                     }
                 }
             }
-            if !EvidenceState.adding-source && EvidenceState.has-source: Flickable {
-                content-height: col.preferred-height + 24px;
-                col := VerticalLayout {
-                    padding: 20px;
-                    spacing: 8px;
-                    alignment: start;
-                    Text { text: EvidenceState.source-title; color: Theme.fg; font-size: 16px; font-weight: 600; wrap: word-wrap; }
-                    Text { text: EvidenceState.source-meta; color: Theme.fg-tertiary; font-size: 11px; wrap: word-wrap; }
-                    Rectangle { height: 1px; background: Theme.border; }
-                    Text { text: EvidenceState.source-text; color: Theme.fg; font-size: 14px; wrap: word-wrap; }
-                    Rectangle { height: 1px; background: Theme.border; }
-                    Text { text: "引用にする文字列(原文のとおりに入力)"; color: Theme.fg-tertiary; font-size: 11px; }
-                    LineEdit { text <=> EvidenceState.quote-text; }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        alignment: end;
-                        if EvidenceState.quote-note != "": Text {
-                            text: EvidenceState.quote-note;
-                            color: Theme.fg-secondary;
-                            font-size: 12px;
-                            vertical-alignment: center;
-                            horizontal-stretch: 1;
-                            wrap: word-wrap;
-                        }
-                        Button { label: "引用にする"; clicked => { EvidenceState.add-quote(); } }
-                    }
-                }
-            }
+            if !EvidenceState.adding-source && EvidenceState.has-source: SourcePane { }
             if !EvidenceState.adding-source && !EvidenceState.has-source: Text {
                 text: "原資料を選んでください";
                 color: Theme.fg-tertiary;
