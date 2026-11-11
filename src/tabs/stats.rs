@@ -436,9 +436,9 @@ mod tests {
         assert_eq!(bars[6].label, "6時");
         assert_eq!(bars[7].label, "");
         // モデルごとに別の系列(混ぜない)。系列の無いモデルは空
-        let sol = hour_bars(&hourly, "gpt-5.6-sol");
-        assert_eq!(sol.len(), 24);
-        assert_ne!(bars[10].top, sol[10].top);
+        let other = hour_bars(&hourly, "claude-sonnet-5-5");
+        assert_eq!(other.len(), 24);
+        assert_ne!(bars[1].top, other[1].top);
         assert!(hour_bars(&hourly, "none").is_empty());
     }
 
@@ -446,16 +446,21 @@ mod tests {
     fn daily_bars_show_date_and_speed() {
         let daily = fixture("stats-daily.json");
         let bars = day_bars(&daily, "gpt-5.6-luna");
-        assert_eq!(bars.len(), 7);
-        assert_eq!(bars[0].label, "11-05");
+        assert_eq!(bars.len(), daily["days"].as_array().unwrap().len());
+        assert_eq!(bars[0].label, "11-11");
         assert!(bars[0].sub.ends_with("tok/s"));
-        assert!(bars.iter().any(|b| (b.ratio - 1.0).abs() < 1e-6));
-        // そのモデルを使わなかった日は棒なし(最初の日は luna だけ)
-        let sol = day_bars(&daily, "gpt-5.6-sol");
-        assert_eq!((sol[0].ratio, sol[0].sub.as_str()), (0.0, ""));
-        assert!(sol[1].sub.ends_with("tok/s"));
+        assert!((bars[0].ratio - 1.0).abs() < 1e-6);
         // 速度はモデルごと(同じ日でも値が違う)
-        assert_ne!(bars[1].sub, sol[1].sub);
+        let other = day_bars(&daily, "claude-sonnet-5-5");
+        assert_ne!(bars[0].sub, other[0].sub);
+        // そのモデルを使わなかった日は棒なし
+        let two = json!({ "days": [
+            { "date": "2026-11-10", "models": [ { "model": "a", "avgTokensPerSecond": 50.0, "quotaPrimaryPercent": 2.0 } ] },
+            { "date": "2026-11-11", "models": [ { "model": "b", "avgTokensPerSecond": 30.0, "quotaPrimaryPercent": 1.0 } ] }
+        ] });
+        let a = day_bars(&two, "a");
+        assert_eq!((a[1].ratio, a[1].sub.as_str(), a[1].top.as_str()), (0.0, "", ""));
+        assert_eq!(a[0].sub, "50 tok/s");
     }
 
     #[test]

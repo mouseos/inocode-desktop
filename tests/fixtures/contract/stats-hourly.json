@@ -1,5 +1,5 @@
 {
-  "method": "inocode/stats/hourly",
+  "_doc": "inocode/stats/hourly: one series per model (all models when model is null); no mixed average",
   "request": {
     "days": 7,
     "model": null
@@ -17,23 +17,23 @@
           },
           {
             "hour": 1,
-            "avgTokensPerSecond": null,
-            "samples": 0
+            "avgTokensPerSecond": 41.0,
+            "samples": 3
           },
           {
             "hour": 2,
-            "avgTokensPerSecond": null,
-            "samples": 0
+            "avgTokensPerSecond": 42.0,
+            "samples": 6
           },
           {
             "hour": 3,
-            "avgTokensPerSecond": null,
-            "samples": 0
+            "avgTokensPerSecond": 43.0,
+            "samples": 9
           },
           {
             "hour": 4,
-            "avgTokensPerSecond": null,
-            "samples": 0
+            "avgTokensPerSecond": 44.0,
+            "samples": 12
           },
           {
             "hour": 5,
@@ -42,136 +42,136 @@
           },
           {
             "hour": 6,
-            "avgTokensPerSecond": 63.0,
-            "samples": 5
+            "avgTokensPerSecond": 46.0,
+            "samples": 18
           },
           {
             "hour": 7,
-            "avgTokensPerSecond": 65.5,
-            "samples": 12
-          },
-          {
-            "hour": 8,
-            "avgTokensPerSecond": 68.0,
-            "samples": 19
-          },
-          {
-            "hour": 9,
-            "avgTokensPerSecond": 70.5,
-            "samples": 26
-          },
-          {
-            "hour": 10,
-            "avgTokensPerSecond": 50.0,
-            "samples": 33
-          },
-          {
-            "hour": 11,
-            "avgTokensPerSecond": 52.5,
-            "samples": 40
-          },
-          {
-            "hour": 12,
-            "avgTokensPerSecond": 55.0,
-            "samples": 7
-          },
-          {
-            "hour": 13,
-            "avgTokensPerSecond": 57.5,
-            "samples": 14
-          },
-          {
-            "hour": 14,
-            "avgTokensPerSecond": 60.0,
+            "avgTokensPerSecond": 47.0,
             "samples": 21
           },
           {
-            "hour": 15,
-            "avgTokensPerSecond": 62.5,
-            "samples": 28
+            "hour": 8,
+            "avgTokensPerSecond": 48.0,
+            "samples": 24
           },
           {
-            "hour": 16,
-            "avgTokensPerSecond": 65.0,
-            "samples": 35
+            "hour": 9,
+            "avgTokensPerSecond": 49.0,
+            "samples": 27
           },
           {
-            "hour": 17,
-            "avgTokensPerSecond": 67.5,
+            "hour": 10,
+            "avgTokensPerSecond": null,
+            "samples": 0
+          },
+          {
+            "hour": 11,
+            "avgTokensPerSecond": 51.0,
+            "samples": 33
+          },
+          {
+            "hour": 12,
+            "avgTokensPerSecond": 52.0,
+            "samples": 36
+          },
+          {
+            "hour": 13,
+            "avgTokensPerSecond": 53.0,
+            "samples": 39
+          },
+          {
+            "hour": 14,
+            "avgTokensPerSecond": 54.0,
             "samples": 42
           },
           {
+            "hour": 15,
+            "avgTokensPerSecond": null,
+            "samples": 0
+          },
+          {
+            "hour": 16,
+            "avgTokensPerSecond": 56.0,
+            "samples": 48
+          },
+          {
+            "hour": 17,
+            "avgTokensPerSecond": 57.0,
+            "samples": 51
+          },
+          {
             "hour": 18,
-            "avgTokensPerSecond": 70.0,
-            "samples": 9
+            "avgTokensPerSecond": 58.0,
+            "samples": 54
           },
           {
             "hour": 19,
-            "avgTokensPerSecond": 49.5,
-            "samples": 16
+            "avgTokensPerSecond": 59.0,
+            "samples": 57
           },
           {
             "hour": 20,
-            "avgTokensPerSecond": 52.0,
-            "samples": 23
+            "avgTokensPerSecond": null,
+            "samples": 0
           },
           {
             "hour": 21,
-            "avgTokensPerSecond": 54.5,
-            "samples": 30
+            "avgTokensPerSecond": 61.0,
+            "samples": 63
           },
           {
             "hour": 22,
-            "avgTokensPerSecond": 57.0,
-            "samples": 37
+            "avgTokensPerSecond": 62.0,
+            "samples": 66
           },
           {
             "hour": 23,
-            "avgTokensPerSecond": 59.5,
-            "samples": 4
+            "avgTokensPerSecond": 63.0,
+            "samples": 69
           }
         ],
         "weekdays": [
           {
             "weekday": 0,
-            "avgTokensPerSecond": 55.0,
+            "avgTokensPerSecond": 40.0,
             "samples": 20
           },
           {
             "weekday": 1,
-            "avgTokensPerSecond": 56.0,
+            "avgTokensPerSecond": 41.0,
             "samples": 21
           },
           {
             "weekday": 2,
-            "avgTokensPerSecond": 57.0,
+            "avgTokensPerSecond": 42.0,
             "samples": 22
           },
           {
             "weekday": 3,
-            "avgTokensPerSecond": 58.0,
+            "avgTokensPerSecond": 43.0,
             "samples": 23
           },
           {
             "weekday": 4,
-            "avgTokensPerSecond": 59.0,
+            "avgTokensPerSecond": 44.0,
             "samples": 24
           },
           {
             "weekday": 5,
-            "avgTokensPerSecond": 60.0,
+            "avgTokensPerSecond": 45.0,
             "samples": 25
           },
           {
             "weekday": 6,
-            "avgTokensPerSecond": 61.0,
+            "avgTokensPerSecond": 46.0,
             "samples": 26
           }
         ]
       },
       {
-        "model": "gpt-5.6-sol",
-        "provider": "openai",
+        "model": "claude-sonnet-5-5",
+        "provider": "anthropic",
         "hours": [
           {
             "hour": 0,
@@ -180,23 +180,23 @@
           },
           {
             "hour": 1,
-            "avgTokensPerSecond": null,
-            "samples": 0
+            "avgTokensPerSecond": 26.0,
+            "samples": 3
           },
           {
             "hour": 2,
-            "avgTokensPerSecond": null,
-            "samples": 0
+            "avgTokensPerSecond": 27.0,
+            "samples": 6
           },
           {
             "hour": 3,
-            "avgTokensPerSecond": null,
-            "samples": 0
+            "avgTokensPerSecond": 28.0,
+            "samples": 9
           },
           {
             "hour": 4,
-            "avgTokensPerSecond": null,
-            "samples": 0
+            "avgTokensPerSecond": 29.0,
+            "samples": 12
           },
           {
             "hour": 5,
@@ -205,73 +205,73 @@
           },
           {
             "hour": 6,
-            "avgTokensPerSecond": null,
-            "samples": 0
+            "avgTokensPerSecond": 31.0,
+            "samples": 18
           },
           {
             "hour": 7,
+            "avgTokensPerSecond": 32.0,
+            "samples": 21
+          },
+          {
+            "hour": 8,
+            "avgTokensPerSecond": 33.0,
+            "samples": 24
+          },
+          {
+            "hour": 9,
+            "avgTokensPerSecond": 34.0,
+            "samples": 27
+          },
+          {
+            "hour": 10,
             "avgTokensPerSecond": null,
             "samples": 0
           },
           {
-            "hour": 8,
-            "avgTokensPerSecond": 42.0,
-            "samples": 19
-          },
-          {
-            "hour": 9,
-            "avgTokensPerSecond": 43.5,
-            "samples": 26
-          },
-          {
-            "hour": 10,
-            "avgTokensPerSecond": 45.0,
+            "hour": 11,
+            "avgTokensPerSecond": 36.0,
             "samples": 33
           },
           {
-            "hour": 11,
-            "avgTokensPerSecond": 46.5,
-            "samples": 40
-          },
-          {
             "hour": 12,
-            "avgTokensPerSecond": 48.0,
-            "samples": 7
+            "avgTokensPerSecond": 37.0,
+            "samples": 36
           },
           {
             "hour": 13,
-            "avgTokensPerSecond": 49.5,
-            "samples": 14
+            "avgTokensPerSecond": 38.0,
+            "samples": 39
           },
           {
             "hour": 14,
-            "avgTokensPerSecond": 51.0,
-            "samples": 21
-          },
-          {
-            "hour": 15,
-            "avgTokensPerSecond": 52.5,
-            "samples": 28
-          },
-          {
-            "hour": 16,
-            "avgTokensPerSecond": 31.0,
-            "samples": 35
-          },
-          {
-            "hour": 17,
-            "avgTokensPerSecond": 32.5,
+            "avgTokensPerSecond": 39.0,
             "samples": 42
           },
           {
+            "hour": 15,
+            "avgTokensPerSecond": null,
+            "samples": 0
+          },
+          {
+            "hour": 16,
+            "avgTokensPerSecond": 41.0,
+            "samples": 48
+          },
+          {
+            "hour": 17,
+            "avgTokensPerSecond": 42.0,
+            "samples": 51
+          },
+          {
             "hour": 18,
-            "avgTokensPerSecond": 34.0,
-            "samples": 9
+            "avgTokensPerSecond": 43.0,
+            "samples": 54
           },
           {
             "hour": 19,
-            "avgTokensPerSecond": 35.5,
-            "samples": 16
+            "avgTokensPerSecond": 44.0,
+            "samples": 57
           },
           {
             "hour": 20,
@@ -280,59 +280,58 @@
           },
           {
             "hour": 21,
-            "avgTokensPerSecond": null,
-            "samples": 0
+            "avgTokensPerSecond": 46.0,
+            "samples": 63
           },
           {
             "hour": 22,
-            "avgTokensPerSecond": 40.0,
-            "samples": 37
+            "avgTokensPerSecond": 47.0,
+            "samples": 66
           },
           {
             "hour": 23,
-            "avgTokensPerSecond": 41.5,
-            "samples": 4
+            "avgTokensPerSecond": 48.0,
+            "samples": 69
           }
         ],
         "weekdays": [
           {
             "weekday": 0,
-            "avgTokensPerSecond": 36.0,
+            "avgTokensPerSecond": 25.0,
             "samples": 20
           },
           {
             "weekday": 1,
-            "avgTokensPerSecond": 37.0,
+            "avgTokensPerSecond": 26.0,
             "samples": 21
           },
           {
             "weekday": 2,
-            "avgTokensPerSecond": 38.0,
+            "avgTokensPerSecond": 27.0,
             "samples": 22
           },
           {
             "weekday": 3,
-            "avgTokensPerSecond": 39.0,
+            "avgTokensPerSecond": 28.0,
             "samples": 23
           },
           {
             "weekday": 4,
-            "avgTokensPerSecond": 40.0,
+            "avgTokensPerSecond": 29.0,
             "samples": 24
           },
           {
             "weekday": 5,
-            "avgTokensPerSecond": 41.0,
+            "avgTokensPerSecond": 30.0,
             "samples": 25
           },
           {
             "weekday": 6,
-            "avgTokensPerSecond": 42.0,
+            "avgTokensPerSecond": 31.0,
             "samples": 26
           }
         ]
       }
     ]
-  },
-  "note": "仮。モデルごとの系列。混ぜた平均は無い。samples が 0 の時間は avg が null。"
+  }
 }

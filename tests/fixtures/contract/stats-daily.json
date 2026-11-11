@@ -1,173 +1,37 @@
 {
-  "method": "inocode/stats/daily",
+  "_doc": "inocode/stats/daily: totals per day plus per-model parts, each with its own speed (no top-level speed)",
   "request": {
     "days": 14
   },
   "response": {
     "days": [
       {
-        "date": "2026-11-05",
-        "requests": 40,
-        "tokens": 900000,
-        "quotaPrimaryPercent": 8.0,
-        "quotaSecondaryPercent": 1.5,
-        "models": [
-          {
-            "model": "gpt-5.6-luna",
-            "provider": "openai",
-            "requests": 35,
-            "tokens": 800000,
-            "avgTokensPerSecond": 55,
-            "quotaPrimaryPercent": 6.0,
-            "quotaSecondaryPercent": 1.2
-          }
-        ]
-      },
-      {
-        "date": "2026-11-06",
-        "requests": 47,
-        "tokens": 1020000,
-        "quotaPrimaryPercent": 10.2,
-        "quotaSecondaryPercent": 1.9,
-        "models": [
-          {
-            "model": "gpt-5.6-luna",
-            "provider": "openai",
-            "requests": 41,
-            "tokens": 900000,
-            "avgTokensPerSecond": 58,
-            "quotaPrimaryPercent": 7.8,
-            "quotaSecondaryPercent": 1.5
-          },
-          {
-            "model": "gpt-5.6-sol",
-            "provider": "openai",
-            "requests": 6,
-            "tokens": 120000,
-            "avgTokensPerSecond": 39,
-            "quotaPrimaryPercent": 2.4,
-            "quotaSecondaryPercent": 0.4
-          }
-        ]
-      },
-      {
-        "date": "2026-11-07",
-        "requests": 54,
-        "tokens": 1140000,
-        "quotaPrimaryPercent": 12.4,
-        "quotaSecondaryPercent": 2.3,
-        "models": [
-          {
-            "model": "gpt-5.6-luna",
-            "provider": "openai",
-            "requests": 47,
-            "tokens": 1000000,
-            "avgTokensPerSecond": 61,
-            "quotaPrimaryPercent": 9.6,
-            "quotaSecondaryPercent": 1.8
-          },
-          {
-            "model": "gpt-5.6-sol",
-            "provider": "openai",
-            "requests": 7,
-            "tokens": 140000,
-            "avgTokensPerSecond": 35,
-            "quotaPrimaryPercent": 2.8,
-            "quotaSecondaryPercent": 0.5
-          }
-        ]
-      },
-      {
-        "date": "2026-11-08",
-        "requests": 61,
-        "tokens": 1260000,
-        "quotaPrimaryPercent": 14.6,
-        "quotaSecondaryPercent": 2.7,
-        "models": [
-          {
-            "model": "gpt-5.6-luna",
-            "provider": "openai",
-            "requests": 53,
-            "tokens": 1100000,
-            "avgTokensPerSecond": 64,
-            "quotaPrimaryPercent": 11.4,
-            "quotaSecondaryPercent": 2.1
-          }
-        ]
-      },
-      {
-        "date": "2026-11-09",
-        "requests": 68,
-        "tokens": 1380000,
-        "quotaPrimaryPercent": 16.8,
-        "quotaSecondaryPercent": 3.1,
-        "models": [
-          {
-            "model": "gpt-5.6-luna",
-            "provider": "openai",
-            "requests": 59,
-            "tokens": 1200000,
-            "avgTokensPerSecond": 56,
-            "quotaPrimaryPercent": 13.2,
-            "quotaSecondaryPercent": 2.4
-          },
-          {
-            "model": "gpt-5.6-sol",
-            "provider": "openai",
-            "requests": 9,
-            "tokens": 180000,
-            "avgTokensPerSecond": 36,
-            "quotaPrimaryPercent": 3.6,
-            "quotaSecondaryPercent": 0.7
-          }
-        ]
-      },
-      {
-        "date": "2026-11-10",
-        "requests": 75,
-        "tokens": 1500000,
-        "quotaPrimaryPercent": 19.0,
-        "quotaSecondaryPercent": 3.5,
-        "models": [
-          {
-            "model": "gpt-5.6-luna",
-            "provider": "openai",
-            "requests": 65,
-            "tokens": 1300000,
-            "avgTokensPerSecond": 59,
-            "quotaPrimaryPercent": 15.0,
-            "quotaSecondaryPercent": 2.7
-          },
-          {
-            "model": "gpt-5.6-sol",
-            "provider": "openai",
-            "requests": 10,
-            "tokens": 200000,
-            "avgTokensPerSecond": 41,
-            "quotaPrimaryPercent": 4.0,
-            "quotaSecondaryPercent": 0.8
-          }
-        ]
-      },
-      {
         "date": "2026-11-11",
-        "requests": 82,
-        "tokens": 1620000,
-        "quotaPrimaryPercent": 21.2,
-        "quotaSecondaryPercent": 3.9,
+        "requests": 120,
+        "tokens": 730000,
+        "quotaPrimaryPercent": 5.5,
+        "quotaSecondaryPercent": 1.2,
         "models": [
           {
             "model": "gpt-5.6-luna",
             "provider": "openai",
-            "requests": 71,
-            "tokens": 1400000,
-            "avgTokensPerSecond": 62,
-            "quotaPrimaryPercent": 16.8,
-            "quotaSecondaryPercent": 3.0
+            "requests": 100,
+            "tokens": 600000,
+            "avgTokensPerSecond": 61.0,
+            "quotaPrimaryPercent": 4.0,
+            "quotaSecondaryPercent": 0.9
+          },
+          {
+            "model": "claude-sonnet-5-5",
+            "provider": "anthropic",
+            "requests": 20,
+            "tokens": 130000,
+            "avgTokensPerSecond": 27.5,
+            "quotaPrimaryPercent": 1.5,
+            "quotaSecondaryPercent": 0.3
           }
         ]
       }
     ]
-  },
-  "note": "仮。各日の速度は models[] の中だけ。トップレベルの avgTokensPerSecond は無い。古い日から新しい日の順。"
+  }
 }
