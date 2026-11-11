@@ -197,6 +197,20 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         }
         Event::Notify { method, params } => {
             crate::panel_data::on_notify(app, &method, &params);
+            if method == "inocode/accounts/switched" {
+                // One line in the chat: which account, and why (alias only).
+                let to = params.get("toAlias").and_then(|v| v.as_str()).unwrap_or("");
+                let why = match params.get("reason").and_then(|v| v.as_str()) {
+                    Some("threshold") => "使用量がしきい値に近づいたため",
+                    Some("limitReached") => "上限に達したため",
+                    Some("manual") => "手動の切り替え",
+                    _ => "",
+                };
+                let text = if why.is_empty() { format!("アカウントを切り替えました: {to}") } else { format!("アカウントを切り替えました: {to} ({why})") };
+                let id = format!("switch:{}", messages_with(app, |m| m.row_count()).unwrap_or(0));
+                messages_with(app, |m| upsert_tool(m, &id, &text, None));
+                app.invoke_scroll_bottom();
+            }
             crate::sidebar::on_notify(&method);
             crate::prompts::on_notify(&method);
         }

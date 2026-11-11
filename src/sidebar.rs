@@ -226,6 +226,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
                 set_menu(&app, items, x, y);
                 // The footer is at the bottom: open the menu upwards.
                 app.global::<SidebarState>().set_menu_y(y - (4.0 * 28.0 + 9.0 + 8.0 + 44.0));
+                ACCT_POS.with(|p| p.set((x, y - 120.0)));
             }
         }
     });
@@ -238,6 +239,15 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             return;
         }
         let id = MENU_FOR.with(|m| m.borrow().clone());
+        if let Some(acct) = action.strip_prefix("acct:") {
+            let thread = STATE.with(|s| s.borrow().active.clone());
+            let mut params = json!({ "id": acct });
+            if !thread.is_empty() {
+                params["threadId"] = json!(thread);
+            }
+            rpc(&h, "chat.account.use".into(), "inocode/accounts/use", params);
+            return;
+        }
         if let Some((kind, v)) = action.split_once(':') {
             DATA.with(|d| {
                 let mut d = d.borrow_mut();
@@ -289,7 +299,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             }
             "settings" => crate::settings_page::open(&app),
             "login" => app.global::<AppState>().invoke_login(),
-            "switch" => rpc(&h, "chat.account.sessions".into(), "accountSession/list", json!({})),
+            "switch" => rpc(&h, "chat.account.pool".into(), "inocode/accounts/list", json!({ "refresh": false })),
             "logout" => confirm(
                 &app,
                 Confirm::Logout,
@@ -345,6 +355,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
 }
 
 thread_local! {
+    static ACCT_POS: std::cell::Cell<(f32, f32)> = const { std::cell::Cell::new((0.0, 0.0)) };
     static HANDLE: RefCell<Option<Rc<client::Handle>>> = const { RefCell::new(None) };
     static MENU_FOR: RefCell<String> = const { RefCell::new(String::new()) };
 }
@@ -466,11 +477,23 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
             app.global::<AppState>().set_logged_in(false);
             app.global::<AppState>().set_account_label("未ログイン".into());
         }
-        "chat.account.sessions" => {
-            // Account switching shows the sessions the server reports; the choice is made in the settings page.
-            let n = result.get("data").and_then(Value::as_array).map(Vec::len).unwrap_or(0);
-            app.global::<AppState>().set_status(format!("アカウントセッション {n} 件").into());
+        "chat.account.pool" => {
+            // Aliases only (no e-mail addresses); the one in use is checked.
+            let mut items = Vec::new();
+            for a in result.get("accounts").and_then(Value::as_array).into_iter().flatten() {
+                let alias = a.get("alias").and_then(Value::as_str).unwrap_or("");
+                let id = a.get("id").and_then(Value::as_str).unwrap_or("");
+                let mut m = item(&format!("acct:{id}"), alias, "", false, a.get("state").and_then(Value::as_str) == Some("disabled"));
+                m.checked = a.get("inUse").and_then(Value::as_bool).unwrap_or(false);
+                items.push(m);
+            }
+            if items.is_empty() {
+                items.push(item("", "アカウントがありません", "", false, true));
+            }
+            let (x, y) = ACCT_POS.with(|p| p.get());
+            set_menu(app, items, x, y);
         }
+        "chat.account.use" => {}
         // chat.pin, chat.unpin, chat.read, chat.unarchive
         _ => refresh(),
     }
