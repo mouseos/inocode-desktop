@@ -79,7 +79,7 @@ export component AppWindow inherits Window {
             height: Theme.chrome-height;
             Rectangle {
                 width: root.sidebar-open ? Theme.sidebar-width : 160px;
-                background: root.sidebar-open && Tabs.current == 0 ? Theme.sidebar : Theme.chrome;
+                background: root.sidebar-open ? Theme.sidebar : Theme.chrome;
                 HorizontalLayout {
                     padding-left: 10px;
                     padding-right: 8px;
@@ -165,32 +165,40 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 width: parent.width;
                 height: parent.height;
-                visible: Tabs.current == 0;
+                // The session list is at the left of every tab, not only of the chat.
                 if root.sidebar-open: Sidebar {
                     projects: AppState.projects;
                     user-name: AppState.account-label;
                     logged-in: AppState.logged-in;
                     login => { AccountsState.begin("chatgpt"); }
                     open-settings => { SettingsPageState.open-page(); }
-                    new-chat-in(cwd) => { AppState.new-chat-in(cwd); }
-                    new-chat => { AppState.new-chat(); }
-                    open-thread(id) => { AppState.open-thread(id); }
+                    new-chat-in(cwd) => { Tabs.select(0); AppState.new-chat-in(cwd); }
+                    new-chat => { Tabs.select(0); AppState.new-chat(); }
+                    open-thread(id) => { Tabs.select(0); AppState.open-thread(id); }
                 }
-                home := Home {
+                Rectangle {
                     horizontal-stretch: 1;
-                    prompt <=> root.prompt;
-                    submit(t) => { root.submit(t); }
+                    HorizontalLayout {
+                        width: parent.width;
+                        height: parent.height;
+                        visible: Tabs.current == 0;
+                        home := Home {
+                            horizontal-stretch: 1;
+                            prompt <=> root.prompt;
+                            submit(t) => { root.submit(t); }
+                        }
+                        if root.panel-open: TaskPanel {
+                            cwd: AppState.cwd-text;
+                            context-percent: AppState.context-percent;
+                            usage-text: AppState.usage-text;
+                            rate-text: AppState.rate-text;
+                        }
+                    }
+                    if Tabs.current != 0: TabHost {
+                        width: parent.width;
+                        height: parent.height;
+                    }
                 }
-                if root.panel-open: TaskPanel {
-                    cwd: AppState.cwd-text;
-                    context-percent: AppState.context-percent;
-                    usage-text: AppState.usage-text;
-                    rate-text: AppState.rate-text;
-                }
-            }
-            if Tabs.current != 0: TabHost {
-                width: parent.width;
-                height: parent.height;
             }
         }
     }

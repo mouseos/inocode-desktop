@@ -22,6 +22,7 @@ mod prompts;
 mod reply;
 mod settings_page;
 mod sidebar;
+mod snapshot;
 mod state;
 mod thread_stats;
 mod tabs;
@@ -87,6 +88,7 @@ fn main() {
     TAB_HOST.with(|h| *h.borrow_mut() = Some(host));
 
     callbacks::register(&app, &handle);
+    snapshot::install(&app);
     settings_page::init(&app);
     app.run().unwrap();
     // Closing the window: stop the client so the app-server child it started exits too.
