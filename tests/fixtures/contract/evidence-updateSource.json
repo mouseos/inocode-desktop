@@ -1,0 +1,12 @@
+{
+  "method": "inocode/evidence/updateSource",
+  "request": {
+    "id": "src-complaint-2026-0042",
+    "title": "告訴状(2026-0042)",
+    "kind": "document",
+    "version": "第2版",
+    "cwd": "D:\\work\\demo-project"
+  },
+  "response": {},
+  "note": "title / kind / version のうち、渡したものだけを直す。原文と hash は変わらない。"
+}

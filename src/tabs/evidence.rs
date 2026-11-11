@@ -427,19 +427,31 @@ fn nonempty(t: &str) -> Option<String> {
     if t.is_empty() { None } else { Some(t.to_string()) }
 }
 
-/// 原資料の追加フォーム -> importSource のパラメータ。題名と、本文かパスのどちらかが要る。
-fn import_params(title: &str, kind: i32, version: &str, path: &str, text: &str) -> Result<Value, String> {
+/// 「ファイルを選ぶ」-> importSource のパラメータ。題名はファイル名から、種別は「その他」にする(あとから直せる)。
+fn import_file_params(path: &str) -> Result<Value, String> {
+    let path = nonempty(path).ok_or("ファイルが選ばれていません")?;
+    let name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let stem = std::path::Path::new(&path).file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| name.clone());
+    Ok(json!({ "path": path, "fileName": name, "title": stem, "kind": "other" }))
+}
+
+/// 「貼り付け」-> importSource のパラメータ。題名は本文の最初の行(40 文字まで)。
+fn import_text_params(text: &str) -> Result<Value, String> {
+    let body = nonempty(text).ok_or("クリップボードに文字がありません")?;
+    let first = body.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    let title: String = first.chars().take(40).collect();
+    Ok(json!({ "text": text, "title": title, "kind": "other" }))
+}
+
+/// 題名・種別・版のあとから直す -> updateSource のパラメータ。
+fn update_source_params(id: &str, title: &str, kind: i32, version: &str) -> Result<Value, String> {
     let title = nonempty(title).ok_or("題名を入力してください")?;
-    let mut p = json!({ "title": title, "kind": SOURCE_KINDS[(kind.max(0) as usize).min(SOURCE_KINDS.len() - 1)] });
-    if let Some(v) = nonempty(version) {
-        p["version"] = json!(v);
-    }
-    match (nonempty(path), nonempty(text)) {
-        (Some(path), _) => p["path"] = json!(path),
-        (None, Some(_)) => p["text"] = json!(text),
-        (None, None) => return Err("本文を貼り付けるか、ファイルのパスを入力してください".into()),
-    }
-    Ok(p)
+    Ok(json!({
+        "id": id,
+        "title": title,
+        "kind": SOURCE_KINDS[(kind.max(0) as usize).min(SOURCE_KINDS.len() - 1)],
+        "version": version.trim(),
+    }))
 }
 
 /// 主張の追加フォーム -> addClaim のパラメータ。
@@ -491,11 +503,6 @@ fn install_write(app: &AppWindow, host: &Host) {
     st.on_add_source(move || {
         let Some(app) = weak.upgrade() else { return };
         let st = app.global::<EvidenceState>();
-        st.set_new_src_title("".into());
-        st.set_new_src_version("".into());
-        st.set_new_src_path("".into());
-        st.set_new_src_text("".into());
-        st.set_new_src_kind(1);
         st.set_write_note("".into());
         st.set_adding_source(true);
     });
@@ -506,15 +513,43 @@ fn install_write(app: &AppWindow, host: &Host) {
         }
     });
     let (weak, h) = (app.as_weak(), host.clone());
-    st.on_save_source(move || {
+    st.on_pick_file(move || {
         let Some(app) = weak.upgrade() else { return };
+        let Some(path) = rfd::FileDialog::new().set_title("原資料にするファイルを選ぶ").pick_file() else { return };
         let st = app.global::<EvidenceState>();
-        match import_params(&st.get_new_src_title(), st.get_new_src_kind(), &st.get_new_src_version(), &st.get_new_src_path(), &st.get_new_src_text()) {
+        match import_file_params(&path.to_string_lossy()) {
             Ok(p) => {
                 st.set_write_note("".into());
                 h.rpc("evidence.w.source", "inocode/evidence/importSource", p);
             }
             Err(e) => st.set_write_note(e.into()),
+        }
+    });
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_paste_text(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<EvidenceState>();
+        let text = arboard::Clipboard::new().and_then(|mut c| c.get_text()).unwrap_or_default();
+        match import_text_params(&text) {
+            Ok(p) => {
+                st.set_write_note("".into());
+                h.rpc("evidence.w.source", "inocode/evidence/importSource", p);
+            }
+            Err(e) => st.set_write_note(e.into()),
+        }
+    });
+    let (weak, h) = (app.as_weak(), host.clone());
+    st.on_save_detail(move || {
+        let Some(app) = weak.upgrade() else { return };
+        let st = app.global::<EvidenceState>();
+        let Some(id) = E.with(|e| e.borrow().selected_source.clone()) else { return };
+        match update_source_params(&id, &st.get_detail_title(), st.get_detail_kind(), &st.get_detail_version()) {
+            Ok(mut p) => {
+                st.set_quote_note("".into());
+                p["cwd"] = json!(cwd(&app));
+                h.rpc("evidence.w.update", "inocode/evidence/updateSource", p);
+            }
+            Err(e) => st.set_quote_note(e.into()),
         }
     });
     let (weak, h) = (app.as_weak(), host.clone());
@@ -961,6 +996,9 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
                 meta = format!("{meta} · {hash}");
             }
             st.set_source_meta(meta.into());
+            st.set_detail_title(s(&src, "title").into());
+            st.set_detail_version(s(&src, "version").into());
+            st.set_detail_kind(SOURCE_KINDS.iter().position(|k| *k == s(&src, "kind")).map(|i| i as i32).unwrap_or(3));
             st.set_source_text(s(p, "text").into());
             E.with(|e| e.borrow_mut().source_text = s(p, "text"));
             st.set_has_source(true);
@@ -1010,6 +1048,15 @@ pub fn event(app: &AppWindow, host: &Host, event: &Event) {
             request_for_tab(app, host, 0);
         }
         ("evidence.w.source", Err(e)) => st.set_write_note(e.as_str().into()),
+        // 題名・種別・版を直した: 一覧と、開いている原資料を読み直す
+        ("evidence.w.update", Ok(_)) => {
+            st.set_detail_open(false);
+            request_for_tab(app, host, 0);
+            if let Some(id) = E.with(|e| e.borrow().selected_source.clone()) {
+                host.rpc("evidence.source", "inocode/evidence/readSource", json!({ "id": id, "cwd": cwd(app) }));
+            }
+        }
+        ("evidence.w.update", Err(e)) => st.set_quote_note(e.as_str().into()),
         ("evidence.w.quote", Ok(v)) => {
             let span = s(payload(v), "spanId");
             st.set_quote_note("".into());
@@ -1155,15 +1202,27 @@ mod tests {
     }
 
     #[test]
-    fn import_needs_title_and_text_or_path() {
-        assert!(import_params(" ", 1, "", "", "x").is_err());
-        assert!(import_params("題", 1, "", "", "  ").is_err());
-        let p = import_params("告訴状", 1, " v1 ", "", "本文").unwrap();
-        assert_eq!((p["kind"].as_str(), p["version"].as_str(), p["text"].as_str()), (Some("document"), Some("v1"), Some("本文")));
-        let f = import_params("刑法", 0, "", "D:/x.txt", "ignored").unwrap();
-        assert_eq!(f["kind"], "statute");
-        assert_eq!(f["path"], "D:/x.txt");
-        assert!(f.get("text").is_none());
+    fn importing_needs_no_typing() {
+        // ファイル: 題名はファイル名、種別は「その他」
+        let f = import_file_params("D:/docs/告訴状 2026.pdf").unwrap();
+        assert_eq!((f["fileName"].as_str(), f["title"].as_str(), f["kind"].as_str()), (Some("告訴状 2026.pdf"), Some("告訴状 2026"), Some("other")));
+        assert_eq!(f["path"], "D:/docs/告訴状 2026.pdf");
+        assert!(import_file_params("  ").is_err());
+        // 貼り付け: 題名は最初の行
+        let t = import_text_params("\n  第百九十九条 人を殺した者は\n本文").unwrap();
+        assert_eq!(t["title"], "第百九十九条 人を殺した者は");
+        assert_eq!(t["kind"], "other");
+        assert!(t["text"].as_str().unwrap().contains("本文"));
+        let long = import_text_params(&"あ".repeat(100)).unwrap();
+        assert_eq!(long["title"].as_str().unwrap().chars().count(), 40);
+        assert!(import_text_params(" \n ").is_err());
+    }
+
+    #[test]
+    fn source_details_can_be_fixed_later() {
+        let p = update_source_params("src-1", " 新しい題 ", 0, " 第2版 ").unwrap();
+        assert_eq!((p["id"].as_str(), p["title"].as_str(), p["kind"].as_str(), p["version"].as_str()), (Some("src-1"), Some("新しい題"), Some("statute"), Some("第2版")));
+        assert!(update_source_params("src-1", "  ", 1, "").is_err());
     }
 
     #[test]
