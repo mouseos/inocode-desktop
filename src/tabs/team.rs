@@ -166,7 +166,6 @@ fn render(app: &AppWindow) {
                     .and_then(Value::as_array)
                     .map(|p| p.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("、"))
                     .filter(|p| !p.is_empty())
-                    .map(|p| format!("担当パス: {p}"))
                     .unwrap_or_default();
                 let tokens = a
                     .get("tokens")
@@ -184,6 +183,15 @@ fn render(app: &AppWindow) {
                 }
             })
             .collect();
+        // the grid takes them all; the lists take them by state
+        let part = |f: &dyn Fn(&str) -> bool| -> ModelRc<AgentRow> {
+            ModelRc::from(Rc::new(VecModel::from(rows.iter().filter(|r| f(r.state.as_str())).cloned().collect::<Vec<_>>())))
+        };
+        ts.set_attention(part(&|s| s == "blocked" || s == "waiting"));
+        ts.set_active(part(&|s| s == "running"));
+        ts.set_finished(part(&|s| s == "done"));
+        let done = rows.iter().filter(|r| r.state == "done").count();
+        ts.set_progress(if rows.is_empty() { String::new() } else { format!("{done}/{}", rows.len()) }.into());
         ts.set_agents(ModelRc::from(Rc::new(VecModel::from(rows))));
         match &d.estimate {
             Some(e) => {

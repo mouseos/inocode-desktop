@@ -1,5 +1,6 @@
 import { Theme } from "../theme.slint";
 import { Tag } from "g_widgets.slint";
+import { Icon } from "../icons.slint";
 import { LogRow, LogList } from "log_rows.slint";
 
 export struct AgentRow {
@@ -48,6 +49,12 @@ export global TeamState {
     callback message-filter-changed(int);
     callback output-toggled(int);
     in property <[AgentRow]> agents;
+    // The same agents in groups: those that wait for a decision, those at work, those that are done.
+    in property <[AgentRow]> attention;
+    in property <[AgentRow]> active;
+    in property <[AgentRow]> finished;
+    // "3/8": agents that are done of all.
+    in property <string> progress;
     in property <bool> has-estimate: false;
     in property <string> speedup;
     in property <string> cost;
@@ -75,53 +82,89 @@ component KeyValue inherits HorizontalLayout {
     Text { text: root.value; color: Theme.fg; font-size: 12px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
 }
 
-component AgentCard inherits Rectangle {
+// One agent as a cell of the grid: the colour is the state (done is a faint fill, running pulses).
+component Cell inherits Rectangle {
+    in property <string> state;
+    in property <bool> pulse;
+    width: 6px;
+    height: 6px;
+    border-radius: 1.5px;
+    background: root.state == "running" ? Theme.accent
+        : root.state == "waiting" ? Theme.warning
+        : root.state == "blocked" ? Theme.danger
+        : Theme.fg-tertiary.transparentize(0.55);
+    opacity: root.state == "running" && root.pulse ? 0.72 : 1.0;
+    animate opacity { duration: 1400ms; easing: ease-in-out; }
+}
+
+// An agent in a list: the state at the left, the name and what it owns, and when it started.
+component AgentLine inherits Rectangle {
     in property <AgentRow> agent;
-    property <bool> blocked: root.agent.state == "blocked";
-    height: col.preferred-height;
-    border-radius: Theme.radius-row + 2px;
-    background: root.blocked ? Theme.danger.transparentize(0.88) : Theme.bubble;
-    border-width: root.blocked ? 1px : 0px;
-    border-color: Theme.danger;
-    col := VerticalLayout {
-        padding: 10px;
-        padding-left: 14px;
-        padding-right: 14px;
-        spacing: 4px;
-        HorizontalLayout {
-            spacing: 8px;
+    in property <bool> pulse;
+    property <bool> flagged: root.agent.state == "blocked" || root.agent.state == "waiting";
+    height: row.preferred-height;
+    border-radius: Theme.radius-row;
+    background: root.agent.state == "blocked" ? Theme.danger.transparentize(0.9)
+        : root.agent.state == "waiting" ? Theme.warning.transparentize(0.9)
+        : transparent;
+    row := HorizontalLayout {
+        padding: 8px;
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        Rectangle {
+            width: 14px;
+            if root.agent.state == "done": Icon { text: "\u{e5ca}"; font-size: 14px; color: Theme.fg-tertiary; }
+            if root.agent.state != "done": Cell { state: root.agent.state; pulse: root.pulse; x: 4px; y: 8px; }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
             Text {
                 text: root.agent.name;
-                color: Theme.fg;
+                color: root.agent.state == "done" ? Theme.fg-secondary : Theme.fg;
                 font-size: 13px;
-                font-weight: 600;
-                vertical-alignment: center;
                 overflow: elide;
-                horizontal-stretch: 1;
             }
-            Text {
-                text: root.agent.state-label;
-                color: root.blocked ? Theme.danger
-                    : root.agent.state == "running" ? Theme.accent
-                    : root.agent.state == "waiting" ? Theme.warning
-                    : Theme.fg-secondary;
-                font-size: 12px;
-                font-weight: root.blocked ? 700 : 500;
-                vertical-alignment: center;
-            }
+            Text { text: root.agent.paths; color: Theme.fg-tertiary; font-size: 12px; overflow: elide; }
         }
-        Text { text: root.agent.paths; color: Theme.fg-secondary; font-size: 12px; overflow: elide; }
-        HorizontalLayout {
-            spacing: 16px;
-            Text { text: root.agent.tokens; color: Theme.fg-tertiary; font-size: 12px; }
-            Text { text: root.agent.started; color: Theme.fg-tertiary; font-size: 12px; }
-            Rectangle { horizontal-stretch: 1; }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            if root.flagged: Text {
+                text: root.agent.state-label;
+                color: root.agent.state == "blocked" ? Theme.danger : Theme.warning;
+                font-size: 12px;
+                font-weight: 600;
+                horizontal-alignment: right;
+            }
+            Text { text: root.agent.started; color: Theme.fg-tertiary; font-size: 11px; horizontal-alignment: right; }
         }
     }
 }
 
+// A small heading over a group of agents: the group and how many.
+component GroupHead inherits Text {
+    in property <int> count;
+    in property <string> group;
+    text: root.group + " " + root.count;
+    color: Theme.fg-tertiary;
+    font-size: 11px;
+    vertical-alignment: center;
+    height: 26px;
+}
+
 export component TeamTab inherits Rectangle {
     background: Theme.surface;
+    // The running cells pulse slowly.
+    property <bool> pulse: false;
+    // The agent under the pointer in the grid (-1: none).
+    property <int> hover: -1;
+    Timer {
+        interval: 1400ms;
+        running: TeamState.agents.length > 0;
+        triggered => { root.pulse = !root.pulse; }
+    }
     Flickable {
         content-height: page.preferred-height;
         page := VerticalLayout {
@@ -168,8 +211,48 @@ export component TeamTab inherits Rectangle {
             }
 
             if TeamState.agents.length > 0: Rectangle { height: 8px; }
-            if TeamState.agents.length > 0: Heading { text: "社員"; }
-            for agent in TeamState.agents: AgentCard { agent: agent; }
+            if TeamState.agents.length > 0: HorizontalLayout {
+                spacing: 12px;
+                padding-left: 12px;
+                padding-bottom: 6px;
+                height: (floor((TeamState.agents.length - 1) / 35) + 1) * 8px + 12px;
+                // 35 cells in a row, 8px apart (6px and a gap of 2px)
+                Rectangle {
+                    width: min(TeamState.agents.length, 35) * 8px;
+                    height: (floor((TeamState.agents.length - 1) / 35) + 1) * 8px + 12px;
+                    for a[i] in TeamState.agents: Cell {
+                        x: mod(i, 35) * 8px;
+                        y: floor(i / 35) * 8px + 3px;
+                        state: a.state;
+                        pulse: root.pulse;
+                        TouchArea {
+                            changed has-hover => {
+                                if (self.has-hover) {
+                                    root.hover = i;
+                                } else if (root.hover == i) {
+                                    root.hover = -1;
+                                }
+                            }
+                        }
+                    }
+                }
+                Text {
+                    horizontal-stretch: 1;
+                    text: root.hover >= 0 && root.hover < TeamState.agents.length
+                        ? TeamState.agents[root.hover].name + "  " + TeamState.agents[root.hover].state-label + "  " + TeamState.agents[root.hover].tokens
+                        : TeamState.progress;
+                    color: Theme.fg-tertiary;
+                    font-size: 11px;
+                    horizontal-alignment: left;
+                    vertical-alignment: top;
+                    overflow: elide;
+                }
+            }
+            for agent in TeamState.attention: AgentLine { agent: agent; pulse: root.pulse; }
+            if TeamState.active.length > 0: GroupHead { group: "実行中"; count: TeamState.active.length; }
+            for agent in TeamState.active: AgentLine { agent: agent; pulse: root.pulse; }
+            if TeamState.finished.length > 0: GroupHead { group: "完了"; count: TeamState.finished.length; }
+            for agent in TeamState.finished: AgentLine { agent: agent; pulse: root.pulse; }
 
             Rectangle { height: 8px; }
             Heading { text: "測定"; }
