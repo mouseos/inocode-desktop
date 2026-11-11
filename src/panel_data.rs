@@ -47,18 +47,19 @@ pub(crate) fn on_thread_active(app: &AppWindow, id: &str, cwd: &str) {
     let name = std::path::Path::new(cwd).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     app.global::<PanelState>().set_thread_id(id.into());
     app.global::<PanelState>().set_folder_name(name.into());
-    refresh();
+    refresh(id);
 }
 
-pub(crate) fn refresh() {
+pub(crate) fn refresh(thread: &str) {
     rpc("panel.mcp", "mcpServerStatus/list", json!({}));
     rpc("panel.remote.read", "remoteControl/status/read", Value::Null);
-    refresh_terminals();
+    refresh_terminals(thread);
 }
 
-pub(crate) fn refresh_terminals() {
-    if let Some(t) = active() {
-        rpc("panel.terms", "thread/backgroundTerminals/list", json!({ "threadId": t }));
+/// Takes the thread id: the caller may hold the shared state.
+pub(crate) fn refresh_terminals(thread: &str) {
+    if !thread.is_empty() {
+        rpc("panel.terms", "thread/backgroundTerminals/list", json!({ "threadId": thread }));
     }
 }
 
@@ -100,7 +101,7 @@ pub(crate) fn on_rpc(app: &AppWindow, tag: &str, result: &Result<Value, String>)
         }
         // The thread may not be loaded yet: no terminals.
         ("panel.terms", Err(_)) => s.set_terminals(ModelRc::from(Rc::new(VecModel::<TermRow>::default()))),
-        ("panel.term.stop", _) => refresh_terminals(),
+        ("panel.term.stop", _) => refresh_terminals(&active().unwrap_or_default()),
         ("panel.remote.read", Ok(v)) => set_remote(app, v.get("status").and_then(Value::as_str).unwrap_or("disabled")),
         ("panel.remote", Ok(_)) => rpc("panel.remote.read", "remoteControl/status/read", Value::Null),
         ("panel.remote", Err(e)) => {

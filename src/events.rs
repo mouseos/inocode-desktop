@@ -143,7 +143,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             st.busy = false;
             app.global::<AppState>().set_busy(false);
             rebuild_projects(app, &st);
-            crate::panel_data::refresh_terminals();
+            crate::panel_data::refresh_terminals(&st.active.clone());
             crate::prompts::on_turn_done(app, &st.active.clone(), interrupted);
             // The turn's plan and file changes end up at the bottom, and the next turn starts new rows.
             messages_with(app, |model| {
