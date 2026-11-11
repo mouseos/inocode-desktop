@@ -76,6 +76,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
         Event::Threads(_) => crate::sidebar::refresh(),
         Event::ThreadActive { id, title } => {
             crate::sidebar::on_thread_active(&id);
+            crate::nav::visit(app, crate::nav::Entry::Thread(id.clone()));
             let mut st = state.borrow_mut();
             st.active = id;
             st.busy = false;

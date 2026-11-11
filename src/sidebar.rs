@@ -195,6 +195,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     crate::attach::register(app, handle);
     crate::panel_data::register(app, handle);
     crate::settings_page::register(app, handle);
+    crate::nav::register(app, handle);
     let weak = app.as_weak();
     app.global::<SidebarState>().on_open_menu(move |kind, id, x, y| {
         let Some(app) = weak.upgrade() else { return };
@@ -207,6 +208,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
                 set_menu(&app, items, x, y);
                 MENU_FOR.with(|m| *m.borrow_mut() = active);
             }
+            "app" => set_menu(&app, crate::nav::app_menu(&app), x, y),
             "sort" => set_menu(&app, sort_menu(), x, y),
             "more" => set_menu(&app, filter_menu(), x, y),
             "thread" => {
@@ -238,7 +240,7 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     let h = handle.clone();
     app.global::<SidebarState>().on_menu_pick(move |action| {
         let Some(app) = weak.upgrade() else { return };
-        if crate::attach::menu_pick(&app, &action) || crate::panel_data::menu_pick(&app, &action) {
+        if crate::attach::menu_pick(&app, &action) || crate::panel_data::menu_pick(&app, &action) || crate::nav::menu_pick(&app, &action) {
             return;
         }
         let id = MENU_FOR.with(|m| m.borrow().clone());

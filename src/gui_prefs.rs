@@ -34,6 +34,7 @@ impl Shortcut {
 pub(crate) struct Prefs {
     /// 0 follow the system, 1 light, 2 dark
     pub scheme: i32,
+    pub sidebar_open: bool,
     pub palette: Shortcut,
     pub model: Shortcut,
 }
@@ -42,6 +43,7 @@ impl Default for Prefs {
     fn default() -> Self {
         Prefs {
             scheme: 0,
+            sidebar_open: true,
             palette: Shortcut { key: "k".into(), ctrl: true, shift: false, alt: false },
             model: Shortcut { key: "m".into(), ctrl: true, shift: true, alt: false },
         }
@@ -74,6 +76,7 @@ pub(crate) fn load() -> Prefs {
     let Ok(text) = std::fs::read_to_string(path()) else { return d };
     let Ok(v) = serde_json::from_str::<Value>(&text) else { return d };
     Prefs {
+        sidebar_open: v.get("sidebarOpen").and_then(Value::as_bool).unwrap_or(true),
         scheme: v.get("scheme").and_then(Value::as_i64).map(|n| (n as i32).clamp(0, 2)).unwrap_or(0),
         palette: v.get("palette").map(|s| shortcut_from(s, d.palette.clone())).unwrap_or(d.palette),
         model: v.get("model").map(|s| shortcut_from(s, d.model.clone())).unwrap_or(d.model),
@@ -82,7 +85,7 @@ pub(crate) fn load() -> Prefs {
 
 pub(crate) fn save(p: &Prefs) {
     let s = |x: &Shortcut| json!({ "key": x.key, "ctrl": x.ctrl, "shift": x.shift, "alt": x.alt });
-    let v = json!({ "scheme": p.scheme, "palette": s(&p.palette), "model": s(&p.model) });
+    let v = json!({ "scheme": p.scheme, "sidebarOpen": p.sidebar_open, "palette": s(&p.palette), "model": s(&p.model) });
     let path = path();
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
@@ -93,6 +96,7 @@ pub(crate) fn save(p: &Prefs) {
 /// Push the preferences into the window's globals.
 pub(crate) fn apply(app: &AppWindow, p: &Prefs) {
     app.global::<Theme>().set_scheme(p.scheme);
+    app.set_sidebar_open(p.sidebar_open);
     let s = app.global::<ShortcutState>();
     s.set_palette_key(p.palette.key.as_str().into());
     s.set_palette_ctrl(p.palette.ctrl);

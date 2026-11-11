@@ -170,11 +170,21 @@ fn show_layout(app: &AppWindow, layout: i32) {
     app.global::<SettingsPageState>().set_layout(layout);
 }
 
+/// Show a section without recording a history step (used by back / forward).
+pub(crate) fn show_section(app: &AppWindow, section: i32) {
+    load(app, section);
+}
+
+pub(crate) fn set_sidebar_open(open: bool) {
+    remember(|p| p.sidebar_open = open);
+}
+
 fn load(app: &AppWindow, section: i32) {
     let list = sections();
     let s = app.global::<SettingsPageState>();
     let idx = (section.max(0) as usize).min(list.len() - 1);
     DATA.with(|d| d.borrow_mut().section = idx);
+    crate::nav::visit(app, crate::nav::Entry::Settings(idx as i32));
     s.set_section(idx as i32);
     s.set_search("".into());
     s.set_title(list[idx].1.as_str().into());

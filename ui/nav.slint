@@ -1,0 +1,11 @@
+// Window navigation: back and forward through the sessions and screens that were open,
+// the sidebar toggle. Rust: src/nav.rs.
+export global NavState {
+    in property <bool> can-back: false;
+    in property <bool> can-forward: false;
+    callback back;
+    callback forward;
+    callback toggle-sidebar;
+    // A tab (0 chat, 1 …) was shown.
+    callback visited-tab(int);
+}
