@@ -303,15 +303,15 @@ export component AccountsView inherits Rectangle {
                     }
                 }
                 Group {
-                    Row { label: "アカウントを追加"; chevron: true; separator: AccountsState.cards.length > 1; clicked => { AccountsState.begin(""); } }
+                    Row { label: "アカウントを追加"; chevron: true; clicked => { AccountsState.begin(""); } }
                     if AccountsState.cards.length > 1: Row {
                         label: "並べ替え";
                         value: AccountsState.reorder ? "完了" : "";
                         value-color: Theme.accent;
                         chevron: !AccountsState.reorder;
-                        separator: false;
                         clicked => { AccountsState.reorder = !AccountsState.reorder; }
                     }
+                    Row { label: "使用量を更新"; separator: false; clicked => { AccountsState.refresh(); } }
                 }
                 if AccountsState.cards.length > 0: Group {
                     Row {

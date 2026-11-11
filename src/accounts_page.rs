@@ -22,6 +22,8 @@ struct Data {
     auth_url: String,
     /// The API key kept while the pool answers (fallback to the plain login).
     pending_key: Option<String>,
+    /// The provider whose policy (switching threshold) is loaded: each provider has its own.
+    policy_provider: String,
     /// The account being signed in again (re-login), when the dialog is for that.
     reauth_id: Option<String>,
 }
@@ -61,7 +63,6 @@ pub(crate) fn open(app: &AppWindow) {
     note(app, "");
     refresh(false);
     rpc("acct.providers", "inocode/providers/list", json!({}));
-    rpc("acct.policy", "inocode/accounts/policy/read", json!({}));
 }
 
 fn refresh(force: bool) {
@@ -147,6 +148,13 @@ fn enter_provider(app: &AppWindow, id: &str, record: bool) {
     st.set_account_id("".into());
     st.set_confirm_id("".into());
     st.set_reorder(false);
+    st.set_threshold("".into());
+    DATA.with(|d| {
+        let mut d = d.borrow_mut();
+        d.policy_provider = id.to_string();
+        d.policy = Value::Null;
+    });
+    rpc("acct.policy", "inocode/accounts/policy/read", json!({ "provider": id }));
     render(app);
     set_rows(app);
     if record {
@@ -384,7 +392,8 @@ fn write_policy(change: impl FnOnce(&mut Value)) {
         p = json!({});
     }
     change(&mut p);
-    rpc("acct.policy.write", "inocode/accounts/policy/write", json!({ "policy": p }));
+    let provider = DATA.with(|d| d.borrow().policy_provider.clone());
+    rpc("acct.policy.write", "inocode/accounts/policy/write", json!({ "provider": provider, "policy": p }));
 }
 
 pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
