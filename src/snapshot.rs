@@ -25,9 +25,44 @@ pub(crate) fn install(app: &AppWindow) {
             app.global::<Tabs>().invoke_select(tab);
         }
     });
+    // INOCODE_GUI_OPEN opens a screen of the settings first: settings:<section> | provider:<id> |
+    // account:<provider>:<account id> | history:<provider>:<account id> | add
+    let mut extra: Vec<slint::Timer> = Vec::new();
+    if let Ok(what) = std::env::var("INOCODE_GUI_OPEN") {
+        let weak = app.as_weak();
+        let first = slint::Timer::default();
+        let w1 = what.clone();
+        first.start(slint::TimerMode::SingleShot, Duration::from_secs(delay), move || {
+            let Some(app) = weak.upgrade() else { return };
+            match w1.split(':').next().unwrap_or("") {
+                "settings" => {
+                    let n = w1.split(':').nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+                    app.global::<SettingsPageState>().invoke_open_section(n);
+                }
+                _ => crate::settings_page::open_usage(&app),
+            }
+        });
+        let weak = app.as_weak();
+        let second = slint::Timer::default();
+        second.start(slint::TimerMode::SingleShot, Duration::from_secs(delay + 2), move || {
+            let Some(app) = weak.upgrade() else { return };
+            let parts: Vec<&str> = what.split(':').collect();
+            match parts.as_slice() {
+                ["provider", p] => crate::accounts_page::show_at(&app, p, ""),
+                ["account", p, a] => crate::accounts_page::show_at(&app, p, a),
+                ["history", p, a] => {
+                    crate::accounts_page::show_at(&app, p, a);
+                    crate::accounts_page::open_history_modal(&app, a);
+                }
+                ["add"] => app.global::<AccountsState>().invoke_begin("".into()),
+                _ => {}
+            }
+        });
+        extra.extend([first, second]);
+    }
     let weak = app.as_weak();
     let shot = slint::Timer::default();
-    shot.start(slint::TimerMode::SingleShot, Duration::from_secs(delay + 3), move || {
+    shot.start(slint::TimerMode::SingleShot, Duration::from_secs(delay + 5), move || {
         if let Some(app) = weak.upgrade() {
             if let Ok(buf) = app.window().take_snapshot() {
                 if let Ok(file) = std::fs::File::create(&path) {
@@ -43,4 +78,5 @@ pub(crate) fn install(app: &AppWindow) {
         let _ = slint::quit_event_loop();
     });
     TIMERS.with(|t| t.borrow_mut().extend([open, shot]));
+    TIMERS.with(|t| t.borrow_mut().extend(extra));
 }
