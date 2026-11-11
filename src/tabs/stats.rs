@@ -373,16 +373,19 @@ mod tests {
     #[test]
     fn model_rows_say_when_data_is_short() {
         let rows = model_rows(&fixture("stats-summary.json"), "gpt-5.6-sol");
-        assert_eq!(rows.len(), 3);
+        assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].name, "gpt-5.6-luna");
-        assert_eq!((rows[0].uncached.as_str(), rows[0].output.as_str()), ("1.2M", "280K"));
-        assert_eq!((rows[0].q5.as_str(), rows[0].qw.as_str(), rows[0].speed.as_str()), ("18.4%", "4.6%", "62"));
-        assert!(rows[0].per_million.contains("9.8% / 2.5%"));
+        assert_eq!((rows[0].uncached.as_str(), rows[0].output.as_str()), ("1.2M", "80K"));
+        assert_eq!((rows[0].q5.as_str(), rows[0].qw.as_str(), rows[0].speed.as_str()), ("12.0%", "3.0%", "62"));
+        assert!(rows[0].per_million.contains("22.0% / 5.5%"));
         assert!(!rows[0].selected);
         assert!(rows[1].selected);
         assert!(rows[1].per_million.contains("データが足りない"));
         assert!(model_rows(&json!({}), "").is_empty());
-        assert_eq!(model_names(&fixture("stats-summary.json")).len(), 3);
+        assert_eq!(model_names(&fixture("stats-summary.json")).len(), 2);
+        // 窓ごとに値が無いときは「—」
+        let m = json!({ "model": "m", "quotaPerMillion": { "uncachedInput": { "primaryPercent": 2.0, "secondaryPercent": null } }, "insufficient": false });
+        assert!(per_million_label(&m).contains("入力 2.0% / —"));
     }
 
     #[test]
@@ -393,18 +396,19 @@ mod tests {
         assert_eq!(bars[0].ratio, 0.0);
         assert_eq!(bars[0].top, "");
         // 件数が少ない(2 件)時間は薄い、多い時間は濃い
-        assert!(bars[7].faint && bars[7].ratio > 0.0);
-        assert!(!bars[11].faint);
+        assert!(bars[1].faint && bars[1].ratio > 0.0);
+        assert!(!bars[3].faint);
         assert!(bars.iter().any(|b| (b.ratio - 1.0).abs() < 1e-6));
         assert_eq!(bars[6].label, "6時");
         assert_eq!(bars[7].label, "");
+        assert_eq!(bars[5].ratio, 0.0);
     }
 
     #[test]
     fn daily_bars_show_date_and_speed() {
         let bars = day_bars(&fixture("stats-daily.json"));
-        assert_eq!(bars.len(), 7);
-        assert_eq!(bars[0].label, "11-05");
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].label, "11-11");
         assert!(bars[0].sub.ends_with("tok/s"));
         assert!(bars.iter().any(|b| (b.ratio - 1.0).abs() < 1e-6));
     }
@@ -418,7 +422,7 @@ mod tests {
         assert!(estimate_params("m", 3, "", "", "").is_err());
         assert!(estimate_params("m", 3, "abc", "", "").is_err());
         assert!(estimate_params("m", 3, "-5", "", "").is_err());
-        assert_eq!(estimate_label(&fixture("stats-estimate.json")), "5時間枠 約 0.80%、週枠 約 0.20%、約 5 分 21 秒");
+        assert_eq!(estimate_label(&fixture("stats-estimate.json")), "5時間枠 約 1.4%、週枠 約 0.3%、約 45 秒");
         assert_eq!(estimate_label(&json!({ "insufficient": true, "primaryPercent": null })), "データが足りない");
         assert_eq!(seconds_label(45.0), "約 45 秒");
     }

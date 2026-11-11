@@ -1,21 +1,20 @@
 {
-  "method": "inocode/stats/estimate",
+  "_doc": "inocode/stats/estimate (all numbers null when insufficient)",
   "request": {
     "model": "gpt-5.6-luna",
     "days": 3,
     "tokens": {
       "uncachedInput": 200000,
-      "cachedInput": 800000,
+      "cachedInput": 500000,
       "output": 20000
     }
   },
   "response": {
     "model": "gpt-5.6-luna",
     "days": 3,
-    "primaryPercent": 0.8,
-    "secondaryPercent": 0.2,
-    "seconds": 320.5,
+    "primaryPercent": 1.4,
+    "secondaryPercent": 0.3,
+    "seconds": 45.0,
     "insufficient": false
-  },
-  "note": "仮。足りないときは insufficient: true で数値は null。"
+  }
 }

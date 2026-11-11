@@ -1,10 +1,16 @@
 {
-  "method": "inocode/stats/seedFromCodexHistory",
+  "_doc": "inocode/stats/seedFromCodexHistory (read-only); progress via inocode/stats/seedProgress",
   "request": {
     "path": null
   },
   "response": {
-    "jobId": "seed-1"
+    "jobId": "seed-1731300000000"
   },
-  "note": "仮。進行は通知 inocode/stats/seedProgress。"
+  "progressNotification": {
+    "jobId": "seed-1731300000000",
+    "filesDone": 12,
+    "filesTotal": 52,
+    "samplesAdded": 4210,
+    "done": false
+  }
 }
