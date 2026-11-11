@@ -192,4 +192,5 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
     app.global::<AppState>().on_switch_transport(move || h.send(Command::SwitchTransport));
     crate::coding::register(app, handle);
     crate::chat_md::register(app);
+    crate::git_panel::register(app, handle);
 }

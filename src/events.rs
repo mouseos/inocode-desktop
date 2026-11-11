@@ -59,6 +59,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             crate::coding::on_applied(app, &mut st, &sandbox, &cwd);
             let _ = sandbox_label(&sandbox);
             st.branch = git_branch(&cwd);
+            crate::git_panel::set_branch(app, &st.branch);
             st.active_cwd = cwd.clone();
             crate::panel_data::on_thread_active(app, &st.active.clone(), &cwd);
             app.global::<AppState>().set_cwd_text(cwd.into());

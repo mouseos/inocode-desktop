@@ -12,6 +12,7 @@ import { AccountsState } from "accounts_page.slint";
 import { AttachState, AttachChips, SuggestList } from "attach.slint";
 import { PromptState, QuestionCard, QueueList, ErrorBanner } from "prompts.slint";
 import { MarkdownView } from "markdown.slint";
+import { GitState, GitChip, GitPanel } from "git_panel.slint";
 
 component ApprovalButton inherits Rectangle {
     in property <string> label;
@@ -258,6 +259,7 @@ component Composer inherits VerticalLayout {
                         state: root.perm;
                         pick(i) => { root.pick-perm(i); }
                     }
+                    if GitState.branch != "": GitChip { y: 1px; }
                     Rectangle { horizontal-stretch: 1; }
                     picker := IntelligenceMenu {
                         y: 1px;
@@ -513,4 +515,7 @@ export component Home inherits Rectangle {
             }
         }
     }
+
+    // Git of the working folder (over everything in the chat).
+    GitPanel { }
 }
