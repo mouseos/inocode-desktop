@@ -51,7 +51,7 @@ export component GitChip inherits Rectangle {
     border-radius: Theme.radius-row;
     background: ta.has-hover ? Theme.hover : transparent;
     t := Text {
-        text: "\u{e0b8} " + GitState.branch;
+        text: GitState.branch;
         color: Theme.fg-secondary;
         font-size: 12px;
         vertical-alignment: center;
@@ -99,10 +99,13 @@ export component GitPanel inherits Rectangle {
                 Button { label: "更新"; clicked => { GitState.refresh(); } }
                 Button { label: "閉じる"; clicked => { GitState.open = false; } }
             }
-            if GitState.show-branches: VerticalLayout {
+            // The body takes the height that is left; what is in it fills it.
+            Rectangle {
+              vertical-stretch: 1;
+              if GitState.show-branches: VerticalLayout {
+                width: parent.width;
+                height: parent.height;
                 spacing: 8px;
-                horizontal-stretch: 1;
-                vertical-stretch: 1;
                 HorizontalLayout {
                     spacing: 8px;
                     height: 28px;
@@ -130,9 +133,10 @@ export component GitPanel inherits Rectangle {
                     }
                 }
             }
-            if !GitState.show-branches: HorizontalLayout {
+              if !GitState.show-branches: HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
                 spacing: 12px;
-                vertical-stretch: 1;
                 VerticalLayout {
                     width: 330px;
                     spacing: 8px;
@@ -202,6 +206,7 @@ export component GitPanel inherits Rectangle {
                         }
                     }
                 }
+            }
             }
             if GitState.note != "": Text { text: GitState.note; color: Theme.fg-secondary; font-size: 12px; wrap: word-wrap; }
         }

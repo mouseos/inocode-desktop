@@ -517,5 +517,10 @@ export component Home inherits Rectangle {
     }
 
     // Git of the working folder (over everything in the chat).
-    GitPanel { }
+    GitPanel {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+    }
 }
