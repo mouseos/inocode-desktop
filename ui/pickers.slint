@@ -425,36 +425,6 @@ export component LocationRow inherits HorizontalLayout {
 
     Rectangle {
         height: 28px;
-        width: lc.width;
-        lc := TriggerChip {
-            glyph: Glyph.computer;
-            label: root.state.location;
-            tint: Theme.fg-secondary;
-            clicked => { lpop.show(); }
-        }
-        lpop := PopupWindow {
-            x: 0px;
-            y: 32px;
-            width: 280px;
-            height: ll.preferred-height + 8px;
-            PopupSurface {
-                ll := VerticalLayout {
-                    padding: 6px;
-                    spacing: 1px;
-                    SectionLabel { text: "作業場所"; }
-                    MenuItem {
-                        item: { label: "ローカル環境で作業する", desc: "", selected: true, disabled: false, locked: false };
-                        picked => { lpop.close(); }
-                    }
-                    MenuItem {
-                        item: { label: "新しい Worktree", desc: "", selected: false, disabled: true, locked: false };
-                    }
-                }
-            }
-        }
-    }
-    Rectangle {
-        height: 28px;
         width: pc.width;
         pc := TriggerChip {
             glyph: Glyph.folder;

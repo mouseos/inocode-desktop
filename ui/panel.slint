@@ -68,21 +68,7 @@ export component TaskPanel inherits Rectangle {
         alignment: start;
 
         env := SectionTitle { label: "環境"; }
-        if env.open: PanelRow { glyph: Glyph.computer; label: "このコンピューター"; }
         if env.open: PanelRow { glyph: Glyph.folder; label: PanelState.folder-name != "" ? PanelState.folder-name : root.folder; detail: root.cwd; }
-        if env.open: HorizontalLayout {
-            height: 26px;
-            spacing: 8px;
-            Icon { width: 16px; text: Glyph.computer; font-size: 15px; color: Theme.fg-secondary; }
-            Text { text: "Remote Control"; color: Theme.fg; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
-            if PanelState.remote-status == "connecting": Text { text: "接続中…"; color: Theme.fg-secondary; font-size: 12px; vertical-alignment: center; }
-            if PanelState.remote-status == "errored": Text { text: "エラー"; color: Theme.danger; font-size: 12px; vertical-alignment: center; }
-            Switch {
-                y: 5px;
-                on <=> PanelState.remote-on;
-                toggled(v) => { PanelState.toggle-remote(v); }
-            }
-        }
 
         Rectangle { height: 10px; }
         Rectangle {
