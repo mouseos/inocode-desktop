@@ -15,6 +15,8 @@ pub(crate) struct State {
     pub(crate) models: Vec<ModelInfo>,
     pub(crate) models_loaded: bool,
     pub(crate) settings: Settings,
+    /// Approvals that wait, with the thread each belongs to (a thread switch keeps them).
+    pub(crate) pending: Vec<(String, Approval)>,
     /// What the server reported for the active thread.
     pub(crate) applied_model: String,
     pub(crate) applied_effort: String,

@@ -2,10 +2,22 @@ import { IntelligenceState, PermState, ProjectState } from "pickers.slint";
 import { ProjectItem } from "sidebar.slint";
 import { DiscoveryState } from "settings.slint";
 
+// One line of an approval's body (command, diff, permissions). kind: 0 plain, 1 added,
+// 2 removed, 3 file header, 4 note.
+export struct ALine {
+    text: string,
+    kind: int,
+}
+
 export struct Approval {
     key: string,
     title: string,
     detail: string,
+    // One line over the body ("3 ファイル  +12 −4").
+    summary: string,
+    lines: [ALine],
+    // The body is long: it can be opened to read all of it.
+    long: bool,
     // An MCP input request: decline or continue only.
     simple: bool,
 }
@@ -43,6 +55,11 @@ export global AppState {
     in property <string> cwd-text;
     in property <string> account-label: "ローカル";
     in property <bool> logged-in: true;
+    // The server is not reachable: reconnect now instead of waiting for the retry.
+    in property <bool> disconnected: false;
+    // The folder cannot be written (the server runs it read-only although writing was chosen).
+    in property <string> sandbox-notice;
+    in property <bool> sandbox-can-setup: false;
 
     callback search-model(string);
     callback pick-effort(int);
@@ -64,4 +81,7 @@ export global AppState {
     callback interrupt;
     callback decide(string, string);
     callback switch-transport;
+    callback reconnect;
+    callback sandbox-setup;
+    callback sandbox-dismiss;
 }

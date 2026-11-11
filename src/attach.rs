@@ -138,6 +138,8 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
         if let Some(dir) = rfd::FileDialog::new().set_title("作業フォルダを選択").pick_folder() {
             // A new session in that folder, like picking a project.
             app.global::<AppState>().invoke_new_chat_in(dir.to_string_lossy().to_string().into());
+            // A folder that was just added: ask whether to trust it.
+            crate::sidebar::ask_trust(&app, &dir.to_string_lossy());
         }
     });
     let weak = app.as_weak();

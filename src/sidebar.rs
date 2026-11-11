@@ -22,6 +22,8 @@ enum Confirm {
     Archive(String),
     Delete(String),
     Logout,
+    /// Write the folder's trust (config.toml projects.<path>.trust_level).
+    Trust(String),
 }
 
 struct Data {
@@ -354,6 +356,12 @@ pub(crate) fn register(app: &AppWindow, handle: &Rc<client::Handle>) {
             Some(Confirm::Info) => {}
             Some(Confirm::Request(tag, method)) => rpc(&h, tag.to_string(), method, json!({})),
             Some(Confirm::Logout) => rpc(&h, "chat.logout".into(), "account/logout", Value::Null),
+            Some(Confirm::Trust(path)) => rpc(
+                &h,
+                "chat.trust".into(),
+                "config/value/write",
+                json!({ "keyPath": crate::coding::trust_key_path(&path), "value": "trusted", "mergeStrategy": "replace" }),
+            ),
             None => {}
         }
     });
@@ -532,6 +540,18 @@ pub(crate) fn on_notify(method: &str) {
 /// Ask for confirmation, then send `method` with no parameters (used by the settings page).
 pub(crate) fn ask_request(app: &AppWindow, tag: &'static str, method: &'static str, title: &str, body: &str, label: &str) {
     confirm(app, Confirm::Request(tag, method), title, body, label, true);
+}
+
+/// A folder was added: ask before writing its trust into the configuration.
+pub(crate) fn ask_trust(app: &AppWindow, path: &str) {
+    confirm(
+        app,
+        Confirm::Trust(path.to_string()),
+        "このフォルダを信頼しますか？",
+        &format!("{path}\n信頼すると、このフォルダの中でファイルを書き込めます。config.toml に trust_level = \"trusted\" を書きます。"),
+        "信頼する",
+        false,
+    );
 }
 
 /// A message with one button (the version dialog).

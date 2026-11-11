@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod chat_actions;
+mod coding;
 mod client;
 mod accounts_page;
 mod attach;
@@ -67,6 +68,14 @@ fn main() {
             }
         });
     }));
+    // The first thread starts in the folder that was used last, not where the app was launched.
+    if let Some(cwd) = gui_prefs::load_last_cwd() {
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            st.settings.cwd = Some(cwd);
+            handle.send(Command::SetSettings(st.settings.clone()));
+        });
+    }
     let host = tabs::Host::new(handle.clone());
     tabs::install(&app, &host);
     TAB_HOST.with(|h| *h.borrow_mut() = Some(host));

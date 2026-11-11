@@ -7,6 +7,7 @@ use crate::*;
 pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
     match event {
         Event::Status(text, level) => {
+            app.global::<AppState>().set_disconnected(level == Level::Error && text.starts_with("未接続"));
             app.global::<AppState>().set_status(text.into());
             app.global::<AppState>().set_status_level(match level {
                 Level::Info => 0,
@@ -15,7 +16,13 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
                 Level::Error => 3,
             });
         }
-        Event::Transport(name) => app.global::<AppState>().set_transport(name.into()),
+        Event::Transport(name) => {
+            app.global::<AppState>().set_transport(name.into());
+            // A new connection: requests of the old one are gone with it.
+            let mut st = state.borrow_mut();
+            st.pending.clear();
+            crate::coding::render_approvals(app, &st);
+        }
         Event::Models(list) => {
             let mut st = state.borrow_mut();
             st.settings.programs = list.clone();
@@ -49,6 +56,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             if !approval.is_empty() {
                 st.applied_perm = Some(Perm::from_server(&approval, &sandbox, &reviewer));
             }
+            crate::coding::on_applied(app, &mut st, &sandbox, &cwd);
             let _ = sandbox_label(&sandbox);
             st.branch = git_branch(&cwd);
             st.active_cwd = cwd.clone();
@@ -83,6 +91,8 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             st.active = id;
             st.busy = false;
             app.global::<AppState>().set_busy(false);
+            // Each thread has its own approvals: show the ones of this thread.
+            crate::coding::render_approvals(app, &st);
             app.global::<AppState>().set_session_title(if title.is_empty() { "新しいセッション".into() } else { SharedString::from(title) });
             rebuild_projects(app, &st);
         }
@@ -92,7 +102,6 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
                 .map(|Msg { id, role, text, detail }| Message { id: id.into(), role: role.into(), text: text.into(), detail: clip_detail(&detail).into() })
                 .collect();
             app.global::<AppState>().set_messages(ModelRc::from(Rc::new(VecModel::from(rows))));
-            app.global::<AppState>().set_approvals(ModelRc::from(Rc::new(VecModel::<Approval>::default())));
             app.invoke_scroll_bottom();
         }
         Event::AssistantStart => {
@@ -170,29 +179,17 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
                 app.invoke_scroll_bottom();
             }
         }
-        Event::Approval { key, title, detail } => {
-            let model = app.global::<AppState>().get_approvals();
-            if let Some(vec) = model.as_any().downcast_ref::<VecModel<Approval>>() {
-                vec.push(Approval { key: key.into(), title: title.into(), detail: detail.into(), simple: false });
-            }
-        }
-        Event::Elicit { key, title, detail } => {
-            let model = app.global::<AppState>().get_approvals();
-            if let Some(vec) = model.as_any().downcast_ref::<VecModel<Approval>>() {
-                vec.push(Approval { key: key.into(), title: title.into(), detail: detail.into(), simple: true });
-            }
+        Event::Approval(info) => {
+            let mut st = state.borrow_mut();
+            crate::coding::push_pending(&mut st.pending, &info.thread, crate::coding::to_approval(&info));
+            crate::coding::render_approvals(app, &st);
         }
         Event::Questions { key, items } => crate::prompts::on_questions(app, key, items),
         Event::ApprovalResolved(key) => {
             crate::prompts::on_resolved(app, &key);
-            let model = app.global::<AppState>().get_approvals();
-            if let Some(vec) = model.as_any().downcast_ref::<VecModel<Approval>>() {
-                for i in (0..vec.row_count()).rev() {
-                    if vec.row_data(i).map(|a| a.key == key.as_str()).unwrap_or(false) {
-                        vec.remove(i);
-                    }
-                }
-            }
+            let mut st = state.borrow_mut();
+            st.pending.retain(|(_, a)| a.key != key.as_str());
+            crate::coding::render_approvals(app, &st);
         }
         // Rpc / Notify are delivered to the screen tabs (src/tabs) before apply().
         Event::Rpc { tag, result } => {
@@ -203,6 +200,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
             crate::accounts_page::on_rpc(app, &tag, &result);
             crate::sidebar::on_rpc(app, &tag, &result);
             crate::chat_actions::on_rpc(app, &tag, &result);
+            crate::coding::on_rpc(app, &tag, &result);
         }
         Event::Notify { method, params } => {
             crate::panel_data::on_notify(app, &method, &params);
@@ -221,6 +219,7 @@ pub(crate) fn apply(app: &AppWindow, state: &RefCell<State>, event: Event) {
                 messages_with(app, |m| upsert_tool(m, &id, &text, None));
                 app.invoke_scroll_bottom();
             }
+            crate::coding::on_notify(app, &method, &params);
             crate::sidebar::on_notify(&method);
             crate::prompts::on_notify(&method);
         }

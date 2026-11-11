@@ -179,6 +179,37 @@ pub struct Settings {
     /// Model catalog from model/list, used to resolve the program sent with each turn.
     pub programs: Vec<ModelInfo>,
     pub cwd: Option<String>,
+    /// approval_policy / sandbox_mode of the server's own configuration (config/read). What
+    /// "Custom" sends, so that the thread runs with the values the user configured.
+    pub server_policy: Option<String>,
+    pub server_sandbox: Option<String>,
+    /// configRequirements/read: what the server allows (None = unrestricted).
+    pub allowed_policies: Option<Vec<String>>,
+    pub allowed_sandboxes: Option<Vec<String>>,
+}
+
+impl Settings {
+    /// Permissions to send with a new thread / a turn: (approval policy, sandbox mode, reviewer).
+    /// Not chosen: "Ask for approval" (workspace-write), so that coding works out of the box,
+    /// unless the server's requirements do not allow it, then the server's own values.
+    /// "Custom": the values read from the server's configuration.
+    /// Writing is meant: workspace-write or full access.
+    pub fn wants_write(&self) -> bool {
+        matches!(self.permission(false).1.as_deref(), Some("workspace-write") | Some("danger-full-access"))
+    }
+
+    pub(super) fn permission(&self, turn: bool) -> (Option<String>, Option<String>, Option<&'static str>) {
+        let ok = |list: &Option<Vec<String>>, v: &str| list.as_ref().map(|l| l.iter().any(|x| x == v)).unwrap_or(true);
+        let perm = match self.perm {
+            Some(p) => p,
+            None if ok(&self.allowed_policies, "on-request") && ok(&self.allowed_sandboxes, "workspace-write") => Perm::Ask,
+            None => Perm::Server,
+        };
+        match perm {
+            Perm::Server => (self.server_policy.clone(), self.server_sandbox.clone(), None),
+            p => (p.policy().map(str::to_string), p.sandbox_mode().map(str::to_string), p.reviewer(turn)),
+        }
+    }
 }
 
 impl Default for Settings {
@@ -191,8 +222,29 @@ impl Default for Settings {
             daybreak: false,
             programs: Vec::new(),
             cwd: None,
+            server_policy: None,
+            server_sandbox: None,
+            allowed_policies: None,
+            allowed_sandboxes: None,
         }
     }
+}
+
+/// What an approval card shows (see approval.rs).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ApprovalInfo {
+    pub key: String,
+    /// The thread the request belongs to (the card is shown only on that thread).
+    pub thread: String,
+    pub title: String,
+    pub detail: String,
+    /// One line over the body ("3 ファイル  +12 −4").
+    pub summary: String,
+    /// Body lines with their kind: 0 plain, 1 added, 2 removed, 3 file header, 4 note.
+    pub lines: Vec<(String, i32)>,
+    /// The body is long: it can be opened to read all of it.
+    pub long: bool,
+    pub simple: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -225,9 +277,9 @@ pub enum Event {
     Note { id: String, text: String, detail: String },
     TurnStarted,
     TurnDone { interrupted: bool },
-    Approval { key: String, title: String, detail: String },
-    /// An MCP server asks for input (mcpServer/elicitation/request): decline or continue.
-    Elicit { key: String, title: String, detail: String },
+    /// A request that needs an answer: command, file change, extra permissions, or an MCP
+    /// server asking for input (decline or continue only).
+    Approval(ApprovalInfo),
     /// Questions from the agent (item/tool/requestUserInput).
     Questions { key: String, items: Vec<QuestionInfo> },
     ApprovalResolved(String),
@@ -284,6 +336,8 @@ pub enum Command {
     Answer { key: String, answers: Vec<(String, Vec<String>)> },
     Approve { key: String, decision: Decision },
     SwitchTransport,
+    /// Reconnect now (do not wait for the retry timer).
+    Reconnect,
     /// Generic request for the screen tabs; answered with Event::Rpc.
     #[allow(dead_code)]
     Rpc { tag: String, method: String, params: Value },

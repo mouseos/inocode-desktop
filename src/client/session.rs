@@ -61,6 +61,10 @@ pub(super) fn supervise(mut cfg: Config, rx: Receiver<Command>, on_event: impl F
                             break;
                         }
                         Ok(Command::Quit) => return,
+                        Ok(Command::Reconnect) => {
+                            attempt = 0;
+                            break;
+                        }
                         Ok(Command::Prompt(_)) => on_event(Event::Error("未接続のため送信できません".into())),
                         Ok(Command::Rpc { tag, method, params }) => {
                             if !mock_rpc(&on_event, &tag, &method, &params) {
@@ -88,6 +92,7 @@ pub(super) enum Pending {
     TurnStart,
     Models,
     Requirements,
+    Config,
     SettingsUpdate,
     Daybreak,
     Account,
@@ -112,6 +117,10 @@ pub(super) struct Session<'a, F: Fn(Event)> {
     pub(super) delta: String,
     pub(super) last_flush: Instant,
     pub(super) approvals: HashMap<String, (Value, String, Value)>,
+    /// `changes` of the file-change items seen so far, by item id (an approval shows them).
+    pub(super) file_changes: HashMap<String, Value>,
+    /// Working folder of the active thread as the server reports it (sent with every turn).
+    pub(super) thread_cwd: Option<String>,
     pub(super) msg_streamed: bool,
     pub(super) login_pending: bool,
     /// When model/list was last requested (the desktop client treats it as stale after 5 minutes).
@@ -140,6 +149,8 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             delta: String::new(),
             last_flush: Instant::now(),
             approvals: HashMap::new(),
+            file_changes: HashMap::new(),
+            thread_cwd: None,
             msg_streamed: false,
             login_pending: false,
             models_asked: Instant::now(),
@@ -235,7 +246,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                     return Ok(None);
                 };
                 let mut params = json!({ "threadId": tid, "input": [{ "type": "text", "text": text, "text_elements": [] }] });
-                turn_overrides(self.settings, self.settings_update_unsupported, &mut params);
+                self.turn_params(&mut params);
                 self.request("turn/start", params, Pending::TurnStart)?;
             }
             Command::PromptWith(text, extra) => {
@@ -246,7 +257,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 let mut input = vec![json!({ "type": "text", "text": text, "text_elements": [] })];
                 input.extend(extra);
                 let mut params = json!({ "threadId": tid, "input": input });
-                turn_overrides(self.settings, self.settings_update_unsupported, &mut params);
+                self.turn_params(&mut params);
                 self.request("turn/start", params, Pending::TurnStart)?;
             }
             Command::NewThread => {
@@ -259,9 +270,23 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 self.request("thread/start", params, Pending::ThreadStart)?;
             }
             Command::SetSettings(s) => {
+                // What the server told us stays; the screen only sends its own choices.
+                let keep = (
+                    self.settings.server_policy.take(),
+                    self.settings.server_sandbox.take(),
+                    self.settings.allowed_policies.take(),
+                    self.settings.allowed_sandboxes.take(),
+                );
                 *self.settings = s;
+                (
+                    self.settings.server_policy,
+                    self.settings.server_sandbox,
+                    self.settings.allowed_policies,
+                    self.settings.allowed_sandboxes,
+                ) = keep;
                 self.push_settings()?;
             }
+            Command::Reconnect => return Ok(Some(End::Switch)),
             Command::SetDaybreak(on) => {
                 self.settings.daybreak = on;
                 if let Some(tid) = self.active_thread.clone() {
@@ -319,6 +344,15 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
         Ok(None)
     }
 
+    /// Fields that go with every turn: model, effort, speed, the permissions (approval policy and
+    /// sandbox, so that a write does not depend on the folder's trust setting) and the folder.
+    fn turn_params(&self, params: &mut Value) {
+        turn_overrides(self.settings, true, params);
+        if let Some(cwd) = &self.thread_cwd {
+            params["cwd"] = json!(cwd);
+        }
+    }
+
     /// Push changed choices to the thread (thread/settings/update), as the desktop client does.
     pub(super) fn push_settings(&mut self) -> Result<(), String> {
         let Some(tid) = self.active_thread.clone() else { return Ok(()) };
@@ -350,20 +384,19 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 any = true;
             }
         }
-        if new.perm != old.perm {
-            if let Some(perm) = new.perm {
-                if let Some(v) = perm.policy() {
-                    p["approvalPolicy"] = json!(v);
-                    any = true;
-                }
-                if let Some(v) = perm.sandbox_mode() {
-                    p["sandboxPolicy"] = sandbox_policy(v);
-                    any = true;
-                }
-                if let Some(v) = perm.reviewer(false) {
-                    p["approvalsReviewer"] = json!(v);
-                    any = true;
-                }
+        if new.permission(false) != old.permission(false) {
+            let (policy, sandbox, reviewer) = new.permission(false);
+            if let Some(v) = policy {
+                p["approvalPolicy"] = json!(v);
+                any = true;
+            }
+            if let Some(v) = sandbox.as_deref().and_then(sandbox_policy) {
+                p["sandboxPolicy"] = v;
+                any = true;
+            }
+            if let Some(v) = reviewer {
+                p["approvalsReviewer"] = json!(v);
+                any = true;
             }
         }
         self.sent = new;
@@ -435,7 +468,10 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                         self.report_error(&message);
                     }
                 }
-                Pending::Requirements | Pending::Daybreak => {}
+                // Not available on this server: go on without it.
+                Pending::Requirements => return self.request("config/read", json!({ "includeLayers": false }), Pending::Config),
+                Pending::Config => return self.begin_thread(),
+                Pending::Daybreak => {}
                 _ => self.report_error(&message),
             }
             return Ok(());
@@ -450,15 +486,8 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                 self.request("account/rateLimits/read", Value::Null, Pending::RateLimits)?;
                 self.request("configRequirements/read", Value::Null, Pending::Requirements)?;
                 self.list_threads()?;
-                match self.active_thread.clone() {
-                    Some(tid) => {
-                        self.request("thread/resume", json!({ "threadId": tid }), Pending::ThreadResume)?
-                    }
-                    None => {
-                        let params = thread_start_params(self.settings);
-                        self.request("thread/start", params, Pending::ThreadStart)?
-                    }
-                }
+                // Requirements, then the configuration, then the thread: its permissions and
+                // folder are sent explicitly, so they have to be known first.
             }
             Pending::ThreadList => (self.on_event)(Event::Threads(parse_threads(result))),
             Pending::ThreadStart => {
@@ -468,6 +497,7 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                     .ok_or("thread/start の応答に thread.id がありません")?;
                 *self.active_thread = Some(tid.to_string());
                 self.turn_id = None;
+                self.thread_cwd = result.get("cwd").and_then(Value::as_str).filter(|c| !c.is_empty()).map(str::to_string);
                 (self.on_event)(Event::ThreadActive { id: tid.to_string(), title: String::new() });
                 (self.on_event)(applied(result));
                 (self.on_event)(Event::History(Vec::new()));
@@ -481,9 +511,15 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                     self.turn_id = None;
                     (self.on_event)(Event::ThreadActive { id: tid.to_string(), title: thread_title(thread) });
                 }
+                self.thread_cwd = result.get("cwd").and_then(Value::as_str).filter(|c| !c.is_empty()).map(str::to_string);
                 (self.on_event)(applied(result));
                 (self.on_event)(Event::History(history_from_thread(thread)));
                 (self.on_event)(Event::Status("接続済み".into(), Level::Ok));
+                // A turn that is still running (the thread was opened from elsewhere): it can be stopped.
+                if let Some(turn) = running_turn(thread) {
+                    self.turn_id = Some(turn);
+                    (self.on_event)(Event::TurnStarted);
+                }
             }
             Pending::Models => {
                 let list = parse_models(result);
@@ -506,10 +542,20 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
                         a.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>()
                     })
                 };
+                self.settings.allowed_policies = list("allowedApprovalPolicies");
+                self.settings.allowed_sandboxes = list("allowedSandboxModes");
                 (self.on_event)(Event::Requirements {
                     policies: list("allowedApprovalPolicies"),
                     sandboxes: list("allowedSandboxModes"),
                 });
+                self.request("config/read", json!({ "includeLayers": false }), Pending::Config)?;
+            }
+            Pending::Config => {
+                let cfg = result.get("config").unwrap_or(&Value::Null);
+                let text = |k: &str| cfg.get(k).and_then(Value::as_str).map(str::to_string);
+                self.settings.server_policy = text("approval_policy");
+                self.settings.server_sandbox = text("sandbox_mode");
+                self.begin_thread()?;
             }
             Pending::SettingsUpdate => {}
             Pending::Daybreak => {
@@ -527,6 +573,17 @@ impl<'a, F: Fn(Event)> Session<'a, F> {
             Pending::TurnStart | Pending::Other => {}
         }
         Ok(())
+    }
+
+    /// Open the thread that was active (after a reconnect) or start a new one.
+    pub(super) fn begin_thread(&mut self) -> Result<(), String> {
+        match self.active_thread.clone() {
+            Some(tid) => self.request("thread/resume", json!({ "threadId": tid }), Pending::ThreadResume),
+            None => {
+                let params = thread_start_params(self.settings);
+                self.request("thread/start", params, Pending::ThreadStart)
+            }
+        }
     }
 
     pub(super) fn report_error(&mut self, message: &str) {

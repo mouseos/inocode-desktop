@@ -8,6 +8,7 @@
 //! resumes the thread that was open.
 
 
+mod approval;
 mod mock;
 mod notify;
 mod parse;
@@ -24,6 +25,7 @@ use session::supervise;
 use std::sync::mpsc;
 use std::time::Duration;
 
+pub use approval::approval_info;
 pub use parse::{history_from_thread, parse_account, parse_models, parse_threads, rate_limit_text, tool_detail, tool_text};
 pub use transport::{base_client_version, find_inocode, probe_models};
 pub use types::*;
@@ -113,6 +115,42 @@ mod tests {
         assert_eq!(p["approvalsReviewer"], "auto_review");
         assert_eq!(Perm::from_server("never", "dangerFullAccess", "user"), Perm::Full);
         assert_eq!(Perm::from_server("on-request", "workspaceWrite", "auto_review"), Perm::Guardian);
+    }
+
+    #[test]
+    fn coding_works_without_choosing_a_permission() {
+        // Not chosen: ask for approval, workspace-write, with the folder.
+        let mut s = Settings { cwd: Some("D:/w".into()), ..Settings::default() };
+        let p = thread_start_params(&s);
+        assert_eq!((p["approvalPolicy"].as_str(), p["sandbox"].as_str(), p["cwd"].as_str()), (Some("on-request"), Some("workspace-write"), Some("D:/w")));
+        let mut turn = json!({});
+        turn_overrides(&s, true, &mut turn);
+        assert_eq!(turn["approvalPolicy"], "on-request");
+        assert_eq!(turn["sandboxPolicy"]["type"], "workspaceWrite");
+        // Requirements that forbid it: the server's own values.
+        s.allowed_sandboxes = Some(vec!["read-only".into()]);
+        s.server_policy = Some("untrusted".into());
+        s.server_sandbox = Some("read-only".into());
+        let p = thread_start_params(&s);
+        assert_eq!((p["approvalPolicy"].as_str(), p["sandbox"].as_str()), (Some("untrusted"), Some("read-only")));
+        // Custom: what the configuration says; nothing when it says nothing.
+        let mut c = Settings { perm: Some(Perm::Server), server_sandbox: Some("workspace-write".into()), ..Settings::default() };
+        let p = thread_start_params(&c);
+        assert_eq!(p["sandbox"], "workspace-write");
+        assert!(p.get("approvalPolicy").is_none());
+        c.server_sandbox = None;
+        assert!(thread_start_params(&c).get("sandbox").is_none());
+        // Full access is still what the user chose.
+        let full = Settings { perm: Some(Perm::Full), ..Settings::default() };
+        assert_eq!(thread_start_params(&full)["sandbox"], "danger-full-access");
+    }
+
+    #[test]
+    fn a_running_turn_is_found_in_a_resumed_thread() {
+        let t = json!({ "turns": [{ "id": "a", "status": "completed" }, { "id": "b", "status": "inProgress" }] });
+        assert_eq!(running_turn(&t).as_deref(), Some("b"));
+        assert_eq!(running_turn(&json!({ "turns": [{ "id": "a", "status": "completed" }] })), None);
+        assert_eq!(running_turn(&json!({})), None);
     }
 
     #[test]

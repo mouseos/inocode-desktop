@@ -264,18 +264,29 @@ pub fn history_from_thread(thread: &Value) -> Vec<Msg> {
     out
 }
 
+/// The id of the turn of a thread (thread/resume, thread/read) that is still in progress.
+pub(super) fn running_turn(thread: &Value) -> Option<String> {
+    thread
+        .get("turns")
+        .and_then(Value::as_array)?
+        .iter()
+        .rev()
+        .find(|t| t.get("status").and_then(Value::as_str) == Some("inProgress"))
+        .and_then(|t| t.get("id").and_then(Value::as_str))
+        .map(str::to_string)
+}
+
 pub(super) fn thread_start_params(s: &Settings) -> Value {
     let mut p = json!({});
-    if let Some(perm) = s.perm {
-        if let Some(v) = perm.policy() {
-            p["approvalPolicy"] = json!(v);
-        }
-        if let Some(v) = perm.sandbox_mode() {
-            p["sandbox"] = json!(v);
-        }
-        if let Some(v) = perm.reviewer(false) {
-            p["approvalsReviewer"] = json!(v);
-        }
+    let (policy, sandbox, reviewer) = s.permission(false);
+    if let Some(v) = policy {
+        p["approvalPolicy"] = json!(v);
+    }
+    if let Some(v) = sandbox {
+        p["sandbox"] = json!(v);
+    }
+    if let Some(v) = reviewer {
+        p["approvalsReviewer"] = json!(v);
     }
     if let Some(m) = &s.model {
         p["model"] = json!(m);
@@ -295,11 +306,12 @@ pub(super) fn thread_start_params(s: &Settings) -> Value {
     p
 }
 
-pub(super) fn sandbox_policy(mode: &str) -> Value {
+pub(super) fn sandbox_policy(mode: &str) -> Option<Value> {
     match mode {
-        "read-only" => json!({ "type": "readOnly" }),
-        "danger-full-access" => json!({ "type": "dangerFullAccess" }),
-        _ => json!({ "type": "workspaceWrite" }),
+        "read-only" => Some(json!({ "type": "readOnly" })),
+        "danger-full-access" => Some(json!({ "type": "dangerFullAccess" })),
+        "workspace-write" => Some(json!({ "type": "workspaceWrite" })),
+        _ => None,
     }
 }
 
@@ -307,16 +319,15 @@ pub(super) fn sandbox_policy(mode: &str) -> Value {
 /// client); permissions only when thread/settings/update is unavailable.
 pub(super) fn turn_overrides(s: &Settings, with_permissions: bool, params: &mut Value) {
     if with_permissions {
-        if let Some(perm) = s.perm {
-            if let Some(v) = perm.policy() {
-                params["approvalPolicy"] = json!(v);
-            }
-            if let Some(v) = perm.sandbox_mode() {
-                params["sandboxPolicy"] = sandbox_policy(v);
-            }
-            if let Some(v) = perm.reviewer(true) {
-                params["approvalsReviewer"] = json!(v);
-            }
+        let (policy, sandbox, reviewer) = s.permission(true);
+        if let Some(v) = policy {
+            params["approvalPolicy"] = json!(v);
+        }
+        if let Some(v) = sandbox.as_deref().and_then(sandbox_policy) {
+            params["sandboxPolicy"] = v;
+        }
+        if let Some(v) = reviewer {
+            params["approvalsReviewer"] = json!(v);
         }
     }
     if let Some(t) = &s.service_tier {

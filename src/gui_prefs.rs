@@ -83,9 +83,29 @@ pub(crate) fn load() -> Prefs {
     }
 }
 
+/// The working folder that was used last (where a new chat starts after a restart).
+pub(crate) fn load_last_cwd() -> Option<String> {
+    let text = std::fs::read_to_string(path()).ok()?;
+    let v = serde_json::from_str::<Value>(&text).ok()?;
+    v.get("lastCwd").and_then(Value::as_str).filter(|c| !c.is_empty()).map(str::to_string)
+}
+
+pub(crate) fn save_last_cwd(cwd: &str) {
+    let path = path();
+    let mut v = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).unwrap_or_else(|| json!({}));
+    v["lastCwd"] = json!(cwd);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, v.to_string());
+}
+
 pub(crate) fn save(p: &Prefs) {
     let s = |x: &Shortcut| json!({ "key": x.key, "ctrl": x.ctrl, "shift": x.shift, "alt": x.alt });
-    let v = json!({ "scheme": p.scheme, "sidebarOpen": p.sidebar_open, "palette": s(&p.palette), "model": s(&p.model) });
+    let mut v = json!({ "scheme": p.scheme, "sidebarOpen": p.sidebar_open, "palette": s(&p.palette), "model": s(&p.model) });
+    if let Some(c) = load_last_cwd() {
+        v["lastCwd"] = json!(c);
+    }
     let path = path();
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);

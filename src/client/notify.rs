@@ -5,84 +5,55 @@ use super::*;
 
 impl<F: Fn(Event)> Session<'_, F> {
     pub(super) fn server_request(&mut self, id: Value, method: &str, params: Value) -> Result<(), String> {
-        let (title, detail) = match method {
-            "item/commandExecution/requestApproval" => {
-                let mut detail = String::new();
-                if let Some(c) = params.get("command").and_then(Value::as_str) {
-                    detail.push_str(c);
-                }
-                if let Some(d) = params.get("cwd").and_then(Value::as_str) {
-                    detail.push_str(&format!("\n作業フォルダ: {d}"));
-                }
-                if let Some(r) = params.get("reason").and_then(Value::as_str) {
-                    detail.push_str(&format!("\n理由: {r}"));
-                }
-                ("コマンドの実行を許可しますか？".to_string(), detail)
-            }
-            "item/fileChange/requestApproval" => {
-                let mut detail = String::new();
-                if let Some(r) = params.get("reason").and_then(Value::as_str) {
-                    detail.push_str(r);
-                }
-                if let Some(g) = params.get("grantRoot").and_then(Value::as_str) {
-                    detail.push_str(&format!("\n対象フォルダ: {g}"));
-                }
-                ("ファイルの変更を許可しますか？".to_string(), detail)
-            }
-            "item/permissions/requestApproval" => {
-                let detail = params.get("reason").and_then(Value::as_str).unwrap_or("").to_string();
-                ("追加の権限を許可しますか？".to_string(), detail)
-            }
-            "mcpServer/elicitation/request" => {
-                let server = params.get("serverName").and_then(Value::as_str).unwrap_or("MCP").to_string();
-                let mut detail = params.get("message").and_then(Value::as_str).unwrap_or("").to_string();
-                if let Some(u) = params.get("url").and_then(Value::as_str) {
-                    detail.push_str(&format!("\n{u}"));
-                }
-                let key = id.to_string();
-                self.approvals.insert(key.clone(), (id, method.to_string(), params));
-                (self.on_event)(Event::Elicit { key, title: format!("{server} が入力を求めています"), detail: detail.trim().to_string() });
-                return Ok(());
-            }
-            "item/tool/requestUserInput" => {
-                let items: Vec<QuestionInfo> = params
-                    .get("questions")
-                    .and_then(Value::as_array)
-                    .map(|qs| {
-                        qs.iter()
-                            .map(|q| QuestionInfo {
-                                id: q.get("id").and_then(Value::as_str).unwrap_or("").to_string(),
-                                header: q.get("header").and_then(Value::as_str).unwrap_or("").to_string(),
-                                question: q.get("question").and_then(Value::as_str).unwrap_or("").to_string(),
-                                options: q
-                                    .get("options")
-                                    .and_then(Value::as_array)
-                                    .map(|o| o.iter().filter_map(|x| x.get("label").and_then(Value::as_str).map(str::to_string)).collect())
-                                    .unwrap_or_default(),
-                                secret: q.get("isSecret").and_then(Value::as_bool).unwrap_or(false),
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let key = id.to_string();
-                self.approvals.insert(key.clone(), (id, method.to_string(), params));
-                (self.on_event)(Event::Questions { key, items });
-                return Ok(());
-            }
-            _ => {
-                return self.conn.send(json!({
-                    "id": id,
-                    "error": { "code": -32601, "message": "unsupported by InoCode Desktop" }
-                }));
-            }
+        if method == "item/tool/requestUserInput" {
+            let items: Vec<QuestionInfo> = params
+                .get("questions")
+                .and_then(Value::as_array)
+                .map(|qs| {
+                    qs.iter()
+                        .map(|q| QuestionInfo {
+                            id: q.get("id").and_then(Value::as_str).unwrap_or("").to_string(),
+                            header: q.get("header").and_then(Value::as_str).unwrap_or("").to_string(),
+                            question: q.get("question").and_then(Value::as_str).unwrap_or("").to_string(),
+                            options: q
+                                .get("options")
+                                .and_then(Value::as_array)
+                                .map(|o| o.iter().filter_map(|x| x.get("label").and_then(Value::as_str).map(str::to_string)).collect())
+                                .unwrap_or_default(),
+                            secret: q.get("isSecret").and_then(Value::as_bool).unwrap_or(false),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let key = id.to_string();
+            self.approvals.insert(key.clone(), (id, method.to_string(), params));
+            (self.on_event)(Event::Questions { key, items });
+            return Ok(());
+        }
+        let changes = params.get("itemId").and_then(Value::as_str).and_then(|i| self.file_changes.get(i)).cloned();
+        let Some(mut info) = approval::approval_info(method, &params, changes.as_ref()) else {
+            return self.conn.send(json!({
+                "id": id,
+                "error": { "code": -32601, "message": "unsupported by InoCode Desktop" }
+            }));
         };
         let key = id.to_string();
-        self.approvals.insert(key.clone(), (id, method.to_string(), params));
-        (self.on_event)(Event::Approval { key, title, detail: detail.trim().to_string() });
+        info.key = key.clone();
+        self.approvals.insert(key, (id, method.to_string(), params));
+        (self.on_event)(Event::Approval(info));
         Ok(())
     }
 
     pub(super) fn notification(&mut self, method: &str, params: &Value) {
+        // The diff of a file change comes with its item; the approval of that item shows it.
+        if matches!(method, "item/started" | "item/updated" | "item/completed") {
+            let item = params.get("item").unwrap_or(&Value::Null);
+            if item.get("type").and_then(Value::as_str) == Some("fileChange") {
+                if let (Some(id), Some(changes)) = (item_id(item), item.get("changes").filter(|c| c.is_array())) {
+                    self.file_changes.insert(id, changes.clone());
+                }
+            }
+        }
         match method {
             "turn/started" => {
                 self.turn_id = params.pointer("/turn/id").and_then(Value::as_str).map(str::to_string);
@@ -220,7 +191,7 @@ impl<F: Fn(Event)> Session<'_, F> {
                 }
             }
             // Session list changes (name, status, read state, archive, section) reach the sidebar.
-            m if m.starts_with("inocode/") || m.starts_with("thread/") || m.starts_with("remoteControl/") || m.starts_with("mcpServer/") => {
+            m if m.starts_with("inocode/") || m.starts_with("windowsSandbox/") || m.starts_with("thread/") || m.starts_with("remoteControl/") || m.starts_with("mcpServer/") => {
                 (self.on_event)(Event::Notify { method: m.to_string(), params: params.clone() });
             }
             _ => {}
